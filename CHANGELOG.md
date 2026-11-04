@@ -2,6 +2,21 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.3.1] - 2026-11-03
+
+### Changed
+
+- feat: add /speckit.clarify-deep command
+- docs: organize usage guides under How to (#5230)
+- docs: extend project history through early November 2026 (#5231)
+- docs: simplify integrations navigation dropdown (#5229)
+- Update Quality Gates (Enforcement Layer) extension to v0.5.1 (#5228)
+- docs: consolidate bundle documentation and remove unusable examples (#5226)
+- Update Cross-Platform Governance preset to v0.2.5 (#5218)
+- docs: consolidate and correct workflow documentation (#5225)
+- fix(cli): don't self-upgrade uv tool installs on Windows (#5149)
+- chore: release 1.3.0, begin 1.3.1.dev0 development (#5224)
+
 ## [1.3.0] - 2026-11-03
 
 ### Changed
