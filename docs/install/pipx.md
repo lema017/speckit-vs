@@ -4,15 +4,15 @@
 
 ## Install Specify CLI
 
-Pin a specific release tag for stability (check [Releases](https://github.com/github/spec-kit/releases) for the latest):
+Pin a specific release tag for stability (check [Releases](https://github.com/lema017/speckit-vs/releases) for the latest):
 
 ```bash
 # Install a specific stable release (recommended — replace vX.Y.Z with the
 # latest tag, keeping the leading v, e.g. v0.12.11 not 0.12.11)
-pipx install git+https://github.com/github/spec-kit.git@vX.Y.Z
+pipx install git+https://github.com/lema017/speckit-vs.git@vX.Y.Z
 
 # Or install latest from main (may include unreleased changes)
-pipx install git+https://github.com/github/spec-kit.git
+pipx install git+https://github.com/lema017/speckit-vs.git
 ```
 
 ## Verify
@@ -24,7 +24,7 @@ specify version
 ## Upgrade
 
 ```bash
-pipx install --force git+https://github.com/github/spec-kit.git@vX.Y.Z
+pipx install --force git+https://github.com/lema017/speckit-vs.git@vX.Y.Z
 ```
 
 ## Uninstall

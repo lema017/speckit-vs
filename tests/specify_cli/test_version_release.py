@@ -34,7 +34,7 @@ _RATE_LIMITED_REASON = (
 
 def _http_error(code: int, message: str = "error") -> urllib.error.HTTPError:
     return urllib.error.HTTPError(
-        url="https://api.github.com/repos/github/spec-kit/releases/latest",
+        url="https://api.github.com/repos/lema017/speckit-vs/releases/latest",
         code=code,
         msg=message,
         hdrs={},  # type: ignore[arg-type]

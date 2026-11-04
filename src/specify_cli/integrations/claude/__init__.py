@@ -18,6 +18,7 @@ ARGUMENT_HINTS: dict[str, str] = {
     "implement": "Optional implementation guidance or task filter",
     "analyze": "Optional focus areas for analysis",
     "clarify": "Optional areas to clarify in the spec",
+    "clarify-deep": "Optional areas to clarify in the spec",
     "constitution": "Principles or values for the project constitution",
     "checklist": "Domain or focus area for the checklist",
 }

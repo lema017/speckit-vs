@@ -405,7 +405,7 @@ class TestUnknownCurrent:
         assert result.exit_code == 2
         out = strip_ansi(result.output)
         assert "Could not determine the previous version" in out
-        assert "https://github.com/github/spec-kit/releases" in out
+        assert "https://github.com/lema017/speckit-vs/releases" in out
 
 
 class TestTokenScrubbing:
@@ -527,7 +527,7 @@ class TestTokenScrubbing:
         # subprocess needs is lost by stripping them.
         monkeypatch.setenv("GH_HOST", "github.example.com")
         monkeypatch.setenv("GH_CONFIG_DIR", "/home/u/.config/gh")
-        monkeypatch.setenv("GITHUB_REPOSITORY", "github/spec-kit")
+        monkeypatch.setenv("GITHUB_REPOSITORY", "lema017/speckit-vs")
         monkeypatch.setenv("GITHUB_WORKSPACE", "/home/runner/work")
         monkeypatch.setenv("GITHUB_USER", "octocat")
 

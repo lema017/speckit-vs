@@ -61,6 +61,7 @@ _FALLBACK_CORE_COMMAND_NAMES = frozenset(
         "analyze",
         "checklist",
         "clarify",
+        "clarify-deep",
         "constitution",
         "converge",
         "implement",
@@ -82,7 +83,7 @@ VALID_EFFECTS = frozenset({"read-only", "read-write"})
 
 DEFAULT_HOOK_PRIORITY = 10
 
-REINSTALL_COMMAND = "uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git"
+REINSTALL_COMMAND = "uv tool install specify-cli --force --from git+https://github.com/lema017/speckit-vs.git"
 
 
 def _load_core_command_names() -> frozenset[str]:

@@ -4,6 +4,9 @@
     <h3><em>Build with a spec, fix a bug, or assess an idea — with your coding agent.</em></h3>
 </div>
 
+> [!NOTE]
+> This repository is a fork of [github/spec-kit](https://github.com/github/spec-kit) that adds the [`/speckit.clarify-deep`](docs/reference/agentic-sdd.md#speckitclarify-deep) command. Install it from this repository, not from PyPI: the `specify-cli` package on PyPI is the original project and does not include this command.
+
 <p align="center">
     <a href="https://github.com/github/spec-kit/releases/latest"><img src="https://img.shields.io/github/v/release/github/spec-kit" alt="Latest Release"/></a>
     <a href="https://github.com/github/spec-kit/stargazers"><img src="https://img.shields.io/github/stars/github/spec-kit?style=social" alt="GitHub stars"/></a>
@@ -77,7 +80,7 @@ Run these commands in your terminal to install Spec Kit and create a project.
 This example uses GitHub Copilot.
 
 ```bash
-uv tool install specify-cli
+uv tool install specify-cli --from git+https://github.com/lema017/speckit-vs.git
 specify init my-project --integration copilot
 cd my-project
 ```

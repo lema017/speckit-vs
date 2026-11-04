@@ -70,7 +70,7 @@ class TestInstallerMissing:
                 "specify-cli",
                 "--force",
                 "--from",
-                "git+https://github.com/github/spec-kit.git@v0.7.6",
+                "git+https://github.com/lema017/speckit-vs.git@v0.7.6",
             ],
         ):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
@@ -101,7 +101,7 @@ class TestInstallerMissing:
                 "specify-cli",
                 "--force",
                 "--from",
-                "git+https://github.com/github/spec-kit.git@v0.7.6",
+                "git+https://github.com/lema017/speckit-vs.git@v0.7.6",
             ],
         ):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
@@ -127,7 +127,7 @@ class TestInstallerMissing:
                 "specify-cli",
                 "--force",
                 "--from",
-                "git+https://github.com/github/spec-kit.git@v0.7.6",
+                "git+https://github.com/lema017/speckit-vs.git@v0.7.6",
             ],
         ):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
@@ -187,7 +187,7 @@ class TestInstallerMissing:
                 "specify-cli",
                 "--force",
                 "--from",
-                "git+https://github.com/github/spec-kit.git@v0.7.6",
+                "git+https://github.com/lema017/speckit-vs.git@v0.7.6",
             ],
         ):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
@@ -219,7 +219,7 @@ class TestInstallerMissing:
                 "specify-cli",
                 "--force",
                 "--from",
-                "git+https://github.com/github/spec-kit.git@v0.7.6",
+                "git+https://github.com/lema017/speckit-vs.git@v0.7.6",
             ],
         ):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
@@ -266,7 +266,7 @@ class TestInstallerMissing:
                 "specify-cli",
                 "--force",
                 "--from",
-                "git+https://github.com/github/spec-kit.git@v0.7.6",
+                "git+https://github.com/lema017/speckit-vs.git@v0.7.6",
             ],
         ):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
@@ -296,7 +296,7 @@ class TestInstallerMissing:
                 "specify-cli",
                 "--force",
                 "--from",
-                "git+https://github.com/github/spec-kit.git@v0.7.6",
+                "git+https://github.com/lema017/speckit-vs.git@v0.7.6",
             ],
         ), patch(
             "specify_cli._version.subprocess.run",
@@ -323,7 +323,7 @@ class TestInstallerMissing:
                 "specify-cli",
                 "--force",
                 "--from",
-                "git+https://github.com/github/spec-kit.git@v0.7.6",
+                "git+https://github.com/lema017/speckit-vs.git@v0.7.6",
             ],
         ), patch(
             "specify_cli._version.subprocess.run",
@@ -356,7 +356,7 @@ class TestInstallerMissing:
                 "specify-cli",
                 "--force",
                 "--from",
-                "git+https://github.com/github/spec-kit.git@v0.7.6",
+                "git+https://github.com/lema017/speckit-vs.git@v0.7.6",
             ],
         ), patch("specify_cli._version.subprocess.run", side_effect=invalid_error):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
@@ -385,7 +385,7 @@ class TestInstallerMissing:
                 "specify-cli",
                 "--force",
                 "--from",
-                "git+https://github.com/github/spec-kit.git@v0.7.6",
+                "git+https://github.com/lema017/speckit-vs.git@v0.7.6",
             ],
         ), patch("specify_cli._version.subprocess.run", side_effect=transient_error):
             mock_urlopen.return_value = mock_urlopen_response({"tag_name": "v0.7.6"})
@@ -414,11 +414,11 @@ class TestInstallerFailed:
         out = strip_ansi(result.output)
         assert "Upgrade failed. Installer exit code: 2." in out
         assert "Try again or run the command manually:" in out
-        assert "git+https://github.com/github/spec-kit.git@v0.7.6" in out
+        assert "git+https://github.com/lema017/speckit-vs.git@v0.7.6" in out
         assert (
             "To pin back to the previous version: "
             "uv tool install specify-cli --force --from "
-            "git+https://github.com/github/spec-kit.git@v0.7.5"
+            "git+https://github.com/lema017/speckit-vs.git@v0.7.5"
         ) in out
         # No verification attempted after a failed installer run.
         assert mock_run.call_count == 1
@@ -504,7 +504,7 @@ class TestInstallerFailed:
         out = strip_ansi(result.output)
         assert (
             "To pin back to the previous version: pipx install --force "
-            "git+https://github.com/github/spec-kit.git@v0.7.5"
+            "git+https://github.com/lema017/speckit-vs.git@v0.7.5"
         ) in out
 
     def test_rollback_hint_accepts_normalizable_stable_snapshot(
@@ -523,7 +523,7 @@ class TestInstallerFailed:
         out = strip_ansi(result.output)
         assert (
             "To pin back to the previous version: uv tool install specify-cli --force "
-            "--from git+https://github.com/github/spec-kit.git@v0.7.5"
+            "--from git+https://github.com/lema017/speckit-vs.git@v0.7.5"
         ) in out
         assert "Previous version was not an exact stable release tag" not in out
 
@@ -542,8 +542,8 @@ class TestInstallerFailed:
         assert result.exit_code == 2
         out = strip_ansi(result.output)
         assert "Previous version was not an exact stable release tag" in out
-        assert "https://github.com/github/spec-kit/releases" in out
-        assert "git+https://github.com/github/spec-kit.git@v1.0.0rc1" not in out
+        assert "https://github.com/lema017/speckit-vs/releases" in out
+        assert "git+https://github.com/lema017/speckit-vs.git@v1.0.0rc1" not in out
 
 
 class TestWindowsUvToolEnvironment:
@@ -567,7 +567,7 @@ class TestWindowsUvToolEnvironment:
         assert "Not upgrading specify-cli 1.2.2 → v1.2.4" in out
         assert (
             "  uv tool install specify-cli --force --from "
-            "git+https://github.com/github/spec-kit.git@v1.2.4"
+            "git+https://github.com/lema017/speckit-vs.git@v1.2.4"
         ) in out
         assert "Upgrade failed" not in out
         assert mock_run.call_count == 0
@@ -655,7 +655,7 @@ class TestWindowsUvToolEnvironment:
             "Stop any other specify process (such as `specify mcp`), then run "
             "this once this command exits:\n"
             "  uv tool install specify-cli --force --from "
-            "git+https://github.com/github/spec-kit.git@v1.2.4\n"
+            "git+https://github.com/lema017/speckit-vs.git@v1.2.4\n"
         ) in out
         assert mock_run.call_count == 0
 
@@ -676,7 +676,7 @@ class TestWindowsUvToolEnvironment:
         assert result.exit_code == 0
         assert (
             "\n  uv tool install specify-cli --force --from "
-            "git+https://github.com/github/spec-kit.git@v1.2.0\n"
+            "git+https://github.com/lema017/speckit-vs.git@v1.2.0\n"
         ) in strip_ansi(result.output)
         mock_urlopen.assert_not_called()
         assert mock_run.call_count == 0
@@ -706,7 +706,7 @@ class TestWindowsUvToolEnvironment:
             "Stop any other specify process (such as `specify mcp`), then run "
             "this once this command exits:\n"
             "  uv tool install specify-cli --force --from "
-            "git+https://github.com/github/spec-kit.git@v1.2.4\n"
+            "git+https://github.com/lema017/speckit-vs.git@v1.2.4\n"
         )
         assert manual_steps in outputs[3]
         assert manual_steps in outputs[2]
@@ -734,7 +734,7 @@ class TestWindowsUvToolEnvironment:
                 "specify-cli",
                 "--force",
                 "--from",
-                "git+https://github.com/github/spec-kit.git@v1.2.4",
+                "git+https://github.com/lema017/speckit-vs.git@v1.2.4",
             ]
         )
         assert f"Command that would be executed: {expected_argv}" in " ".join(

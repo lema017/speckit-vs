@@ -51,10 +51,10 @@ starting either path.
 
 ### Install Specify
 
-**In your terminal**, install the CLI from PyPI (requires [uv](install/uv.md)), then initialize your project:
+**In your terminal**, install the CLI from this fork's repository (requires [uv](install/uv.md)), then initialize your project:
 
 ```bash
-uv tool install specify-cli
+uv tool install specify-cli --from git+https://github.com/lema017/speckit-vs.git
 specify init taskify --integration copilot
 cd taskify
 ```

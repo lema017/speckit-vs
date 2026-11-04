@@ -79,7 +79,7 @@ For guided examples, start with [SDD](../quickstart.md),
 
 ### Agentic SDD
 
-The `/speckit.*` slash commands that drive the core Spec-Driven Development process your coding agent runs step by step: constitution, specify, clarify, plan, checklist, tasks, analyze, implement, and converge. Run them in order, adding the clarify/checklist/analyze quality gates for anything with meaningful ambiguity.
+The `/speckit.*` slash commands that drive the core Spec-Driven Development process your coding agent runs step by step: constitution, specify, clarify or clarify-deep, plan, checklist, tasks, analyze, implement, and converge. Run them in order, adding the clarify/checklist/analyze quality gates for anything with meaningful ambiguity.
 
 [Agentic SDD reference →](agentic-sdd.md)
 

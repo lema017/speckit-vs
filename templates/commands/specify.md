@@ -8,6 +8,10 @@ handoffs:
     agent: speckit.clarify
     prompt: Clarify specification requirements
     send: true
+  - label: Deep Clarify Spec Requirements
+    agent: speckit.clarify-deep
+    prompt: Clarify specification requirements exhaustively
+    send: true
 scripts:
   sh: scripts/bash/resolve-template.sh spec-template --json
   ps: scripts/powershell/resolve-template.ps1 spec-template -Json

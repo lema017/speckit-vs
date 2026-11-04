@@ -32,7 +32,7 @@ from packaging.version import InvalidVersion, Version
 from ._download_security import MAX_JSON_METADATA_BYTES, read_response_limited
 from ._console import console
 
-GITHUB_API_LATEST = "https://api.github.com/repos/github/spec-kit/releases/latest"
+GITHUB_API_LATEST = "https://api.github.com/repos/lema017/speckit-vs/releases/latest"
 _RESOLUTION_FAILURE_OFFLINE = "offline or timeout"
 _RESOLUTION_FAILURE_RATE_LIMITED = (
     "rate limited (configure ~/.specify/auth.json with a GitHub token)"
@@ -700,7 +700,7 @@ def _detect_install_method(
     return method
 
 
-_GITHUB_SOURCE_URL = "git+https://github.com/github/spec-kit.git"
+_GITHUB_SOURCE_URL = "git+https://github.com/lema017/speckit-vs.git"
 _MANUAL_TAG_PLACEHOLDER = "vX.Y.Z"
 
 
@@ -1129,22 +1129,22 @@ def _rollback_hint(plan: _UpgradePlan) -> str:
     if plan.pre_upgrade_snapshot == "unknown":
         return (
             "Could not determine the previous version; "
-            "reinstall manually from: https://github.com/github/spec-kit/releases"
+            "reinstall manually from: https://github.com/lema017/speckit-vs/releases"
         )
     rollback_tag = _stable_release_tag_for_version(plan.pre_upgrade_snapshot)
     if rollback_tag is None:
         return (
             "Previous version was not an exact stable release tag; "
-            "reinstall manually from: https://github.com/github/spec-kit/releases"
+            "reinstall manually from: https://github.com/lema017/speckit-vs/releases"
         )
     if plan.method == _InstallMethod.PIPX:
         return (
             f"To pin back to the previous version: pipx install --force "
-            f"git+https://github.com/github/spec-kit.git@{rollback_tag}"
+            f"git+https://github.com/lema017/speckit-vs.git@{rollback_tag}"
         )
     return (
         f"To pin back to the previous version: uv tool install specify-cli --force "
-        f"--from git+https://github.com/github/spec-kit.git@{rollback_tag}"
+        f"--from git+https://github.com/lema017/speckit-vs.git@{rollback_tag}"
     )
 
 

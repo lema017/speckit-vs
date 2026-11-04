@@ -20,13 +20,13 @@ Spec Kit supports two install routes:
 
 ### Install from Source — Persistent Installation (Recommended)
 
-Install once and use everywhere. Replace `vX.Y.Z` with a release tag from [Releases](https://github.com/github/spec-kit/releases) — keep the leading `v` (for example, `v0.12.11`, not `0.12.11`):
+Install once and use everywhere. Replace `vX.Y.Z` with a release tag from [Releases](https://github.com/lema017/speckit-vs/releases) — keep the leading `v` (for example, `v0.12.11`, not `0.12.11`):
 
 > [!NOTE]
 > The command below requires **[uv](https://docs.astral.sh/uv/)**. If you see `command not found: uv`, [install uv first](./install/uv.md).
 
 ```bash
-uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z
+uv tool install specify-cli --from git+https://github.com/lema017/speckit-vs.git@vX.Y.Z
 ```
 
 Then initialize a project:
@@ -37,22 +37,22 @@ specify init <PROJECT_NAME> --integration copilot
 
 ### Install from PyPI
 
-Spec Kit is also published to PyPI as [`specify-cli`](https://pypi.org/project/specify-cli/), so you can install it with your preferred Python package manager without referencing the Git URL:
+The [`specify-cli`](https://pypi.org/project/specify-cli/) package on PyPI is the original Spec Kit and does not include `/speckit.clarify-deep`. To install this fork with your preferred Python package manager, use its Git URL:
 
 ```bash
 # Using uv (recommended)
-uv tool install specify-cli
+uv tool install specify-cli --from git+https://github.com/lema017/speckit-vs.git
 
 # Or using pipx
-pipx install specify-cli
+pipx install git+https://github.com/lema017/speckit-vs.git
 
 # Or using pip
-pip install specify-cli
+pip install git+https://github.com/lema017/speckit-vs.git
 ```
 
-If `specify-cli` is already installed, these commands keep the installed version, even when a newer release exists. Compare the version shown by `specify version` with the [latest version on PyPI](https://pypi.org/project/specify-cli/). To replace an older install, use the same tool as the original install: `uv tool install --force specify-cli`, `pipx install --force specify-cli` or `pip install --upgrade specify-cli`. A different tool can install a second copy and leave the old `specify` first on `PATH`. An old CLI can't set up projects from current releases: with 0.1.6, for example, `specify init --integration ...` fails with `No such option: --integration`, and `specify init --ai ...` fails with `No matching release asset found`.
+If `specify-cli` is already installed, these commands keep the installed version, even when a newer release exists. To replace an older install, use the same tool as the original install: `uv tool install specify-cli --force --from git+https://github.com/lema017/speckit-vs.git`, `pipx install --force git+https://github.com/lema017/speckit-vs.git` or `pip install --upgrade git+https://github.com/lema017/speckit-vs.git`. A different tool can install a second copy and leave the old `specify` first on `PATH`. An old CLI can't set up projects from current releases: with 0.1.6, for example, `specify init --integration ...` fails with `No such option: --integration`, and `specify init --ai ...` fails with `No matching release asset found`.
 
-To install a specific release, pin the version — for example `uv tool install specify-cli==0.12.11`. See the [PyPI installation guide](install/pypi.md) for details, including how to upgrade and how to [install from a custom or private package index](install/pypi.md#install-from-a-custom-or-private-package-index).
+To install a specific release, append its tag to the Git URL — for example `uv tool install specify-cli --from git+https://github.com/lema017/speckit-vs.git@vX.Y.Z`. The [PyPI installation guide](install/pypi.md) covers the original package only.
 
 ### One-time Usage
 
@@ -60,7 +60,7 @@ Run directly without installing — see the [One-time usage (uvx)](install/one-t
 
 ### Alternative Package Managers
 
-- **PyPI** — see the [PyPI installation guide](install/pypi.md)
+- **PyPI** (original project, without `/speckit.clarify-deep`) — see the [PyPI installation guide](install/pypi.md)
 - **pipx** — see the [pipx installation guide](install/pipx.md)
 - **Enterprise / Air-Gapped** — see the [air-gapped installation guide](install/air-gapped.md)
 

@@ -812,7 +812,7 @@ hooks:
 
 **Error**: `Extension requires spec-kit >=0.2.0`
 
-- **Fix**: Upgrade Spec Kit using the [Upgrade Guide](../upgrade.md). `uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git` remains available as a source-install fallback. If you installed from PyPI and want to stay on that route, follow the [PyPI upgrade guidance](../install/pypi.md#upgrade).
+- **Fix**: Upgrade Spec Kit using the [Upgrade Guide](../upgrade.md). `uv tool install specify-cli --force --from git+https://github.com/lema017/speckit-vs.git` remains available as a source-install fallback. If you installed from PyPI and want to stay on that route, follow the [PyPI upgrade guidance](../install/pypi.md#upgrade).
 
 **Error**: `Command file not found`
 

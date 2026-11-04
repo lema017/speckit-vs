@@ -31,6 +31,7 @@ skills by default.
 | `/speckit.implement` | `speckit-implement` | Execute the tasks |
 | `/speckit.converge` | `speckit-converge` | Assess implementation against the artifacts and append remaining work |
 | `/speckit.clarify` | `speckit-clarify` | Resolve ambiguity before planning (optional quality gate; formerly `/quizme`) |
+| `/speckit.clarify-deep` | `speckit-clarify-deep` | Resolve ambiguity exhaustively along a decision tree before planning (optional quality gate) |
 | `/speckit.analyze` | `speckit-analyze` | Check artifact consistency after tasks and before implementation (optional quality gate) |
 | `/speckit.checklist` | `speckit-checklist` | Generate requirements-quality checklists (optional quality gate) |
 
@@ -69,6 +70,20 @@ Asks up to five targeted questions about underspecified areas of the current spe
 Clarifying before planning keeps you from designing on top of ambiguity. If `/speckit.analyze` later surfaces requirement gaps, come back and run `/speckit.clarify` (or `/speckit.specify`) again.
 
 When `checklists/requirements.md` exists, `/speckit.clarify` may update its evaluated state as part of tightening the spec. This exception applies only to the built-in requirements checklist, not to custom review checklists.
+
+## `/speckit.clarify-deep`
+
+Interviews you about the current spec until every open decision is settled, with no fixed limit on questions, and encodes your answers back into `spec.md` the same way `/speckit.clarify` does. It asks in rounds: each round contains every decision whose prerequisites are already settled, with a recommended answer for each, and your answers decide what the next round asks. It looks up facts in the repository itself and leaves only the decisions to you. Optionally pass a focus area as an argument.
+
+```text
+/speckit.clarify-deep Focus on the task card behavior: status changes, comment limits, and who can be assigned.
+```
+
+Use `/speckit.clarify` when a short pass over the highest-impact gaps is enough, since it stops at five questions. Use `/speckit.clarify-deep` when decisions depend on each other or the feature is costly to get wrong, and you can spend the time on a longer interview. It stays out of implementation and tech-stack choices, which belong in `/speckit.plan`.
+
+Both commands write the same `## Clarifications` section, re-evaluate `checklists/requirements.md`, and run the same `before_clarify` and `after_clarify` hooks, so `/speckit.plan` and later commands work the same after either one.
+
+The interview method is adapted from the [`grilling` skill](https://github.com/mattpocock/skills/tree/main/skills/productivity/grilling) by Matt Pocock (MIT License).
 
 ## `/speckit.plan`
 

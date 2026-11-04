@@ -1,5 +1,8 @@
 # Installing from PyPI
 
+> [!WARNING]
+> This guide installs the original Spec Kit, which does not include `/speckit.clarify-deep`. To install this fork, follow [Install from Source](../installation.md#install-from-source--persistent-installation-recommended).
+
 Spec Kit is published to PyPI as [`specify-cli`](https://pypi.org/project/specify-cli/), maintained by the Spec Kit maintainers. Installing from PyPI is the second supported install route alongside installing from the [GitHub source](../installation.md#install-from-source--persistent-installation-recommended). Use whichever fits your workflow — both provide the same `specify` CLI.
 
 > [!NOTE]
