@@ -31,6 +31,7 @@ MODULES = [
     "test_report_languages.py",
 ]
 GATE_MODULES = ["test_graph_gate.py"]
+CLARIFY_MODULES = ["test_clarify_context.py"]
 
 MUTANTS = [
     # Acceptance 1: the catalog, in both directions.
@@ -211,6 +212,15 @@ GATE_MUTANTS = [
     ("gate-anchor-symbols-cut", 'path, *symbols = ref.split("::")', 'path, *symbols = ref.split("::")[:2]'),
     ("gate-unquoted-anchors-dropped", 'QUOTED.findall(line) or [part.strip() for part in line.split(",") if part.strip() not in ("", "none")]', "QUOTED.findall(line)"),
 ]
+# What clarify gets before its first question, checked with its own module alone.
+CLARIFY_MUTANTS = [
+    ("clarify-context-stops-without-a-feature", "    except (CapError, ValueError, AttributeError):\n        change = None\n", "    except ZeroDivisionError:\n        change = None\n"),
+    ("clarify-context-feature-from-outside", "        feature = source_of(root, change)\n    except (CapError", "        feature = str(change)\n    except (CapError"),
+    ("clarify-context-leaks-the-raw-delta", 'if key != "raw"}', 'if True}'),
+    ("clarify-context-hides-delta-errors", "delta=delta, delta_errors=errors))", "delta=delta, delta_errors=[]))"),
+    ("clarify-context-spec-without-the-file", "    if text is not None:\n        spec = ", "    if True:\n        spec = "),
+    ("clarify-context-without-the-catalog", "return emit(dict(catalog_summary(root), feature=feature", "return emit(dict({}, feature=feature"),
+]
 # In capabilities.py, also checked with test_graph_gate.py alone.
 GATE_DOOR_MUTANTS = [
     ("graph-exit-code-lost", "str(gate), *args], check=False).returncode", "str(gate), *args], check=False).returncode and 0"),
@@ -228,11 +238,11 @@ def main():
             if status != "killed":
                 survivors += 1
             print("%-36s %-8s %s" % (name, status, detail), flush=True)
-        for group, target in ((GATE_MUTANTS, "cap_graph.py"), (GATE_DOOR_MUTANTS, "capabilities.py")):
+        for group, target, modules in ((GATE_MUTANTS, "cap_graph.py", GATE_MODULES), (GATE_DOOR_MUTANTS, "capabilities.py", GATE_MODULES), (CLARIFY_MUTANTS, "capabilities.py", CLARIFY_MODULES)):
             for name, old, new in group:
                 if wanted and name not in wanted:
                     continue
-                status, detail = run_mutant(name, old, new, Path(directory), sys.executable, target=target, modules=GATE_MODULES)
+                status, detail = run_mutant(name, old, new, Path(directory), sys.executable, target=target, modules=modules)
                 if status != "killed":
                     survivors += 1
                 print("%-36s %-8s %s" % (name, status, detail), flush=True)

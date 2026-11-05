@@ -3,7 +3,7 @@ schema_version: "1.0"
 extension:
   id: capabilities
   name: "Capability Catalog"
-  version: "0.1.0"
+  version: "0.2.0"
   description: "Keeps the approved behaviour of each capability, its origin, its code and its tests discoverable across sessions."
   author: lema017
   repository: https://github.com/lema017/speckit-vs
@@ -36,6 +36,9 @@ provides:
     - name: speckit.capabilities.locate
       file: commands/speckit.capabilities.locate.md
       description: "Find where a behaviour lives, which change set it and which tests cover it. Read-only."
+    - name: speckit.capabilities.clarify-context
+      file: commands/speckit.capabilities.clarify-context.md
+      description: "Give clarify the settled rules, the conflicts and the reach of a spec before its first question. Read-only."
   config:
     - name: "capabilities-config.yml"
       template: "config-template.yml"
@@ -51,6 +54,10 @@ hooks:
     command: speckit.capabilities.review
     optional: false
     description: "Validate and seal the capability delta"
+  before_clarify:
+    command: speckit.capabilities.clarify-context
+    optional: false
+    description: "Give clarify what the catalog and the graph already know"
   before_plan:
     command: speckit.capabilities.review
     optional: false
