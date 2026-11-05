@@ -30,6 +30,7 @@ MODULES = [
     "test_discovery_tools.py",
     "test_report_languages.py",
 ]
+GATE_MODULES = ["test_graph_gate.py"]
 
 MUTANTS = [
     # Acceptance 1: the catalog, in both directions.
@@ -121,17 +122,17 @@ MUTANTS = [
 ]
 
 
-def run_mutant(name, old, new, workdir, python):
+def run_mutant(name, old, new, workdir, python, target="capabilities.py", modules=None):
     copy = workdir / name
     shutil.copytree(str(EXT), str(copy))
-    script = copy / "scripts" / "python" / "capabilities.py"
+    script = copy / "scripts" / "python" / target
     source = script.read_text(encoding="utf-8")
     count = source.count(old)
     if count != 1:
         return "stale", "the text to replace occurs %d times" % count
     script.write_text(source.replace(old, new), encoding="utf-8")
-    env = dict(os.environ, CAP_TEST_SCRIPT=str(script))
-    tests = [str(ROOT / "tests" / "extensions" / "capabilities" / module) for module in MODULES]
+    env = dict(os.environ, CAP_TEST_SCRIPT=str(copy / "scripts" / "python" / "capabilities.py"))
+    tests = [str(ROOT / "tests" / "extensions" / "capabilities" / module) for module in modules or MODULES]
     done = subprocess.run(
         [python, "-m", "pytest", *tests, "--rootdir", str(ROOT), "-n", "8", "-x", "-q", "-p", "no:cacheprovider", "--tb=no"],
         cwd=str(ROOT), capture_output=True, encoding="utf-8", errors="replace", env=env,
@@ -145,6 +146,43 @@ def run_mutant(name, old, new, workdir, python):
     return "killed", ", ".join(failed[:3])
 
 
+MUTANTS += [
+    # A catalog git ignores.
+    ("ignored-catalog-passes-check", 'self.hard.append("%s: %s" % (CATALOG, IGNORED_CATALOG))', "pass"),
+    ("ignored-catalog-not-reported", 'touched.append("skipped %s: %s" % (CATALOG, IGNORED_CATALOG))', "pass"),
+    ("ignored-catalog-counts-tracked", 'git(root, "check-ignore", "-q", CATALOG + "/index.md")', 'git(root, "check-ignore", "-q", "--no-index", CATALOG + "/index.md")'),
+]
+
+# The door to Graphify. Each one is checked with test_graph_gate.py alone.
+GATE_MUTANTS = [
+    ("gate-leaks-the-environment", "env=graph_env()", "env=dict(os.environ, **graph_env())"),
+    ("gate-backend-left-on", 'env["GRAPHIFY_BACKEND"] = "none"\n', "pass\n"),
+    ("gate-query-log-left-on", 'env["GRAPHIFY_QUERY_LOG_DISABLE"] = "1"\n', "pass\n"),
+    ("gate-reads-without-updating", 'done = tool(root, ["update", "."], UPDATE_SECONDS)', 'done = (0, "", "")'),
+    ("gate-reads-after-a-failed-update", "if done is None or done[0] != 0 or not (root / GRAPH).is_file():", "if False:"),
+    ("gate-writes-without-the-tool", '    if shutil.which("graphify") is None:\n        return None\n    wrote = ensure_ignores(root)', "    wrote = ensure_ignores(root)"),
+    ("gate-overwrites-the-ignore-file", "if not ignore.exists():", "if True:"),
+    ("gate-out-dir-not-ignored", '        own.write_text("*\\n", encoding="utf-8")\n', '        own.write_text("\\n", encoding="utf-8")\n'),
+    ("gate-version-not-reported", 'return [] if version == PINNED else ["Graphify %s is not the validated %s" % (version or "of unknown version", PINNED)]', "return []"),
+    ("gate-not-found-degrades", "if code == 4:", "if False:"),
+    ("gate-ambiguous-degrades", "if code == 3:", "if False:"),
+    ("gate-any-failure-accepted", "if code != 0:", "if False:"),
+    ("gate-any-graph-format", 'or (data.get("graph") or {}).get("schema_version") != SCHEMA:', "or False:"),
+    ("gate-by-name-off", 'found = "by-name" if named_in_file(root, ref) else "missing"', 'found = "missing"'),
+    ("gate-name-not-looked-for", 'return not name or re.search(r"(?<!\\w)%s(?!\\w)" % re.escape(name), target.read_bytes().decode("utf-8", "replace")) is not None', "return True"),
+    ("gate-anchor-may-leave-the-project", "if root not in target.parents or not target.is_file():", "if not target.is_file():"),
+    ("gate-repeated-name-silent", "if repeats:", "if False:"),
+    ("gate-repeated-symbol-is-unique", 'return "unique" if found == 1 else "ambiguous" if found > 1 else "absent"', 'return "unique" if found else "absent"'),
+    ("gate-dash-reaches-the-tool", 'if any(term.startswith("-") for term in args.terms):', "if False:"),
+    ("gate-spanish-silent", "if any(ord(char) > 127 for term in terms for char in term):", "if False:"),
+    ("gate-output-not-cut", '"output": stdout[:MAX_OUTPUT], "truncated"', '"output": stdout, "truncated"'),
+]
+# In capabilities.py, also checked with test_graph_gate.py alone.
+GATE_DOOR_MUTANTS = [
+    ("graph-exit-code-lost", "str(gate), *args], check=False).returncode", "str(gate), *args], check=False).returncode and 0"),
+]
+
+
 def main():
     wanted = set(sys.argv[1:])
     survivors = 0
@@ -156,6 +194,14 @@ def main():
             if status != "killed":
                 survivors += 1
             print("%-36s %-8s %s" % (name, status, detail), flush=True)
+        for group, target in ((GATE_MUTANTS, "cap_graph.py"), (GATE_DOOR_MUTANTS, "capabilities.py")):
+            for name, old, new in group:
+                if wanted and name not in wanted:
+                    continue
+                status, detail = run_mutant(name, old, new, Path(directory), sys.executable, target=target, modules=GATE_MODULES)
+                if status != "killed":
+                    survivors += 1
+                print("%-36s %-8s %s" % (name, status, detail), flush=True)
     print("%d not killed" % survivors, flush=True)
     return 1 if survivors else 0
 

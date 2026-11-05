@@ -65,6 +65,36 @@ When `review` seals a delta, or `prepare` is `ready`, or `scaffold` lists a capa
 | 3 | A decision is needed, or the operation is blocked |
 | 4 | A fold was interrupted and needs `recover` |
 | 5 | Another process is publishing |
+| 6 | Only `graph`: Graphify cannot answer. Use the anchors and `rg` |
+
+## Optional: a code graph
+
+[Graphify](https://github.com/Graphify-Labs/graphify) answers where code is and what a change affects. It never decides what the requirement is, and nothing else needs it. The extension never installs it.
+
+```bash
+uv tool install graphifyy==0.9.102
+```
+
+Everything goes through one door, with no LLM keys in its environment, and only `update`, `explain`, `affected` and `query` reach the tool:
+
+```bash
+python3 .specify/extensions/capabilities/scripts/python/capabilities.py graph status
+```
+
+| Subcommand | What it does |
+|---|---|
+| `graph status` | Whether it is installed, and a warning if the version is not `0.9.102` |
+| `graph explain <anchor or name> [--all]` | The node and its connections |
+| `graph affected <anchor> [--depth N]` | What calls or uses it. If the name repeats it warns: confirm in the code |
+| `graph query <english words>` | Nodes around technical English keywords. Spanish or a whole question finds almost nothing |
+| `graph anchors [--capability <name>]` | Whether each `Code` anchor of the catalog still exists: `unique`, `ambiguous`, `by-name`, `missing` |
+
+- Every read runs `update` first, because `query` does not say when the graph is old. In a repository of 350 source files that took 2 s with no changes and 44 s after a change. If it fails, nothing is read from the old graph.
+- It writes `graphify-out/`, which ignores itself, and `.graphifyignore` if you have none. No tracked file changes.
+- `by-name` means the graph has no such node, but the file contains the name: Graphify does not model a Java `static` field, for instance.
+- Without Graphify, `status` says so with exit code 0, the rest exit with 6, and `anchors` checks by file and name.
+
+Validated with the real tool on Python, Java and TypeScript projects. A model has not been run through this path.
 
 ## What CI enforces
 
@@ -108,6 +138,7 @@ A report that names no time zone, or no time, is judged by when the file was wri
 
 `ci/capabilities-check.yml` is an example and blocks nothing by itself. Without the last two steps, the result is only informative.
 
+0. Version `specs/`. If `.gitignore` ignores it, `check` fails: CI would have nothing to check.
 1. Copy it to `.github/workflows/` and put in your test command, with JUnit output.
 2. Keep `pull_request` and `merge_group` as triggers.
 3. Keep `fetch-depth: 0` and the PR head as `ref`.

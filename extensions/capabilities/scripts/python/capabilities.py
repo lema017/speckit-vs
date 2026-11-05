@@ -35,6 +35,7 @@ except ImportError:  # Windows
 OK, HARD, INVALID, DECISION, RECOVER, BUSY = 0, 1, 2, 3, 4, 5
 
 CATALOG = "specs/_capabilities"
+IGNORED_CATALOG = "git ignores it, so it stays on this machine and CI has nothing to check. Remove that rule from .gitignore"
 CHANGES = CATALOG + "/_changes"
 INDEX = CATALOG + "/index.md"
 STATE_DIR = ".specify/capabilities"
@@ -253,6 +254,11 @@ def upsert_agent_block(root, rel):
     return rel
 
 
+def catalog_is_ignored(root):
+    """A catalog git ignores stays on one machine, and CI would pass with nothing to check."""
+    return git(root, "check-ignore", "-q", CATALOG + "/index.md") is not None
+
+
 def ensure_setup(root):
     """Idempotent project setup: appends lines and keeps the agent block current. Never rewrites anything else."""
     touched = []
@@ -268,6 +274,8 @@ def ensure_setup(root):
         result = upsert_agent_block(root, rel)
         if result:
             touched.append(result)
+    if catalog_is_ignored(root):
+        touched.append("skipped %s: %s" % (CATALOG, IGNORED_CATALOG))
     return touched
 
 
@@ -1561,6 +1569,8 @@ class Check:
             self.head_status[name] = rule_status(read(catalog / name / "implementation.md"))
 
     def check_catalog_shape(self):
+        if catalog_is_ignored(self.root):
+            self.hard.append("%s: %s" % (CATALOG, IGNORED_CATALOG))
         self.hard.extend(naming_errors(self.root))
         owners = {}
         for name in self.capabilities:
@@ -1791,7 +1801,15 @@ def dispatch(args, root):
     return cmd_apply(root, change, args.staged, args.no_tasks)
 
 
+def run_graph(args):
+    """The optional graph has its own door: nothing in this script needs it."""
+    gate = Path(__file__).resolve().with_name("cap_graph.py")
+    return subprocess.run([sys.executable, "-I", "-S", str(gate), *args], check=False).returncode
+
+
 def main():
+    if sys.argv[1:2] == ["graph"]:
+        return run_graph(sys.argv[2:])
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     args = build_parser().parse_args()

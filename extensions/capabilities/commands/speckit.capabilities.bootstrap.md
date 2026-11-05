@@ -29,7 +29,7 @@ The input is empty, `--scaffold-only`, one or more capability names, or `--valid
 If the input starts with `--validate`, go to **Validating rules**.
 
 1. Run `{SCRIPT} status`. If `journal_pending` is true, run `{SCRIPT} recover` and start again; if it answers `manual`, show `edited_since` and stop.
-2. Read the README, the entry points and the tests. Limit it to what the map needs.
+2. Read the README, the entry points and the tests. Limit it to what the map needs. If `graphify-out/GRAPH_REPORT.md` exists, its `## Communities` can suggest groupings. They change between builds: use them as hints and never save them.
 3. Propose a table with `Capability`, `Covers` and `Entry point`. Names match `^[a-z][a-z0-9-]*$` and speak the language of the business, not of the code. Keep them few. Leave out what the project has already consolidated.
 4. **Stop and ask which capabilities to keep or change.** Continue only when the user answers.
 5. For each approved capability, run `{SCRIPT} scaffold --capability <name> --covers "<one line>"`. `planned` and `unchanged` are both fine. Report any `setup` entry that starts with `skipped`: that file for agents was left alone.

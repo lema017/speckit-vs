@@ -11,6 +11,7 @@ import textwrap
 import pytest
 
 from .conftest import (
+    hard_with,
     CAT,
     EXT_DIR,
     IMPL,
@@ -645,3 +646,37 @@ def test_locate_with_no_catalog_creates_nothing(bare):
 def test_locate_rejects_what_is_not_a_capability(repo, name):
     rc, out = repo.cap("locate", "--capability", name)
     assert (rc, out["status"]) == (2, "invalid")
+
+
+# ---------------------------------------------------------------- a catalog git ignores
+
+
+def test_a_catalog_git_ignores_blocks_check_because_ci_would_have_nothing_to_check(repo):
+    """The .gitignore of Spec Kit itself ignores specs/. Nothing said so, and CI would have passed."""
+    (repo.path / ".gitignore").write_text(read_gitignore(repo) + "specs/\n", encoding="utf-8")
+    repo.git("rm", "-r", "-q", "--cached", "specs")
+    repo.commit("the catalog is no longer versioned")
+    rc, out = repo.ci()
+    assert rc == 1
+    assert hard_with(out, "specs/_capabilities", "git ignores it", "CI has nothing to check")
+
+
+def test_setup_says_when_git_ignores_the_catalog(repo):
+    (repo.path / ".gitignore").write_text(read_gitignore(repo) + "specs/\n", encoding="utf-8")
+    repo.git("rm", "-r", "-q", "--cached", "specs")
+    repo.commit("the catalog is no longer versioned")
+    rc, out = repo.cap("scaffold", "--capability", "new-one", "--covers", "Algo nuevo")
+    assert rc == 0, out
+    assert any(line.startswith("skipped specs/_capabilities: git ignores it") for line in out["setup"]), out
+
+
+def test_a_tracked_catalog_is_fine_even_if_a_rule_would_ignore_it(repo):
+    (repo.path / ".gitignore").write_text(read_gitignore(repo) + "specs/\n", encoding="utf-8")
+    repo.commit("the rule came later: what is tracked stays tracked")
+    rc, out = repo.ci()
+    assert rc == 0, out
+
+
+def read_gitignore(repo):
+    path = repo.path / ".gitignore"
+    return path.read_text(encoding="utf-8") if path.exists() else ""

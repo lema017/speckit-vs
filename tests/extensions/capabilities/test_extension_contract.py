@@ -324,11 +324,47 @@ def test_bootstrap_prompt_waits_for_approval_and_never_decides_for_a_person():
 
 def test_locate_prompt_is_read_only_and_says_where_the_answer_comes_from():
     text = (EXT_DIR / "commands" / "speckit.capabilities.locate.md").read_text(encoding="utf-8")
-    assert "This command writes nothing." in text
+    assert "This command writes nothing, except the graph when Graphify is installed" in text
     assert "`resolves: false` means the catalog lags the code" in text
-    assert "this part of the answer comes from the code and not from the catalog" in text
+    assert "which part of the answer comes from the graph or the code and not from the catalog" in text
     assert "The question and the catalog may be in different languages." in text
     assert "`rg`" in text and "origin" in text
+
+
+def test_locate_goes_to_the_catalog_then_the_graph_then_the_code_and_the_graph_never_decides():
+    text = (EXT_DIR / "commands" / "speckit.capabilities.locate.md").read_text(encoding="utf-8")
+    assert text.index("{SCRIPT} locate`") < text.index("{SCRIPT} graph status") < text.index("search the code with `rg`")
+    assert "{SCRIPT} graph explain <anchor>" in text and "{SCRIPT} graph affected <anchor>" in text
+    assert "{SCRIPT} graph query <technical English keywords>" in text
+    assert "It does not work with Spanish or with a whole question." in text
+    assert "confirm the callers in the code" in text
+    assert "With exit code 6, `not-found` or `ambiguous`, go to the next step." in text
+    assert "never what the requirement is" in text
+
+
+def test_only_the_gate_touches_graphify():
+    scripts = EXT_DIR / "scripts" / "python"
+    assert sorted(path.name for path in scripts.iterdir() if path.suffix == ".py") == ["cap_graph.py", "capabilities.py"]
+    main = (scripts / "capabilities.py").read_text(encoding="utf-8")
+    assert '"graphify"' not in main and "GRAPHIFY_" not in main
+    for name in COMMANDS:
+        text = (EXT_DIR / "commands" / ("speckit.capabilities.%s.md" % name)).read_text(encoding="utf-8")
+        assert "graphify update" not in text and "graphify query" not in text and "graphify explain" not in text
+
+
+def test_bootstrap_takes_communities_as_hints_and_writes_nothing_for_them():
+    text = (EXT_DIR / "commands" / "speckit.capabilities.bootstrap.md").read_text(encoding="utf-8")
+    assert "use them as hints and never save them" in text
+    assert "graph update" not in text
+
+
+def test_the_installed_copy_reaches_the_gate(installed_project):
+    done = subprocess.run(
+        [sys.executable, "-I", "-S", str(installed_project / ".specify/extensions/capabilities/scripts/python/capabilities.py"), "graph", "status", "--root", str(installed_project)],
+        capture_output=True, encoding="utf-8", env={"PATH": "/usr/bin:/bin"},
+    )
+    assert done.returncode == 0, done.stderr
+    assert json.loads(done.stdout)["available"] is False
 
 
 @pytest.mark.parametrize("name", ["fold", "bootstrap"])
