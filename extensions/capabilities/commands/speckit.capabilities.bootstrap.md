@@ -18,8 +18,8 @@ The input is empty, `--scaffold-only`, one or more capability names, or `--valid
 
 ## Rules
 
-- **Write nothing before the user approves the map.** A request to bootstrap is not approval of the map: propose it first. If you cannot ask the user, show the map and stop.
-- Do not change code, tests, `specs/NNN-*` or agent instruction files, and do not commit.
+- **Write nothing before the user approves the map.** A request to bootstrap is not approval of the map: propose it first. If you cannot ask the user, show the map and stop. The graph keeps its own files, `graphify-out/` and `.graphifyignore`: those do not count.
+- Do not change code, tests, `specs/NNN-*` or agent instruction files, do not install anything, and do not commit.
 - Take rules only from code and tests you read. Each rule is one observable sentence, with its value.
 - Never write `[inferred]` by hand. The operation adds it.
 - If the code looks wrong, record what it does and report the suspicion separately. Approving a different behaviour is a person's decision.
@@ -28,13 +28,14 @@ The input is empty, `--scaffold-only`, one or more capability names, or `--valid
 
 If the input starts with `--validate`, go to **Validating rules**.
 
-1. Run `{SCRIPT} status`. If `journal_pending` is true, run `{SCRIPT} recover` and start again; if it answers `manual`, show `edited_since` and stop.
-2. Read the README, the entry points and the tests. Limit it to what the map needs. If `graphify-out/GRAPH_REPORT.md` exists, its `## Communities` can suggest groupings. They change between builds: use them as hints and never save them.
-3. Propose a table with `Capability`, `Covers` and `Entry point`. Names match `^[a-z][a-z0-9-]*$` and speak the language of the business, not of the code. Keep them few. Leave out what the project has already consolidated.
-4. **Stop and ask which capabilities to keep or change.** Continue only when the user answers.
-5. For each approved capability, run `{SCRIPT} scaffold --capability <name> --covers "<one line>"`. `planned` and `unchanged` are both fine. Report any `setup` entry that starts with `skipped`: that file for agents was left alone.
-6. With `--scaffold-only`, report the map and finish. Without it, continue with the capabilities the user chose to consolidate now.
-7. For each one, write `specs/_capabilities/_changes/<YYYYMMDD>-bootstrap-<capability>/capability-delta.md`:
+1. Run `{SCRIPT} graph status`. If `available` is false, **stop**: say that Graphify is part of this fork and is missing, and show the `install` command from that output without running it. Then run `{SCRIPT} status`. If `journal_pending` is true, run `{SCRIPT} recover` and start again; if it answers `manual`, show `edited_since` and stop.
+2. Run `{SCRIPT} graph update`, so that `graphify-out/GRAPH_REPORT.md` exists. With exit code 6, `no-code` means there is no code to graph yet, and any other `reason` means the graph was not built: say which and go on without it.
+3. Read the README, the entry points and the tests. Limit it to what the map needs. If `graphify-out/GRAPH_REPORT.md` exists, its `## Communities` can suggest groupings. They change between builds: use them as hints and never save them.
+4. Propose a table with `Capability`, `Covers` and `Entry point`. Names match `^[a-z][a-z0-9-]*$` and speak the language of the business, not of the code. Keep them few. Leave out what the project has already consolidated.
+5. **Stop and ask which capabilities to keep or change.** Continue only when the user answers.
+6. For each approved capability, run `{SCRIPT} scaffold --capability <name> --covers "<one line>"`. `planned` and `unchanged` are both fine. Report any `setup` entry that starts with `skipped`: that file for agents was left alone.
+7. With `--scaffold-only`, report the map and finish. Without it, continue with the capabilities the user chose to consolidate now.
+8. For each one, write `specs/_capabilities/_changes/<YYYYMMDD>-bootstrap-<capability>/capability-delta.md`:
 
    ```markdown
    # Bootstrap: <capability>
@@ -52,8 +53,8 @@ If the input starts with `--validate`, go to **Validating rules**.
    - Links: none
    ```
 
-8. Run `{SCRIPT} review --change <record>`, then `{SCRIPT} prepare --change <record> --no-tasks`. Act on `status` as `speckit.capabilities.fold` describes.
-9. In `<staging>/<capability>/implementation.md`, write one block under `## Rule Status` for each rule:
+9. Run `{SCRIPT} review --change <record>`, then `{SCRIPT} prepare --change <record> --no-tasks`. Act on `status` as `speckit.capabilities.fold` describes.
+10. In `<staging>/<capability>/implementation.md`, write one block under `## Rule Status` for each rule:
 
    ```markdown
    ### R-<name>
@@ -64,8 +65,8 @@ If the input starts with `--validate`, go to **Validating rules**.
    ```
 
    Use `conforming` only if a test you read would fail if the value in the rule changed. A test that reads the same constant as the code keeps passing with any value, so it does not count. Otherwise use `unverified`, with `Tests: none`. Never `discrepant`: an inferred rule says what the code does, so there is nothing to differ from. `apply` rejects a symbol that does not appear in the file, so copy it from what you read. Do not invent reasons under `Decisions`. Test references: pytest `file::[Class::]test`; JUnit `file::[Nested::]method`, or the `@DisplayName` text under Gradle, which does not report the method; Jest and Vitest `file::[describe::]title`, with each title as the file writes it, including `%d`.
-10. Run `{SCRIPT} apply --change <record> --staged <staging> --no-tasks`. `invalid-staging`: fix the drafts and run it again. `base-changed`: start again from step 8. `busy`: try again when it finishes.
-11. Run `{SCRIPT} check --mode dev --change <record>`. Report the capabilities, the rules, which are `unverified`, and any suspected bug. Remind the user that the rules stay `[inferred]` until validated.
+11. Run `{SCRIPT} apply --change <record> --staged <staging> --no-tasks`. `invalid-staging`: fix the drafts and run it again. `base-changed`: start again from step 9. `busy`: try again when it finishes.
+12. Run `{SCRIPT} check --mode dev --change <record>`. Report the capabilities, the rules, which are `unverified`, and any suspected bug. Remind the user that the rules stay `[inferred]` until validated.
 
 ## Validating rules
 
@@ -82,4 +83,4 @@ Only for rules the user names. Validating says a person approved the rule as a r
    - Links: none
    ```
 
-3. Continue with steps 8, 10 and 11. Do not change the `implementation.md` draft.
+3. Continue with steps 9, 11 and 12. Do not change the `implementation.md` draft.
