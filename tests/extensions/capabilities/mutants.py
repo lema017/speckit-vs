@@ -66,6 +66,9 @@ MUTANTS = [
     ("fr-signature-off", "elif FR_LINE.search(text):", "elif False:"),
     ("catalog-counts-as-feature", 'return name.startswith(CATALOG + "/") and not name.startswith(CHANGES + "/")', "return False"),
     ("change-record-without-marker-ok", 'if os.path.basename(name) == "capability-delta.md":', "if False:"),
+    # What the real agent runs found.
+    ("review-names-no-rule", 'if set(split_links(entry["links"])) & set(changed)]', "if False]"),
+    ("review-hides-other-text", '"other_text": not changed and not delta_changed,', '"other_text": False,'),
     # The mechanism underneath.
     ("anchor-symbol-not-checked", 'if name and not re.search(r"(?<!\\w)%s(?!\\w)" % re.escape(name), text):', "if False:"),
     ("anchor-not-rechecked-in-ci", 'problems.append("%s: code anchor does not resolve: %s" % (rule_id, ref))', "pass"),

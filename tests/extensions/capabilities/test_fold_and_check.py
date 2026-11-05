@@ -550,6 +550,8 @@ def test_a_requirement_changed_after_review_is_presented_and_not_sealed(repo):
     rc, out = repo.cap("review", "--change", change)
     assert rc == 3 and out["status"] == "changed"
     assert "FR-001" in out["linked"]
+    assert out["rules"] == ["R-session-expiry"], "the person has to know which approved rule is at stake"
+    assert out["other_text"] is False
     assert repo.tree() == before
 
     rc, out = repo.cap("prepare", "--change", change)
@@ -608,6 +610,27 @@ def test_clarify_edits_are_detected(repo):
     repo.write(change + "/spec.md", original.replace("- To: " + EXPIRY_15, "- To: La sesión expira tras 10 minutos."))
     rc, out = repo.cap("review", "--change", change)
     assert rc == 3 and out["status"] == "changed" and out["delta_changed"] is True
+
+
+def test_text_outside_the_tracked_keys_is_reported_as_such_and_not_sealed(repo):
+    change = on_branch_reviewed(repo)
+    repo.replace(change + "/spec.md", "## Requirements", "## Clarifications\n\n- Q: From when? -> A: From login.\n\n## Requirements")
+    before = repo.tree()
+    rc, out = repo.cap("review", "--change", change)
+    assert rc == 3 and out["status"] == "changed"
+    assert (out["sections"], out["linked"], out["rules"], out["other_text"]) == ([], [], [], True)
+    assert repo.tree() == before
+
+    rc, out = repo.cap("prepare", "--change", change)
+    assert rc == 3 and out["status"] == "needs-review"
+
+
+def test_a_changed_requirement_no_rule_links_to_names_no_rule(repo):
+    change = on_branch_reviewed(repo)
+    repo.replace(change + "/spec.md", "- **FR-001**:", "- **FR-009**: System MUST log out.\n- **FR-001**:")
+    rc, out = repo.cap("review", "--change", change)
+    assert rc == 3 and out["sections"] == ["FR-009"]
+    assert (out["linked"], out["rules"], out["other_text"]) == ([], [], False)
 
 
 # ---------------------------------------------------------------- changes outside specify

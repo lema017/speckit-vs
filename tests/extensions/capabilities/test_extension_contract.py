@@ -90,6 +90,8 @@ def test_context_command_is_read_only_and_invents_no_branch():
 
 def test_review_command_never_decides_a_change_of_meaning_alone():
     text = (EXT_DIR / "commands" / "speckit.capabilities.review.md").read_text(encoding="utf-8")
+    assert "Name the changed items and the `rules`" in text
+    assert "If you cannot see the previous text, treat it as a change of meaning" in text
     assert "do not fix anything on your own" in text
     assert "stop on any change of meaning" in text
 

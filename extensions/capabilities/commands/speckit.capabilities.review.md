@@ -44,10 +44,10 @@ $ARGUMENTS
 
    For any other error, show it and stop. Never delete or rewrite `From` to make an error go away.
 
-4. **`changed`.** The script lists which `sections` changed, which are `linked` from the delta, and whether `delta_changed`. It does not judge meaning; you do. Compare each changed item with the version in the sealed spec and classify it:
+4. **`changed`.** The script lists which `sections` changed, which are `linked` from the delta, the `rules` those links belong to, and whether `delta_changed`. `other_text: true` means only text outside those keys changed, such as a `Clarifications` entry, and such text can change meaning too. The script does not judge meaning; you do. Compare each change with its previous text, from `git diff` or from what you read earlier in this session, and classify it. If you cannot see the previous text, treat it as a change of meaning:
 
    - **Cosmetic** (wording that keeps the same behaviour): report the IDs and run `{SCRIPT} review --accept`.
-   - **Meaning** (a value, a condition or a behaviour changed): do not fix anything on your own. Show the difference and these options, and wait for the user:
+   - **Meaning** (a value, a condition or a behaviour changed): do not fix anything on your own. Name the changed items and the `rules`, show the difference and these options, and wait for the user:
      1. Update the delta to match, then `{SCRIPT} review --accept`.
      2. Revert the spec.
      3. Stop.

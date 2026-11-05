@@ -687,7 +687,15 @@ def cmd_review(root, change, accept):
     delta_changed = current["delta_sha"] != lock["delta_sha"]
     if changed or delta_changed or current["spec_sha"] != lock["spec_sha"]:
         linked = {link for entry in delta["entries"] for link in split_links(entry["links"])}
-        return emit({"status": "changed", "sections": changed, "linked": sorted(linked & set(changed)), "delta_changed": delta_changed}, DECISION)
+        rules = [entry["id"] for entry in delta["entries"] if set(split_links(entry["links"])) & set(changed)]
+        return emit({
+            "status": "changed",
+            "sections": changed,
+            "linked": sorted(linked & set(changed)),
+            "rules": sorted(rules),
+            "delta_changed": delta_changed,
+            "other_text": not changed and not delta_changed,
+        }, DECISION)
     return emit({"status": "unchanged"})
 
 
