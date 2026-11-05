@@ -85,7 +85,7 @@ def test_context_command_is_read_only_and_invents_no_branch():
     text = (EXT_DIR / "commands" / "speckit.capabilities.context.md").read_text(encoding="utf-8")
     assert "No branch was created. This output contains no BRANCH_NAME and no FEATURE_NUM." in text
     assert "Do not run `check-prerequisites`" in text
-    assert "Do not write any file" in text
+    assert "Do not write any file yourself" in text
 
 
 def test_review_command_never_decides_a_change_of_meaning_alone():
@@ -325,7 +325,7 @@ def test_bootstrap_prompt_waits_for_approval_and_never_decides_for_a_person():
 
 def test_locate_prompt_is_read_only_and_says_where_the_answer_comes_from():
     text = (EXT_DIR / "commands" / "speckit.capabilities.locate.md").read_text(encoding="utf-8")
-    assert "This command writes nothing, except the graph when Graphify is installed" in text
+    assert "This command writes nothing, except the graph: `graphify-out/`" in text
     assert "`resolves: false` means the catalog lags the code" in text
     assert "which part of the answer comes from the graph or the code and not from the catalog" in text
     assert "The question and the catalog may be in different languages." in text
@@ -353,10 +353,35 @@ def test_only_the_gate_touches_graphify():
         assert "graphify update" not in text and "graphify query" not in text and "graphify explain" not in text
 
 
-def test_bootstrap_takes_communities_as_hints_and_writes_nothing_for_them():
+def test_bootstrap_builds_the_graph_first_and_takes_communities_as_hints():
     text = (EXT_DIR / "commands" / "speckit.capabilities.bootstrap.md").read_text(encoding="utf-8")
     assert "use them as hints and never save them" in text
-    assert "graph update" not in text
+    assert text.index("{SCRIPT} graph update") < text.index("`## Communities`") < text.index("**Stop and ask which capabilities")
+    assert "`no-code` means there is no code to graph yet" in text
+    assert "`graphify-out/` and `.graphifyignore`: those do not count" in text
+
+
+def test_context_looks_in_the_catalog_then_the_graph_and_the_graph_never_decides():
+    text = (EXT_DIR / "commands" / "speckit.capabilities.context.md").read_text(encoding="utf-8")
+    assert text.index("`covers` text") < text.index("{SCRIPT} graph query") < text.index("{SCRIPT} graph anchors") < text.index("{SCRIPT} status --capability")
+    assert "`graph query` does not work with Spanish" in text
+    assert "never what the requirement is" in text
+    assert "warn visibly that the graph was not used and go on" in text
+    assert "there is no code to graph yet: say so and go on" in text
+
+
+@pytest.mark.parametrize("name", ["context", "locate", "bootstrap"])
+def test_prompts_that_use_the_graph_stop_without_it_and_install_nothing(name):
+    text = (EXT_DIR / "commands" / ("speckit.capabilities.%s.md" % name)).read_text(encoding="utf-8")
+    assert "If `available` is false, **stop**" in text
+    assert "show the `install` command from that output without running it" in text
+    assert "install anything" in text
+    assert "uv tool install" not in text, "the command comes from the gate, so it has one source"
+
+
+def test_the_context_prompt_gives_each_call_its_own_subcommand():
+    frontmatter = (EXT_DIR / "commands" / "speckit.capabilities.context.md").read_text(encoding="utf-8").split("---")[1]
+    assert yaml.safe_load(frontmatter)["scripts"]["py"] == "scripts/python/capabilities.py"
 
 
 def test_the_installed_copy_reaches_the_gate(installed_project):
