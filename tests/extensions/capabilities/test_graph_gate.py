@@ -13,6 +13,8 @@ from pathlib import Path
 
 import pytest
 
+from specify_cli._graphify import REINSTALL_COMMAND
+
 from .conftest import PYTHON, ROOT, SCRIPT
 
 GATE = SCRIPT.with_name("cap_graph.py")
@@ -617,6 +619,33 @@ def test_the_network_probe_notices_a_connection(tmp_path):
     done = subprocess.run([sys.executable, "-c", probe], cwd=str(tmp_path), capture_output=True, encoding="utf-8", errors="replace")
     line = next(line for line in done.stderr.splitlines() if line.startswith("NETWORK "))
     assert "example.invalid" in json.loads(line[len("NETWORK "):])["attempts"][0]
+
+
+def test_specify_and_the_gate_offer_the_same_way_to_reinstall():
+    assert 'INSTALL = "%s"' % REINSTALL_COMMAND in GATE.read_text(encoding="utf-8")
+    assert REINSTALL == REINSTALL_COMMAND
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a link on PATH is how uv leaves specify on POSIX")
+def test_a_new_project_reaches_the_tool_with_graphify_off_path(tmp_path):
+    """The shape of ``uv tool install``. A real one was also checked by hand, since it needs the network."""
+    on_path = tmp_path / "bin"
+    on_path.mkdir()
+    (on_path / "specify").symlink_to(shutil.which("specify", path=str(Path(sys.executable).parent)))
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "app.py").write_text("def main():\n    return 1\n", encoding="utf-8")
+    env = dict(os.environ, HOME=str(tmp_path), PATH=os.pathsep.join((str(on_path), "/usr/bin", "/bin")))
+    assert shutil.which("graphify", path=env["PATH"]) is None
+    subprocess.run(
+        ["specify", "init", "--here", "--force", "--integration", "claude", "--script", "sh", "--ignore-agent-tools"],
+        cwd=str(project), env=env, capture_output=True, encoding="utf-8", errors="replace", check=True,
+    )
+    assert (project / "graphify-out/graph.json").is_file()
+    installed = project / ".specify/extensions/capabilities/scripts/python/cap_graph.py"
+    done = subprocess.run([PYTHON, "-I", "-S", str(installed), "status", "--root", str(project)], env=env, capture_output=True, encoding="utf-8")
+    out = json.loads(done.stdout)
+    assert out["available"] is True and out["version"] == PINNED and out["graph"] is True
 
 
 def test_the_real_tool_says_when_there_is_no_code(tmp_path):

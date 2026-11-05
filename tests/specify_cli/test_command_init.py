@@ -431,7 +431,7 @@ def _init_for(project: Path, key: str, *args: str) -> dict[str, bytes]:
 
 
 # The extension's files that do not carry its name, and the records init timestamps on every run.
-_DEFAULT_ALSO_WRITES = {".specify/extensions.yml", ".specify/extensions/.registry"}
+_DEFAULT_ALSO_WRITES = {".specify/extensions.yml", ".specify/extensions/.registry", ".graphifyignore"}
 _TIMESTAMPED = (".manifest.json", "workflow-registry.json")
 
 
@@ -449,9 +449,44 @@ def test_on_every_integration_the_default_adds_only_its_own(tmp_path: Path, monk
     if not get_integration(key).list_command_templates():
         assert added == set()
         return
-    assert {path for path in added if "capabilities" not in path} == _DEFAULT_ALSO_WRITES
+    assert {path for path in added if "capabilities" not in path and not path.startswith("graphify-out/")} == _DEFAULT_ALSO_WRITES
     in_project = [path for path in added if "capabilities" in path and not path.startswith(".specify/")]
     assert in_project or list((tmp_path / "home").rglob("*capabilities*")), "no command reached this integration"
+
+
+def test_a_new_project_with_code_gets_its_first_graph(tmp_path: Path):
+    (tmp_path / "demo").mkdir()
+    (tmp_path / "demo" / "app.py").write_text("def main():\n    return 1\n", encoding="utf-8")
+    project, output = _default_ext_init(tmp_path)
+    assert "graph built" in output
+    assert (project / "graphify-out/graph.json").is_file()
+    assert (project / ".graphifyignore").is_file()
+
+
+def test_a_new_project_without_code_has_no_graph_and_it_is_not_a_failure(tmp_path: Path):
+    project, output = _default_ext_init(tmp_path)
+    assert "no code yet" in output
+    assert "not built" not in output
+    assert not (project / "graphify-out/graph.json").exists()
+    assert (project / ".graphifyignore").is_file()
+
+
+def test_without_capabilities_nothing_is_written_for_the_graph(tmp_path: Path):
+    (tmp_path / "demo").mkdir()
+    (tmp_path / "demo" / "app.py").write_text("def main():\n    return 1\n", encoding="utf-8")
+    project, output = _default_ext_init(tmp_path, "--no-default-extensions")
+    assert "not used in this project" in output
+    assert not (project / ".graphifyignore").exists()
+    assert not (project / "graphify-out").exists()
+
+
+def test_a_graph_that_cannot_be_built_does_not_stop_init(tmp_path: Path, monkeypatch):
+    import specify_cli.command_init as command_init
+
+    monkeypatch.setattr(command_init, "build_first_graph", lambda _project: ("error", "not built: update-failed"))
+    project, output = _default_ext_init(tmp_path)
+    assert "not built: update-failed" in output
+    assert _installed(project) == ["capabilities"]
 
 
 def test_a_new_project_gets_the_default_extensions(tmp_path: Path):

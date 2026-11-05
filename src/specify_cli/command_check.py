@@ -11,6 +11,7 @@ from rich.markup import escape
 
 from ._agent_config import AGENT_CONFIG
 from ._console import StepTracker, console, show_banner
+from ._graphify import REINSTALL_COMMAND, graphify_version
 
 
 def _check_external_tools(
@@ -99,7 +100,20 @@ def check() -> None:
     tracker.add("code-insiders", "Visual Studio Code Insiders")
     check_tool("code-insiders", tracker=tracker)
 
+    tracker.add("graphify", "Graphify")
+    graph_version = graphify_version()
+    if graph_version:
+        tracker.complete("graphify", escape(graph_version))
+    else:
+        tracker.error("graphify", "not found")
+
     console.print(tracker.render())
+
+    if not graph_version:
+        console.print("\n[bold red]Specify CLI is not ready: Graphify is missing.[/bold red]")
+        console.print("It is part of specify. Reinstall with:")
+        console.print(REINSTALL_COMMAND, soft_wrap=True, highlight=False, markup=False)
+        raise typer.Exit(1)
 
     console.print("\n[bold green]Specify CLI is ready to use![/bold green]")
 

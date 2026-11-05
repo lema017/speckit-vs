@@ -84,6 +84,8 @@ def isolated_registry(monkeypatch, tmp_path):
     monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.delenv("SPECIFY_INIT_DIR", raising=False)
     monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
+    # These tests replace shutil.which for their own tools. test_command_check covers Graphify.
+    monkeypatch.setattr("specify_cli.command_check.graphify_version", lambda: "0.9.102")
     unload_installed_integrations()
     yield
     unload_installed_integrations()

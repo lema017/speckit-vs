@@ -26,6 +26,7 @@ from ._assets import (
     get_speckit_version,
 )
 from ._console import StepTracker, console, select_with_arrows, show_banner
+from ._graphify import build_first_graph
 from ._utils import check_tool
 
 
@@ -759,6 +760,7 @@ def register(app: typer.Typer) -> None:
                     f"extension-{i}", f"Install extension: {_escape_markup(ext_spec)}"
                 )
 
+        tracker.add("graph", "Build code graph")
         tracker.add("final", "Finalize")
 
         # Resolve trust for URL-based extensions BEFORE entering the Live
@@ -1083,6 +1085,11 @@ def register(app: typer.Typer) -> None:
                 # preset-provided constitution-template (resolved via the
                 # priority stack) wins over the core template.
                 ensure_constitution_from_template(project_path, tracker=tracker)
+
+                # After the extensions: the graph is built through the gate of capabilities.
+                tracker.start("graph")
+                graph_state, graph_detail = build_first_graph(project_path)
+                getattr(tracker, graph_state)("graph", _escape_markup(graph_detail))
 
                 tracker.complete("final", "project ready")
             except (typer.Exit, SystemExit):
