@@ -882,8 +882,11 @@ def test_a_failed_review_does_not_touch_the_project(repo):
 def test_digests_ignore_line_endings(repo):
     change = change_expiry(repo)
     path = repo.path / "src/auth/session.py"
-    path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
-    repo.commit("line endings changed")
+    data = path.read_bytes()
+    # Flip them, whichever way this platform wrote them. Git may normalize them, so the commit can be empty.
+    path.write_bytes(data.replace(b"\r\n", b"\n") if b"\r\n" in data else data.replace(b"\n", b"\r\n"))
+    repo.git("add", "-A")
+    repo.git("commit", "--allow-empty", "-qm", "line endings changed")
     rc, out = repo.ci()
     assert rc == 0, out
     assert out["states"][change] == "ready"

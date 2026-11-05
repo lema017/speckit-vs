@@ -223,7 +223,8 @@ def test_a_refreshed_block_in_a_crlf_file_is_stable(repo):
 def test_a_symlink_inside_the_repository_stays_a_symlink(repo):
     forget_agents_md(repo)
     repo.write("docs/agents.md", "# Mine\n")
-    os.symlink("docs/agents.md", str(repo.path / "AGENTS.md"))
+    # os.path.join: on Windows a link whose target has forward slashes cannot be opened.
+    os.symlink(os.path.join("docs", "agents.md"), str(repo.path / "AGENTS.md"))
     out = seal(repo)[1]
     assert out["setup"] == ["AGENTS.md"]
     assert (repo.path / "AGENTS.md").is_symlink()
