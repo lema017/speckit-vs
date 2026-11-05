@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+
 import pytest
 
+from . import conftest as capabilities_conftest
 from .conftest import (
     CAT,
     EXPIRY_15,
@@ -15,6 +19,8 @@ from .conftest import (
     LOCKOUT_3,
     LOCKOUT_5,
     MARK,
+    PYTHON,
+    SCRIPT,
     SPEC,
     TEST_EXPIRY,
     TEST_LOCKOUT,
@@ -894,3 +900,51 @@ def test_status_reports_the_catalog_without_writing(repo):
     assert out["rules"]["R-session-expiry"]["text"] == EXPIRY_30
     assert out["rule_status"]["R-session-expiry"]["tests"] == [TEST_EXPIRY]
     assert repo.tree() == before
+
+
+# ---------------------------------------------------------------- the rule Windows applies to fsync
+
+# Windows refuses fsync on a descriptor opened read-only and POSIX allows it, so a fold could pass on
+# Linux and macOS and still die on Windows. This runs a script under the rule of Windows.
+STRICT_FSYNC = """\
+import errno, fcntl, os, runpy, stat, sys
+
+real_fsync = os.fsync
+
+def strict_fsync(descriptor):
+    regular = stat.S_ISREG(os.fstat(descriptor).st_mode)
+    if regular and fcntl.fcntl(descriptor, fcntl.F_GETFL) & os.O_ACCMODE == os.O_RDONLY:
+        raise OSError(errno.EBADF, "Bad file descriptor")
+    real_fsync(descriptor)
+
+os.fsync = strict_fsync
+sys.argv[0] = {target!r}
+runpy.run_path({target!r}, run_name="__main__")
+"""
+needs_posix = pytest.mark.skipif(os.name != "posix", reason="Windows applies the real rule, so every fold there covers this")
+
+
+def under_strict_fsync(tmp_path, target):
+    wrapper = tmp_path / "strict_fsync.py"
+    wrapper.write_text(STRICT_FSYNC.format(target=str(target)), encoding="utf-8")
+    return wrapper
+
+
+@needs_posix
+@pytest.mark.parametrize(("mode", "refused"), [("rb", True), ("r+b", False)])
+def test_the_strict_fsync_refuses_only_a_read_only_descriptor(tmp_path, mode, refused):
+    data = tmp_path / "data"
+    data.write_bytes(b"x")
+    probe = tmp_path / "probe.py"
+    probe.write_text("import os\nwith open(%r, %r) as handle:\n    os.fsync(handle.fileno())\n" % (str(data), mode), encoding="utf-8")
+    done = subprocess.run([PYTHON, "-I", "-S", str(under_strict_fsync(tmp_path, probe))], capture_output=True, encoding="utf-8")
+    assert (done.returncode != 0) is refused, done.stderr
+    assert ("Bad file descriptor" in done.stderr) is refused
+
+
+@needs_posix
+def test_a_fold_publishes_under_the_fsync_rule_of_windows(repo, tmp_path, monkeypatch):
+    change = on_branch_reviewed(repo)
+    monkeypatch.setattr(capabilities_conftest, "SCRIPT", under_strict_fsync(tmp_path, SCRIPT))
+    repo.folded(change, impl())
+    assert EXPIRY_15 in repo.read(SPEC)

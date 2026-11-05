@@ -1037,7 +1037,8 @@ def roll_forward(root):
         destination.parent.mkdir(parents=True, exist_ok=True)
         temporary = destination.with_name(destination.name + ".captmp")
         shutil.copyfile(str(journal / "blobs" / sha(rel)), str(temporary))
-        with open(str(temporary), "rb") as handle:
+        # Writable on purpose: Windows refuses fsync on a read-only descriptor.
+        with open(str(temporary), "r+b") as handle:
             os.fsync(handle.fileno())
         os.replace(str(temporary), str(destination))
         sync_dir(destination.parent)

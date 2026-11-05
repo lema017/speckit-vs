@@ -427,7 +427,7 @@ def _init_for(project: Path, key: str, *args: str) -> dict[str, bytes]:
     finally:
         os.chdir(previous)
     assert result.exit_code == 0, result.output
-    return {str(path.relative_to(project)): path.read_bytes() for path in project.rglob("*") if path.is_file()}
+    return {path.relative_to(project).as_posix(): path.read_bytes() for path in project.rglob("*") if path.is_file()}
 
 
 # The extension's files that do not carry its name, and the records init timestamps on every run.

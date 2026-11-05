@@ -69,6 +69,8 @@ class World:
         }
 
     def install(self, version=PINNED, update_rc=0, read_rc=0, answer='echo "output of $1"'):
+        if os.name == "nt":
+            pytest.skip("the stand-in for Graphify is a shell script, which Windows cannot execute")
         path = self.bin / "graphify"
         path.write_text(
             FAKE.format(log=self.log, env_log=self.env_log, graph=self.graph, version=version, update_rc=update_rc, read_rc=read_rc, answer=answer),
