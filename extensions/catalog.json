@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "updated_at": "2026-09-28T16:20:28Z",
-  "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json",
+  "catalog_url": "https://raw.githubusercontent.com/lema017/speckit-vs/main/extensions/catalog.json",
   "extensions": {
     "agent-context": {
       "name": "Coding Agent Context",
