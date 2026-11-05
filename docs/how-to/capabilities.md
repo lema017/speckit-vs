@@ -32,7 +32,7 @@ You use Spec Kit as usual. The extension adds hooks to the flow:
 
    `From` and `To` are literal. `review` then seals the delta with a lock.
 
-2. **`/speckit.clarify`** can change the spec. **`/speckit.plan`** compares the spec with the lock and shows you any change of meaning. You decide.
+2. **`/speckit.clarify`** and **`/speckit.clarify-deep`** first run a hook that reads the catalog and the code graph. It tells the interview which rules are settled, so it does not ask them, and what to ask: a spec that contradicts an approved rule, a rule nobody approved or that the code does not follow, and code the change reaches beyond its delta. The interview can change the spec. **`/speckit.plan`** compares the spec with the lock and shows you any change of meaning. You decide.
 
 3. **`/speckit.implement`** ends with `fold`, which copies `To` to the catalog by script and writes what the code was observed to do. If the requirement says 15 and the code still says 30, the requirement stays at 15 and the rule is `discrepant`.
 
@@ -64,7 +64,7 @@ The first time the catalog is used, the extension adds a block to your agent's i
 /speckit.capabilities.locate where does the session expire?
 ```
 
-It answers from the catalog first, warns when an anchor no longer exists, and says when part of the answer comes from the code. It changes none of your files; if you add the code graph below, the graph leaves its own untracked ones.
+It answers from the catalog first, warns when an anchor no longer exists, and says when part of the answer comes from the code. It changes none of your files; the [code graph](#the-code-graph) leaves its own, which no tracked file depends on.
 
 ## Start from an existing project
 
@@ -88,15 +88,28 @@ The workflow in `.specify/extensions/capabilities/ci/capabilities-check.yml` is 
 
 The check needs a test report. It reads what pytest, Maven Surefire, Gradle, Jest with `jest-junit` and Vitest write, and each has its own form of test reference and its own traps. See [Test references](https://github.com/lema017/speckit-vs/blob/main/extensions/capabilities/README.md#what-ci-enforces).
 
-## Add a code graph, if you want one
+## The code graph
 
-[Graphify](https://github.com/Graphify-Labs/graphify) answers where code is and what a change affects. The extension works without it, never installs it, and never lets it decide what a requirement is.
+[Graphify](https://github.com/Graphify-Labs/graphify) answers where code is and what a change affects. It is part of this fork: it installs with `specify`, in the environment of `specify` and not on your `PATH`, and `specify init` builds the first graph. It never decides what a requirement is.
+
+- `context` and `clarify-context` use it to find capabilities that their `covers` text did not reveal, and `clarify-context` to show what a change reaches beyond its delta.
+- `locate` uses it for what the catalog does not answer: it follows an anchor or a name, or looks around technical English keywords.
+- `bootstrap` builds it first, and takes its groupings only as hints.
+- `check` and `fold` do not use it, so CI does not need it.
+
+If Graphify is missing, these commands stop and show the command to reinstall `specify`. The agent installs nothing. A project with no code yet is reported and the command goes on, and so is a graph that cannot be built, with a visible warning and a search with `rg` instead. `specify check` reports the version and does not say the CLI is ready without it.
+
+The first use writes `graphify-out/`, which ignores itself, and a `.graphifyignore` if you have none. No tracked file changes. Every read updates the graph first: in a repository of 350 source files that took 2 seconds with no changes and 44 seconds after a change. The graph leaves tests out, so the tests a change reaches come from the catalog.
+
+To bring a project you already have up to date, reinstall `specify` and add the extension again. `--force` keeps your configuration and registers the new hook:
 
 ```bash
-uv tool install graphifyy==0.9.102
+uv tool install specify-cli --force --from git+https://github.com/lema017/speckit-vs.git
 ```
 
-With it on your path, `locate` uses the graph for what the catalog does not answer: it follows an anchor or a name, or looks around technical English keywords. The first use writes `graphify-out/`, which ignores itself, and a `.graphifyignore` if you have none. No tracked file changes. Every read updates the graph first: in a repository of 350 source files that took 2 seconds with no changes and 44 seconds after a change.
+```bash
+specify extension add capabilities --force
+```
 
 ## What it cannot do
 

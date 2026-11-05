@@ -32,6 +32,7 @@ specs/_capabilities/
 |---|---|---|
 | `before_specify` | `context` | Nothing, and creates no branch |
 | `after_specify` | `review` | The delta section if missing, and its lock |
+| `before_clarify` | `clarify-context` | Nothing. It tells both `clarify` and `clarify-deep` what is settled, what to ask, and what the change reaches |
 | `before_plan` | `review` | The lock, only after you decide |
 | `after_implement` | `fold` | Catalog and lock |
 | `after_converge` | `fold` | Catalog and lock |
@@ -43,9 +44,9 @@ Prompts run hooks in install order, so install `capabilities` before `git` if yo
 | Command | What it does | Writes |
 |---|---|---|
 | `speckit.capabilities.bootstrap` | Proposes a capability map for a project that already has code and waits for your approval. Then lists the chosen capabilities as `planned` and consolidates them through a record | The catalog, only after you approve. Rules stay `[inferred]` until you validate them with `--validate` |
-| `speckit.capabilities.locate` | Answers where a behaviour lives, which change set it and which tests cover it, from the catalog first. Says when part of the answer comes from the code | Nothing of yours. With Graphify installed, the graph leaves its own untracked files (see below) |
+| `speckit.capabilities.locate` | Answers where a behaviour lives, which change set it and which tests cover it, from the catalog first. Says when part of the answer comes from the code | Nothing of yours. The graph leaves its own untracked files (see below) |
 
-The script has two subcommands for them: `scaffold --capability <name> --covers "<one line>"` and `locate [--capability <name>]`.
+The script has subcommands for them: `scaffold --capability <name> --covers "<one line>"` and `locate [--capability <name>]`. `clarify-context [--change <dir>]` gives the hook the feature, its parsed delta and every capability, and ends with exit code 0 when there is no feature, because `clarify` reports that itself.
 
 ## The block for agents
 
@@ -67,15 +68,13 @@ When `review` seals a delta, or `prepare` is `ready`, or `scaffold` lists a capa
 | 3 | A decision is needed, or the operation is blocked |
 | 4 | A fold was interrupted and needs `recover` |
 | 5 | Another process is publishing |
-| 6 | Only `graph`: Graphify cannot answer. Use the anchors and `rg` |
+| 6 | Only `graph`: Graphify cannot answer, and `reason` says why. `not-installed` stops the commands that use the graph. `no-code`, `update-failed` and `read-failed` continue with the anchors and `rg` |
 
-## Optional: a code graph
+## The code graph
 
-[Graphify](https://github.com/Graphify-Labs/graphify) answers where code is and what a change affects. It never decides what the requirement is, and nothing else needs it. The extension never installs it.
+[Graphify](https://github.com/Graphify-Labs/graphify) answers where code is and what a change affects. It never decides what the requirement is. It is a dependency of `specify`, so it lives in the environment of `specify` and not on your `PATH`. The gate looks beside the real `specify` first, then on `PATH`.
 
-```bash
-uv tool install graphifyy==0.9.102
-```
+`context`, `clarify-context`, `locate` and `bootstrap` use it, and stop if it is missing: they show the command to reinstall `specify` without running it. `check` and `fold` do not use it.
 
 Everything goes through one door, with no LLM keys in its environment, and only `update`, `explain`, `affected` and `query` reach the tool:
 
@@ -95,8 +94,13 @@ python3 .specify/extensions/capabilities/scripts/python/capabilities.py graph st
 - It writes `graphify-out/`, which ignores itself, and `.graphifyignore` if you have none. No tracked file changes.
 - `by-name` means the graph has no such node, but the file contains the name: Graphify does not model a Java `static` field, for instance.
 - Without Graphify, `status` says so and `anchors` checks by file and name, both with exit code 0. `explain`, `affected`, `query` and `update` exit with 6.
+- In a project with no code, `update` and the reads exit with 6 and `reason: no-code`. That is not a failure.
+- `update`, `explain`, `affected` and `query` attempt no connection: a test intercepts the sockets of the real tool. They do load network modules, through `graphify.security`.
+- The graph leaves tests out, so the tests a change reaches come from the catalog.
 
-Validated with the real tool on Python, Java and TypeScript projects. A model has not been run through this path.
+Validated with the real tool on Python, Java and TypeScript projects, and with one model through `clarify-context`, in test projects of up to 126 source files.
+
+`clarify-context` passed its scenarios, but the same model without the hook did equally well in the seven scenarios compared, because the block for agents sends it to the catalog and it searched the code on its own. Each scenario ran once, and the hook cost about 20% more and took about 1.6 times as long. It adds a step that does not depend on an instruction an agent can ignore, not a measured improvement. Other models, large repositories and long interviews were not measured. The interview's subagents do not get the report, and neither does a session after its context is compacted.
 
 ## What CI enforces
 
