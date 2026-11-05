@@ -21,7 +21,7 @@ $ARGUMENTS
    | Status | Exit | What to do |
    |---|---|---|
    | `unchanged`, `no-rule-change` | 0 | Report it and finish. Read no code |
-   | `ready` | 0 | Continue with step 2 |
+   | `ready` | 0 | Report any `setup` entry that starts with `skipped`: that file for agents was left alone. Continue with step 2 |
    | `blocked` | 3 | Open tasks, or no `tasks.md`. Report it and finish: this hook also fires on partial implementations. Pass `--no-tasks` only for a change outside `specify` when the user asked for it |
    | `needs-review`, `conflict` | 3 | Report it and finish. Run `speckit.capabilities.review` |
    | `invalid` | 2 | Report the errors and finish |

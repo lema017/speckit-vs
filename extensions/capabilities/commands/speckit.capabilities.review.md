@@ -21,7 +21,7 @@ $ARGUMENTS
 
    | Status | Exit | What to do |
    |---|---|---|
-   | `stamped` | 0 | Report that the delta is sealed. Finish |
+   | `stamped` | 0 | Report that the delta is sealed. Report any `setup` entry that starts with `skipped`: that file for agents was left alone. Finish |
    | `unchanged` | 0 | Report that the spec matches what was sealed. Finish |
    | `invalid` | 2 | See step 3 |
    | `conflict` | 3 | The catalog does not hold the `From` the delta expects. Show `conflicts` and stop. Copy the text from the catalog only if the user confirms this change really starts from it |

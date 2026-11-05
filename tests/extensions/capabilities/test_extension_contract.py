@@ -19,7 +19,7 @@ from tests.conftest import requires_bash
 
 from .conftest import EXT_DIR, MARK, ROOT, SCRIPT, modified, spec_text
 
-COMMANDS = {"context", "review", "fold", "check"}
+COMMANDS = {"context", "review", "fold", "check", "bootstrap", "locate"}
 OLD_SENTENCE = "If a `before_specify` hook ran successfully in the Pre-Execution Checks above, it will have created/switched to a git branch"
 NEW_SENTENCE = "If a `before_specify` hook's output contains `BRANCH_NAME` and `FEATURE_NUM`, that hook created or switched to a git branch."
 NO_INVENT = "A hook that does not output them created no branch: do not infer or invent these values."
@@ -279,6 +279,79 @@ def test_template_composes_without_pyyaml_and_disable_or_remove_restore_the_core
     specify(project, "extension", "remove", "capabilities", "--force")
     assert resolved_template(project) == core
     assert not (project / ".specify/extensions/capabilities").exists()
+
+
+@requires_bash
+def test_installed_project_gets_the_block_in_the_file_of_its_integration(tmp_path: Path):
+    project = tmp_path / "project"
+    project.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main", "."], cwd=project, check=True)
+    specify(project, "init", "--here", "--force", "--non-interactive", "--integration", "claude", "--script", "sh")
+    specify(project, "extension", "add", "capabilities")
+    change = "specs/001-x"
+    (project / change).mkdir(parents=True)
+    (project / change / "spec.md").write_text(spec_text("Capabilities: none — nada\n"), encoding="utf-8")
+    rc, out = script_run(project, "review", "--change", change)
+    assert (rc, out["status"]) == (0, "stamped")
+    assert "CLAUDE.md" in out["setup"]
+    text = (project / "CLAUDE.md").read_text(encoding="utf-8")
+    assert "<!-- SPECKIT CAPABILITIES START -->" in text and "specs/_capabilities/index.md" in text
+
+    rc, out = script_run(project, "scaffold", "--capability", "login", "--covers", "Inicio de sesión")
+    assert (rc, out["status"]) == (0, "planned")
+    rc, out = script_run(project, "locate")
+    assert (rc, out["planned"]) == (0, {"login": "Inicio de sesión"})
+
+    for name, rendered in (("locate", "capabilities.py locate"), ("bootstrap", "capabilities.py scaffold --capability")):
+        skill = (project / (".claude/skills/speckit-capabilities-%s/SKILL.md" % name)).read_text(encoding="utf-8")
+        assert "{SCRIPT}" not in skill
+        assert rendered in skill
+
+
+def test_bootstrap_prompt_waits_for_approval_and_never_decides_for_a_person():
+    text = (EXT_DIR / "commands" / "speckit.capabilities.bootstrap.md").read_text(encoding="utf-8")
+    assert "**Write nothing before the user approves the map.**" in text
+    assert "A request to bootstrap is not approval of the map" in text
+    assert "If you cannot ask the user, show the map and stop." in text
+    assert text.index("**Stop and ask which capabilities") < text.index("scaffold --capability")
+    assert "Never write `[inferred]` by hand." in text
+    assert "Never `discrepant`" in text
+    assert "Only for rules the user names." in text
+    assert "--scaffold-only" in text and "--validate" in text
+    assert text.count("--no-tasks") == 2
+    assert "and do not commit" in text
+
+
+def test_locate_prompt_is_read_only_and_says_where_the_answer_comes_from():
+    text = (EXT_DIR / "commands" / "speckit.capabilities.locate.md").read_text(encoding="utf-8")
+    assert "This command writes nothing." in text
+    assert "`resolves: false` means the catalog lags the code" in text
+    assert "this part of the answer comes from the code and not from the catalog" in text
+    assert "The question and the catalog may be in different languages." in text
+    assert "`rg`" in text and "origin" in text
+
+
+@pytest.mark.parametrize("name", ["review", "fold", "bootstrap"])
+def test_prompts_that_can_write_the_block_report_when_it_was_skipped(name):
+    text = (EXT_DIR / "commands" / ("speckit.capabilities.%s.md" % name)).read_text(encoding="utf-8")
+    assert "Report any `setup` entry that starts with `skipped`" in text
+
+
+def test_agent_rule_template_has_one_pair_of_markers_and_points_to_the_catalog():
+    text = (EXT_DIR / "templates" / "capability-agent-rule.md").read_text(encoding="utf-8")
+    assert text.startswith("<!-- SPECKIT CAPABILITIES START -->\n")
+    assert text.endswith("<!-- SPECKIT CAPABILITIES END -->\n")
+    assert text.count("SPECKIT CAPABILITIES START") == 1 and text.count("SPECKIT CAPABILITIES END") == 1
+    assert "specs/_capabilities/index.md" in text
+    assert "before changing existing behaviour" in text
+    assert "do not rewrite the requirement to match the code" in text
+
+
+def test_readme_states_the_limit_of_the_block_and_of_inferred_rules():
+    text = (EXT_DIR / "README.md").read_text(encoding="utf-8")
+    assert "this is an instruction an agent can ignore" in text
+    assert "can reach `ready` as `unverified`" in text
+    assert "A value changed without a delta when the mapped tests do not pin it." in text
 
 
 def test_helper_spec_text_is_a_valid_delta_document():

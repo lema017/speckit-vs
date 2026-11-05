@@ -36,6 +36,23 @@ specs/_capabilities/
 
 Prompts run hooks in install order, so install `capabilities` before `git` if you want `fold` to run before the commit offer.
 
+## Commands you run yourself
+
+| Command | What it does | Writes |
+|---|---|---|
+| `speckit.capabilities.bootstrap` | Proposes a capability map for a project that already has code and waits for your approval. Then lists the chosen capabilities as `planned` and consolidates them through a record | The catalog, only after you approve. Rules stay `[inferred]` until you validate them with `--validate` |
+| `speckit.capabilities.locate` | Answers where a behaviour lives, which change set it and which tests cover it, from the catalog first. Says when part of the answer comes from the code | Nothing |
+
+The script has two subcommands for them: `scaffold --capability <name> --covers "<one line>"` and `locate [--capability <name>]`.
+
+## The block for agents
+
+When `review` seals a delta, or `prepare` is `ready`, or `scaffold` lists a capability, a block between `<!-- SPECKIT CAPABILITIES START -->` and `<!-- SPECKIT CAPABILITIES END -->` is added or refreshed. It tells a session to read the catalog before answering where a behaviour lives or changing it.
+
+- The file is the first of these: `context_files` or `context_file` in the `agent-context` configuration, the file of the integration in `.specify/init-options.json`, `AGENTS.md`.
+- Everything outside the markers stays byte for byte. If the markers are unbalanced, or the file points outside the repository, the file is left alone and `setup` says so.
+- Outside the Spec Kit flow this is an instruction an agent can ignore. It is not an enforcement mechanism; CI is.
+
 ## Script exit codes
 
 `scripts/python/capabilities.py` uses the standard library only and needs Python 3.9+.
@@ -87,6 +104,8 @@ In a merge queue, add `--combined`: a changed anchored file is then revalidated 
 ## What it cannot detect
 
 - That `conforming` is true when the mapped test is weak.
+- A value changed without a delta when the mapped tests do not pin it. `check` reruns those tests and leaves the notice `anchored code changed without a delta`; if they pass, so does `check`, even if another test of the project fails.
+- That an `[inferred]` rule is right. Test evidence is required when a change adds or modifies a rule, not when `bootstrap` deduces it or when you validate it, so such a rule can reach `ready` as `unverified`, and a `conforming` it claims is not checked against the report until a later change touches it.
 - Conflicts of meaning between two different rules.
 - Behaviour changed without a spec, in code no rule anchors, when no test breaks.
 - A pull request that weakens its own check. CI runs the script, the config and the test command of the revision under review, so `check` only leaves a notice when `.specify/extensions/capabilities/` changes. Protect that directory and the workflow with code owners.

@@ -66,6 +66,33 @@ GITATTRIBUTES_LINES = (
     "specs/_capabilities/index.md merge=union",
     "specs/_capabilities/*/history.md merge=union",
 )
+AGENT_CONTEXT_CONFIG = ".specify/extensions/agent-context/agent-context-config.yml"
+INIT_OPTIONS = ".specify/init-options.json"
+AGENT_START = "<!-- SPECKIT CAPABILITIES START -->"
+AGENT_END = "<!-- SPECKIT CAPABILITIES END -->"
+DEFAULT_AGENT_FILE = "AGENTS.md"
+# The agent-context extension's map, without the entries that use the default. A test keeps them aligned.
+AGENT_FILES = {
+    "alquimia": "ALQUIMIA.md",
+    "auggie": ".augment/rules/specify-rules.md",
+    "claude": "CLAUDE.md",
+    "cline": ".clinerules/specify-rules.md",
+    "codebuddy": "CODEBUDDY.md",
+    "copilot": ".github/copilot-instructions.md",
+    "cursor-agent": ".cursor/rules/specify-rules.mdc",
+    "firebender": ".firebender/rules/specify-rules.mdc",
+    "gemini": "GEMINI.md",
+    "junie": ".junie/AGENTS.md",
+    "kilocode": ".kilocode/rules/specify-rules.md",
+    "lingma": ".lingma/rules/specify-rules.md",
+    "qodercli": "QODER.md",
+    "qwen": "QWEN.md",
+    "shai": "SHAI.md",
+    "tabnine": "TABNINE.md",
+    "trae": ".trae/rules/project_rules.md",
+    "windsurf": ".windsurf/rules/specify-rules.md",
+    "zcode": "ZCODE.md",
+}
 
 
 class CapError(Exception):
@@ -155,8 +182,77 @@ def load_config(root):
     return config
 
 
+def safe_agent_path(value):
+    return "\\" not in value and not value.startswith("/") and not re.match(r"^[A-Za-z]:", value) and ".." not in value.split("/")
+
+
+def agent_context_files(root):
+    """``context_files``, else ``context_file``, from the agent-context config, without unsafe paths. No YAML parser: standard library only."""
+    listed, single, inside = [], "", False
+    for line in (read(root / AGENT_CONTEXT_CONFIG) or "").splitlines():
+        line = re.sub(r"(^|\s)#.*$", "", line).rstrip()
+        match = re.match(r"^(context_files?):\s*(.*)$", line)
+        if match:
+            value = match.group(2).strip()
+            inside = match.group(1) == "context_files" and not value
+            if match.group(1) == "context_file":
+                single = value.strip("\"'")
+            elif value.startswith("["):
+                listed = [item.strip().strip("\"'") for item in value.strip("[]").split(",")]
+            continue
+        item = re.match(r"^\s*-\s+(.*)$", line)
+        if inside and item:
+            listed.append(item.group(1).strip().strip("\"'"))
+        elif line.strip():
+            inside = False
+    return [item for item in listed if item and safe_agent_path(item)] or ([single] if single and safe_agent_path(single) else [])
+
+
+def agent_files(root):
+    """The file the project configured, else the one of its integration, else AGENTS.md."""
+    configured = agent_context_files(root)
+    if configured:
+        return configured
+    try:
+        options = json.loads(read(root / INIT_OPTIONS) or "{}")
+    except ValueError:
+        options = {}
+    name = (options.get("integration") or options.get("ai")) if isinstance(options, dict) else None
+    return [AGENT_FILES.get(name, DEFAULT_AGENT_FILE) if isinstance(name, str) else DEFAULT_AGENT_FILE]
+
+
+def upsert_agent_block(root, rel):
+    """Add or refresh the block and leave the rest of the file byte for byte. Returns what to report, or None."""
+    path = root / rel
+    if root not in path.resolve().parents:
+        return "skipped %s: it points outside the repository" % rel
+    try:
+        current = path.read_bytes().decode("utf-8") if path.exists() else ""
+    except (OSError, UnicodeDecodeError):
+        return "skipped %s: it cannot be read as UTF-8" % rel
+    newline = "\r\n" if "\r\n" in current else "\n"
+    block = template("capability-agent-rule.md").strip("\n").replace("\n", newline)
+    starts, ends = current.count(AGENT_START), current.count(AGENT_END)
+    if starts == 0 and ends == 0:
+        head = current if not current or current.endswith("\n") else current + newline
+        updated = head + (newline if head.strip() else "") + block + newline
+    elif starts == 1 and ends == 1 and current.index(AGENT_START) < current.index(AGENT_END):
+        updated = current[:current.index(AGENT_START)] + block + current[current.index(AGENT_END) + len(AGENT_END):]
+    else:
+        return "skipped %s: unbalanced markers" % rel
+    if rel.endswith(".mdc") and not updated.startswith("---"):
+        updated = "---\nalwaysApply: true\n---\n\n" + updated
+    if updated == current:
+        return None
+    try:
+        write_file(path, updated)
+    except OSError as error:
+        return "skipped %s: %s" % (rel, error.strerror or error)
+    return rel
+
+
 def ensure_setup(root):
-    """Idempotent project setup. Only appends lines; never rewrites what is there."""
+    """Idempotent project setup: appends lines and keeps the agent block current. Never rewrites anything else."""
     touched = []
     for name, wanted in ((".gitignore", (GITIGNORE_LINE,)), (".gitattributes", GITATTRIBUTES_LINES)):
         path = root / name
@@ -166,6 +262,10 @@ def ensure_setup(root):
             prefix = current if not current or current.endswith("\n") else current + "\n"
             write_file(path, prefix + "\n".join(missing) + "\n")
             touched.append(name)
+    for rel in agent_files(root):
+        result = upsert_agent_block(root, rel)
+        if result:
+            touched.append(result)
     return touched
 
 
@@ -570,7 +670,7 @@ def delta_rows(delta, implementation_of):
 
 def foreign_of(root, change, scope):
     source = source_of(root, change)
-    skip = (CATALOG, source, ".specify", ".gitignore", ".gitattributes")
+    skip = (CATALOG, source, ".specify", ".gitignore", ".gitattributes", *agent_files(root))
     names = [item[3:] for item in git_names(root, "status", "--porcelain", "-z", "--no-renames")]
     return sorted(n for n in names if n not in scope and not n.startswith(skip))
 
@@ -759,6 +859,9 @@ def rewrite_index(text, delta, statuses):
         text = template("capability-index.md")
     for capability in capabilities_of(delta):
         if not re.search(r"^\| \[%s\]" % re.escape(capability), text, re.M):
+            planned = re.search(r"^\| %s \| [^|]* \| planned \|.*\n?" % re.escape(capability), text, re.M)
+            if planned:
+                text = text[:planned.start()] + text[planned.end():]
             codes = [ref for row in statuses.get(capability, {}).values() for ref in row["code"]]
             entry_point = "`%s`" % codes[0] if codes else "none"
             text = text.rstrip("\n") + "\n| [%s](%s/spec.md) | %s | consolidated | %s |\n" % (capability, capability, delta["new"].get(capability, ""), entry_point)
@@ -968,7 +1071,65 @@ def cmd_status(root, capability):
             "inferred": sorted(rule_id for rule_id, rule in rules.items() if rule["inferred"]),
             "not_conforming": sorted(rule_id for rule_id, row in statuses.items() if row["state"] != "conforming"),
         }
-    return emit({"catalog": (root / INDEX).is_file(), "capabilities": capabilities, "journal_pending": (root / JOURNAL).exists()})
+    planned = re.findall(r"^\| ([a-z][a-z0-9-]*) \| ([^|]*) \| planned \|", read(root / INDEX) or "", re.M)
+    return emit({
+        "catalog": (root / INDEX).is_file(),
+        "capabilities": capabilities,
+        "planned": {name: covers for name, covers in planned if name not in capabilities},
+        "journal_pending": (root / JOURNAL).exists(),
+    })
+
+
+def cmd_locate(root, capability):
+    """Read-only. For one capability, each rule with its origin, code and tests, and whether those anchors still resolve."""
+    if not capability:
+        return cmd_status(root, None)
+    if not CAPABILITY.match(capability):
+        raise CapError("invalid capability name: %s" % capability)
+    spec = read(root / cap_rel(capability, "spec.md"))
+    if spec is None:
+        raise CapError("capability not found: %s" % capability)
+    statuses = rule_status(read(root / cap_rel(capability, "implementation.md")))
+    history = read(root / cap_rel(capability, "history.md"))
+
+    def anchors(refs):
+        return [{"ref": ref, "resolves": anchor_resolves(root, ref)} for ref in refs]
+
+    rules = []
+    for rule_id, rule in sorted(rules_of(spec).items()):
+        row = statuses.get(rule_id) or {}
+        rules.append({
+            "id": rule_id,
+            "text": rule["text"],
+            "inferred": rule["inferred"],
+            "origin": rule["tag"],
+            "state": row.get("state"),
+            "observed": row.get("observed"),
+            "code": anchors(row.get("code", [])),
+            "tests": anchors(row.get("tests", [])),
+            "manual": row.get("manual"),
+        })
+    changes = [{"change": cells[0], "what": " | ".join(cells[1:])} for cells in table_rows(history, "Changes")]
+    return emit({"capability": capability, "rules": rules, "changes": changes, "retired": retired_of(history)})
+
+
+def cmd_scaffold(root, capability, covers):
+    """List a capability nobody has consolidated yet. It holds no rules until a record adds them."""
+    if not capability or not CAPABILITY.match(capability):
+        raise CapError("scaffold requires --capability matching %s" % CAPABILITY.pattern)
+    covers = norm(covers or "")
+    if not covers or "|" in covers:
+        raise CapError("scaffold requires --covers: one line of text without |")
+    with publish_lock(root):
+        if (root / JOURNAL).exists():
+            return emit({"status": "recover-needed"}, RECOVER)
+        text = read(root / INDEX) or template("capability-index.md")
+        name = re.escape(capability)
+        if re.search(r"^\| (?:\[%s\]\S*|%s) \|" % (name, name), text, re.M) or (root / CATALOG / capability).is_dir():
+            return emit({"status": "unchanged", "capability": capability})
+        setup = ensure_setup(root)
+        write_file(root / INDEX, text.rstrip("\n") + "\n| %s | %s | planned | none |\n" % (capability, covers))
+    return emit({"status": "planned", "capability": capability, "setup": setup})
 
 
 # ---------------------------------------------------------------- test evidence
@@ -1538,10 +1699,11 @@ class Check:
 
 def build_parser():
     parser = argparse.ArgumentParser(description="Capability catalog mechanics")
-    parser.add_argument("command", choices=["status", "ensure", "review", "prepare", "apply", "recover", "check"])
+    parser.add_argument("command", choices=["status", "locate", "scaffold", "ensure", "review", "prepare", "apply", "recover", "check"])
     parser.add_argument("--root", default=".")
     parser.add_argument("--change", action="append", default=[])
     parser.add_argument("--capability")
+    parser.add_argument("--covers", help="scaffold: what the capability covers, in one line")
     parser.add_argument("--staged")
     parser.add_argument("--accept", action="store_true")
     parser.add_argument("--no-tasks", action="store_true")
@@ -1555,6 +1717,10 @@ def build_parser():
 def dispatch(args, root):
     if args.command == "status":
         return cmd_status(root, args.capability)
+    if args.command == "locate":
+        return cmd_locate(root, args.capability)
+    if args.command == "scaffold":
+        return cmd_scaffold(root, args.capability, args.covers)
     if args.command == "recover":
         return cmd_recover(root)
     if args.command == "check":

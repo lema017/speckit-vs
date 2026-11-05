@@ -30,6 +30,12 @@ provides:
     - name: speckit.capabilities.check
       file: commands/speckit.capabilities.check.md
       description: "Report the state of the changes on this branch and the integrity of the catalog"
+    - name: speckit.capabilities.bootstrap
+      file: commands/speckit.capabilities.bootstrap.md
+      description: "Propose a capability map for an existing project and consolidate the chosen capabilities as inferred rules"
+    - name: speckit.capabilities.locate
+      file: commands/speckit.capabilities.locate.md
+      description: "Find where a behaviour lives, which change set it and which tests cover it. Read-only."
   config:
     - name: "capabilities-config.yml"
       template: "config-template.yml"

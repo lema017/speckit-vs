@@ -27,6 +27,7 @@ MODULES = [
     "test_acceptance_concurrency.py",
     "test_acceptance_discovery.py",
     "test_fold_and_check.py",
+    "test_discovery_tools.py",
 ]
 
 MUTANTS = [
@@ -66,6 +67,31 @@ MUTANTS = [
     ("fr-signature-off", "elif FR_LINE.search(text):", "elif False:"),
     ("catalog-counts-as-feature", 'return name.startswith(CATALOG + "/") and not name.startswith(CHANGES + "/")', "return False"),
     ("change-record-without-marker-ok", 'if os.path.basename(name) == "capability-delta.md":', "if False:"),
+    # Phase 4: the block for agents.
+    ("agent-block-never-written", "for rel in agent_files(root):\n        result", "for rel in []:\n        result"),
+    ("agent-overwrites-unbalanced", 'return "skipped %s: unbalanced markers" % rel', "updated = block + newline"),
+    ("agent-ignores-config", "configured = agent_context_files(root)\n", "configured = []\n"),
+    ("agent-ignores-integration", "return [AGENT_FILES.get(name, DEFAULT_AGENT_FILE) if isinstance(name, str) else DEFAULT_AGENT_FILE]", "return [DEFAULT_AGENT_FILE]"),
+    ("agent-unsafe-list-allowed", "if item and safe_agent_path(item)]", "if item]"),
+    ("agent-unsafe-single-allowed", "if single and safe_agent_path(single) else", "if single else"),
+    ("agent-symlink-escape", "if root not in path.resolve().parents:", "if False:"),
+    ("agent-listed-as-foreign", '".gitattributes", *agent_files(root))', '".gitattributes")'),
+    ("agent-crlf-normalized", 'current = path.read_bytes().decode("utf-8") if path.exists() else ""', 'current = read(path) or ""'),
+    ("agent-crlf-mixed", 'newline = "\\r\\n" if "\\r\\n" in current else "\\n"', 'newline = "\\n"'),
+    ("agent-mdc-without-frontmatter", 'if rel.endswith(".mdc") and not updated.startswith("---"):', "if False:"),
+    ("agent-rewrites-identical", "if updated == current:\n        return None", "if False:\n        return None"),
+    ("agent-write-error-stops-review", 'except OSError as error:\n        return "skipped %s: %s" % (rel, error.strerror or error)', 'except ZeroDivisionError as error:\n        return "skipped %s: %s" % (rel, error.strerror or error)'),
+    # Phase 4: scaffold and locate.
+    ("scaffold-without-lock", 'one line of text without |")\n    with publish_lock(root):', 'one line of text without |")\n    if True:'),
+    ("scaffold-ignores-journal", 'with publish_lock(root):\n        if (root / JOURNAL).exists():\n            return emit({"status": "recover-needed"}, RECOVER)\n        text = read(root / INDEX) or', 'with publish_lock(root):\n        text = read(root / INDEX) or'),
+    ("scaffold-allows-pipe", 'if not covers or "|" in covers:', "if not covers:"),
+    ("scaffold-allows-any-name", "if not capability or not CAPABILITY.match(capability):", "if not capability:"),
+    ("scaffold-repeats-row", 'if re.search(r"^\\| (?:\\[%s\\]\\S*|%s) \\|" % (name, name), text, re.M) or (root / CATALOG / capability).is_dir():', "if False:"),
+    ("planned-row-left-behind", "text = text[:planned.start()] + text[planned.end():]", "pass"),
+    ("status-hides-planned", '"planned": {name: covers for name, covers in planned if name not in capabilities},', '"planned": {},'),
+    ("locate-always-resolves", 'return [{"ref": ref, "resolves": anchor_resolves(root, ref)} for ref in refs]', 'return [{"ref": ref, "resolves": True} for ref in refs]'),
+    ("locate-any-name", 'if not CAPABILITY.match(capability):\n        raise CapError("invalid capability name', 'if False:\n        raise CapError("invalid capability name'),
+    ("locate-origin-lost", '"origin": rule["tag"],', '"origin": None,'),
     # What the real agent runs found.
     ("review-names-no-rule", 'if set(split_links(entry["links"])) & set(changed)]', "if False]"),
     ("review-hides-other-text", '"other_text": not changed and not delta_changed,', '"other_text": False,'),

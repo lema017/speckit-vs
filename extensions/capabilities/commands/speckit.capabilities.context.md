@@ -30,7 +30,7 @@ $ARGUMENTS
 ## Steps
 
 1. Run `{SCRIPT}` from the repository root and parse its JSON.
-2. If `capabilities` is empty, say in one line that the catalog has no capabilities yet, and finish.
+2. If `capabilities` is empty, say in one line that the catalog has no capabilities yet, and finish. A capability in `planned` is listed but holds no rules, so there is nothing to load from it.
 3. If `journal_pending` is true, warn that an interrupted fold must be recovered with `speckit.capabilities.fold`.
 4. From the `covers` text of each capability, pick only those the request touches. If none, say so and finish.
 5. For each one, run `{SCRIPT} --capability <name>` and report:
