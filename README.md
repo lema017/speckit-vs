@@ -5,13 +5,13 @@
 </div>
 
 > [!NOTE]
-> This repository is a fork of [github/spec-kit](https://github.com/github/spec-kit) that adds a [catalog of current behaviour](docs/how-to/capabilities.md), installed by default in new projects, and the [`/speckit.clarify-deep`](docs/reference/agentic-sdd.md#speckitclarify-deep) command. Install it from this repository, not from PyPI: the `specify-cli` package on PyPI is the original project and does not include this command.
+> This repository is a fork of [github/spec-kit](https://github.com/github/spec-kit). See [What this fork changes](#what-this-fork-changes). Install it from this repository, not from PyPI: the `specify-cli` package on PyPI is the original project and does not include these changes.
 
 <p align="center">
-    <a href="https://github.com/github/spec-kit/releases/latest"><img src="https://img.shields.io/github/v/release/github/spec-kit" alt="Latest Release"/></a>
-    <a href="https://github.com/github/spec-kit/stargazers"><img src="https://img.shields.io/github/stars/github/spec-kit?style=social" alt="GitHub stars"/></a>
-    <a href="https://github.com/github/spec-kit/blob/main/LICENSE"><img src="https://img.shields.io/github/license/github/spec-kit" alt="License"/></a>
-    <a href="https://github.github.io/spec-kit/"><img src="https://img.shields.io/badge/docs-GitHub_Pages-blue" alt="Documentation"/></a>
+    <a href="https://github.com/lema017/speckit-vs/releases/latest"><img src="https://img.shields.io/github/v/release/lema017/speckit-vs" alt="Latest Release"/></a>
+    <a href="https://github.com/lema017/speckit-vs/stargazers"><img src="https://img.shields.io/github/stars/lema017/speckit-vs?style=social" alt="GitHub stars"/></a>
+    <a href="https://github.com/lema017/speckit-vs/blob/main/LICENSE"><img src="https://img.shields.io/github/license/lema017/speckit-vs" alt="License"/></a>
+    <a href="./docs/index.md"><img src="https://img.shields.io/badge/docs-in_this_repository-blue" alt="Documentation"/></a>
 </p>
 
 <p align="center">
@@ -24,6 +24,243 @@
 Spec Kit is an open source toolkit that gives AI coding agents structured
 processes, reusable templates, and documented outcomes. Start with a ready-made
 process, customize it, or bring your own.
+
+## What this fork changes
+
+Spec Kit carries one change from a spec to working code. This fork keeps that
+flow and adds what it leaves open: a record of what the software is supposed to
+do today, across every feature built so far, a longer interview to clarify a spec,
+and a check that can stop a pull request that disagrees with that record.
+
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="media/fork-flow.png">
+  <img src="media/fork-flow.gif" width="830" alt="The Spec Kit flow from specify to pull request, with five green steps added by this fork: context, two reviews, fold, and check. fold writes to one catalog, check reads it, and the next feature starts by reading it through context.">
+</picture>
+
+| Problem in Spec Kit's core | How this fork solves it | Where |
+| --- | --- | --- |
+| Specs say what one change wanted, not what is true today. To find the current session timeout, you read every spec that touched it, in order | It keeps the rules in force in one catalog, by capability, and copies each approved change there by script | [The capability catalog](#the-capability-catalog) |
+| A new spec can contradict or change a rule that nobody remembered, or change again after you reviewed it | It loads the affected rules before writing the spec, which then declares each change with a literal `From` and `To`. Before planning, it compares the spec with the sealed delta and you decide | `context`, `review` |
+| Once a feature ships, nothing keeps track of a requirement and code that disagree | It records the requirement and what the code does separately, and neither overwrites the other | `fold` |
+| A new agent session has to search for where a behaviour lives, which change set it, and which test covers it | Each rule records its origin, code, and tests. `locate` answers from the catalog first and warns when a reference no longer exists. An optional code graph answers what a change affects | [Graphify](#graphify-a-code-graph-for-the-catalog) |
+| `/speckit.clarify` stops at five questions, even when decisions depend on each other | It interviews you in rounds until every open decision is settled. It looks up facts itself and asks you only for decisions, each with a recommended answer | [`/speckit.clarify-deep`](#clarify-until-the-decisions-are-settled) |
+| A pull request can change a recorded rule or its tested code without a spec, or two branches can change the same rule | It compares the pull request with the catalog and your test report, and fails if they do not agree | [`check`](#catch-drift-at-the-pull-request) |
+| Code written before Spec Kit has no recorded rules | It proposes a capability map from the code and waits for your approval. Rules stay `[inferred]` until you validate them | `/speckit.capabilities.bootstrap` |
+
+`/speckit.clarify`, `/speckit.plan`, `/speckit.tasks`, `/speckit.implement`,
+`/speckit.converge`, and `/speckit.analyze` are unchanged. `/speckit.specify` only
+gains a handoff to `/speckit.clarify-deep`. `specify self check` and
+`specify self upgrade` follow this repository instead of `github/spec-kit`.
+
+### How Spec Kit's core turns a spec into code
+
+Each feature gets its own folder under `specs/`, and each command works from what
+the one before it wrote:
+
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="media/core-flow.png">
+  <img src="media/core-flow.gif" width="830" alt="Two feature folders, 001-login and 002-sessions. In each one a request becomes spec.md, plan.md, and tasks.md, then code. An arrow from the old spec to the new one is crossed out, because no command asks for it. The constitution and the code are highlighted as what carries over.">
+</picture>
+
+| Command | What it is told to read | What it writes |
+| --- | --- | --- |
+| `/speckit.specify` | Your request, the spec template, the constitution if there is one | `specs/NNN-name/spec.md` |
+| `/speckit.clarify` | That spec, the constitution | Answers in the same spec |
+| `/speckit.plan` | That spec, the constitution, the plan template | `plan.md`, `research.md`, `data-model.md`, `contracts/`, `quickstart.md` |
+| `/speckit.tasks` | `plan.md`, `spec.md`, the design files that exist, the constitution | `tasks.md` |
+| `/speckit.implement` | `tasks.md`, `plan.md`, the design files that exist, the constitution, any checklists | The code |
+| `/speckit.converge` | `spec.md`, `plan.md`, `tasks.md`, the constitution, the current code | New tasks at the end of `tasks.md` |
+
+`/speckit.implement` works from the tasks and the plan, and its instructions do
+not mention `spec.md`. `/speckit.converge` is the step that compares the code with
+the spec.
+
+**What happens to the specs of earlier features.** No command in this flow tells
+the agent to read them, and the scripts use the folder names in `specs/` only to
+pick the next number. What an earlier feature decided reaches the next one through
+the constitution, through the code, or through whoever opens the old spec. Nothing
+stops an agent from opening one on its own, but no step asks it to, and no step
+compares a new spec with the earlier ones.
+
+This was checked against the command templates and scripts of upstream commit
+[`ec9a6f3`](https://github.com/github/spec-kit/tree/ec9a6f3b94c0aa856f77e550785a1ddde1993de1)
+of 2026-11-04. With the older specs made unreadable, the bash scripts still created
+and set up the next feature. Three things outside that flow can bring old specs
+back:
+
+- **`agent-context`**, an optional extension that `specify init` does not install,
+  can point the agent at the most recently modified `plan.md` when the current
+  feature has none yet. That plan can belong to an earlier feature.
+- **`assess`**, an optional extension for judging ideas, looks for prior art in its
+  research step, which can include past specs and decisions.
+- **How your team keeps specs.** [How to maintain specifications after delivery](docs/how-to/evolving-specs.md)
+  describes three models, and none is the default. Under a living spec, for
+  example, you revise the same `spec.md` instead of starting a new folder.
+
+So `specs/` grows into a record of what each change wanted. Finding what holds
+today is left to you, which is the gap the catalog fills.
+
+### The capability catalog
+
+The catalog is a folder in your repository, `specs/_capabilities/`, that says what
+the software is supposed to do today. Feature specs keep saying what each change
+wanted. Three terms explain the rest:
+
+- **Capability:** one thing the product does, such as `login`.
+- **Rule:** one requirement of a capability, with a stable name, such as
+  `R-session-expiry`.
+- **Delta:** the block in a feature spec that declares which rules it adds, changes,
+  or retires, with the literal old and new text.
+
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="media/capability-catalog.png">
+  <img src="media/capability-catalog.gif" width="830" alt="The folders of the catalog, then a worked example. A delta changes a session limit from 30 to 15 minutes. fold writes 15 to spec.md, 30 to implementation.md as discrepant because the code still says 30, and a row to history.md. After the code is fixed, the rule reads conforming.">
+</picture>
+
+```text
+specs/_capabilities/
+├── index.md                what each capability covers
+├── login/
+│   ├── spec.md             the approved rules, written only by fold
+│   ├── implementation.md   what the code does: state, code, and tests of each rule
+│   └── history.md          changes and retired rules, append-only
+└── _changes/20261104-fix-expiry/   a rule change made outside /speckit.specify
+```
+
+A feature spec declares a change with a delta:
+
+```markdown
+### MODIFIED R-session-expiry
+- Capability: login
+- From: 30 minutes
+- To: 15 minutes
+- Links: FR-001
+```
+
+After implementation, `fold` copies `To` to `spec.md` by script. The agent then
+records what it found in the code, in `implementation.md`:
+
+```markdown
+### R-session-expiry
+- Observed: sessions expire after 30 minutes
+- State: discrepant
+- Code: `src/auth/session.py::SessionManager`
+- Tests: `tests/auth/test_session.py::test_expiry`
+```
+
+| State | What it means |
+| --- | --- |
+| `conforming` | The code does what the rule says. The agent is told to use it only if a test would fail when the value changes |
+| `discrepant` | The code does something else. The rule keeps its text, and CI blocks a change that adds or modifies that rule |
+| `unverified` | It could not be determined |
+
+These steps keep the catalog current. All but `check` run on their own as part of
+the commands around them:
+
+| Step | When | What it does |
+| --- | --- | --- |
+| `context` | Before `/speckit.specify` | Loads the rules the request touches. It writes nothing |
+| `review` | After `/speckit.specify` | Checks the delta and seals it with a lock |
+| `review` | Before `/speckit.plan` | Compares the spec with the sealed delta, and you decide on any change of meaning |
+| `fold` | After `/speckit.implement` and `/speckit.converge` | Copies each `To` to the catalog, records what the code does, and adds a history row |
+| `check` | On the pull request, in CI | Compares the pull request with the catalog and your test report |
+
+`specify init` installs the catalog in new projects, unless you pass
+`--no-default-extensions` or `--script ps`, or use an integration without commands.
+To add it to an existing project, run `specify extension add capabilities`, then
+`/speckit.capabilities.bootstrap`, which proposes a map from your code and waits for
+your approval. To remove it, run `specify extension remove capabilities`. See the
+[catalog guide](docs/how-to/capabilities.md).
+
+### Graphify: a code graph for the catalog
+
+[Graphify](https://github.com/Graphify-Labs/graphify) is an optional tool that maps
+how your code connects. The catalog knows what was decided, and the graph knows
+where the code is and what a change affects. It never decides what a requirement
+is.
+
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="media/graphify-locate.png">
+  <img src="media/graphify-locate.gif" width="830" alt="Two questions go to locate. Where does the session expire is answered by the catalog with the rule, the change that set it, its code, and its test. What breaks if I change it has no answer in the catalog, so it goes to Graphify, which lists the code that depends on Session.">
+</picture>
+
+To ask, use your own words or the command:
+
+```text
+/speckit.capabilities.locate where does the session expire?
+```
+
+| Question | What answers it |
+| --- | --- |
+| Where does this behaviour live, which change set it, which test covers it | The catalog, always first |
+| What does changing this affect | `graph affected`, which warns when a name repeats, so you confirm in the code |
+| What is this anchor or name | `graph explain` |
+| Anything else about the code | `graph query`, with technical English keywords. Spanish or a whole question finds almost nothing |
+| Graphify cannot answer, or is not installed | A search of the code with `rg` |
+
+Each answer says which part came from the graph or the code.
+
+```bash
+uv tool install graphifyy==0.9.102
+```
+
+- **The extension works without it** and never installs it.
+- **Every read updates the graph first:** 2 seconds with no changes, and 44 seconds
+  after a change, in a repository of 350 source files.
+- **It writes only ignored files:** `graphify-out/`, which ignores itself, and
+  `.graphifyignore` if you have none. No tracked file changes.
+- **It reaches only part of the tool:** `update`, `explain`, `affected`, and `query`,
+  with no LLM keys in its environment.
+- **Validation so far:** it was run with the real tool on Python, Java, and
+  TypeScript. No model has used this path yet.
+
+### Clarify until the decisions are settled
+
+`/speckit.clarify` asks the questions with the most impact and stops at five.
+`/speckit.clarify-deep` builds a tree of the open decisions, so each answer can
+open or close the next questions. Both write the same `## Clarifications` section,
+so the commands after them work the same way.
+
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="media/clarify-deep.png">
+  <img src="media/clarify-deep.gif" width="830" alt="On the left, clarify answers five questions and stops, reporting the rest as deferred. On the right, clarify-deep works in rounds: each answer opens new questions, one is resolved from the repository, and it ends when nothing is open and you confirm. The counts are illustrative.">
+</picture>
+
+Use `/speckit.clarify` when a short pass is enough, and `/speckit.clarify-deep`
+when the feature is costly to get wrong. You can stop the interview at any time,
+and it reports what remains open. The number of questions in the animation is only
+an example. The method is adapted from the
+[`grilling` skill](https://github.com/mattpocock/skills/tree/main/skills/productivity/grilling)
+by Matt Pocock (MIT License). See the
+[command reference](docs/reference/agentic-sdd.md#speckitclarify-deep).
+
+### Catch drift at the pull request
+
+`check` does not run your tests. It reads your test report from pytest, Maven
+Surefire, Gradle, Jest, or Vitest, and only for the rules the pull request touches.
+
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="media/pr-check.png">
+  <img src="media/pr-check.gif" width="830" alt="check reads the catalog, the delta, and the test report. It blocks three kinds of pull request with exit code 1: a rule changed with no delta, a mapped test that failed or is missing, and a branch built on an old rule. A pull request where all three agree becomes ready.">
+</picture>
+
+> [!IMPORTANT]
+> The workflow the extension ships is an example and blocks nothing by itself. Until you mark `capabilities-check` as a required status check and turn on up-to-date branches or a merge queue, the result is only informative. See [What you must configure](extensions/capabilities/README.md#what-you-must-configure).
+
+### What it does not solve
+
+- **Weak tests:** it cannot tell whether a `conforming` rule is true when its mapped test is weak, or notice a value changed without a delta when no mapped test pins it.
+- **Untouched rules:** it checks only the rules a pull request touches.
+- **Agents:** the block that points agents to the catalog is an instruction they can ignore. Only CI enforces anything.
+- **Rules given up in two steps:** a pull request that only records `discrepant` passes with a notice, and the next one can change that code without a delta.
+- **Validation so far:** it has been validated with Claude Code and one model, and each agent scenario ran once. It has not been run on Windows or under GitHub Actions, and no model has used the code graph. With `--script ps`, it is installed only if you ask for it.
+
+This comparison is with Spec Kit's core. The
+[community catalog](https://github.github.io/spec-kit/reference/catalogs.html) has
+extensions for nearby problems, such as `grill`, `archive`, `sync`, `reconcile`,
+and `ci-guard`, and this fork has not been measured against them. For the full
+list of limits, see
+[What it cannot detect](extensions/capabilities/README.md#what-it-cannot-detect).
 
 ## Choose your process
 
@@ -243,11 +480,11 @@ the whole process.
 ## Star history
 
 <p align="center">
-    <a href="https://www.star-history.com/#github/spec-kit&Date">
+    <a href="https://www.star-history.com/#lema017/speckit-vs&Date">
         <picture>
-            <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=github%2Fspec-kit&type=Date&theme=dark"/>
-            <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=github%2Fspec-kit&type=Date"/>
-            <img src="https://api.star-history.com/svg?repos=github%2Fspec-kit&type=Date" alt="Spec Kit star history chart"/>
+            <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=lema017%2Fspeckit-vs&type=Date&theme=dark"/>
+            <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=lema017%2Fspeckit-vs&type=Date"/>
+            <img src="https://api.star-history.com/svg?repos=lema017%2Fspeckit-vs&type=Date" alt="Star history chart of this fork"/>
         </picture>
     </a>
 </p>
@@ -260,7 +497,7 @@ the whole process.
 
 ## Support and contributing
 
-[Report a bug or request a feature](https://github.com/github/spec-kit/issues/new) ·
+[Report a bug or request a feature](https://github.com/lema017/speckit-vs/issues/new) ·
 [Contributing guide](./CONTRIBUTING.md) · [Code of conduct](./CODE_OF_CONDUCT.md)
 
 <a id="-license"></a>
