@@ -1,0 +1,19 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="jest tests" tests="6" failures="1" errors="0" time="2.967">
+  <testsuite name="SessionManager" errors="0" failures="1" skipped="1" timestamp="2026-11-05T07:08:11" time="2.835" tests="6">
+    <testcase classname="SessionManager expires after 15 minutes" name="SessionManager expires after 15 minutes">
+    </testcase>
+    <testcase classname="SessionManager when idle stays active at 1 minutes" name="SessionManager when idle stays active at 1 minutes">
+    </testcase>
+    <testcase classname="SessionManager when idle stays active at 15 minutes" name="SessionManager when idle stays active at 15 minutes">
+    </testcase>
+    <testcase classname="SessionManager remembers the device" name="SessionManager remembers the device">
+      <skipped />
+    </testcase>
+    <testcase classname=" the limit is 15" name=" the limit is 15">
+    </testcase>
+    <testcase classname=" this one fails" name=" this one fails">
+      <failure />
+    </testcase>
+  </testsuite>
+</testsuites>

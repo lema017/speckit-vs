@@ -72,6 +72,8 @@ When `review` seals a delta, or `prepare` is `ready`, or `scaffold` lists a capa
 python3 .specify/extensions/capabilities/scripts/python/capabilities.py check --mode ci --base origin/main --report junit.xml
 ```
 
+`--report` takes files and directories, and more than one of each, for example `--report */target/surefire-reports`.
+
 In a merge queue, add `--combined`: a changed anchored file is then revalidated by the mapped tests of that commit, and the output lists `revalidated`.
 
 | Check | Fails when |
@@ -88,7 +90,19 @@ In a merge queue, add `--combined`: a changed anchored file is then revalidated 
 
 **Retiring a rule.** With `Replaced-By: R-x`, `R-x` must exist, be `conforming` and pass its tests. With `Replaced-By: none`, `implementation.md` needs a `## Retirement Evidence` block with at least one passing test that proves the behaviour is gone. `discrepant` there means it is still present, and blocks.
 
-**Test references.** `path::[Class::]name`, matched to JUnit `classname` and `name`. All variants of a parametrized test must pass, and skipped does not count as passed. This mapping has been validated with `pytest` only.
+**Test references.** All variants of a parametrized test must pass, and skipped does not count as passed. A reference no report contains blocks, with `mapped test … missing`. These runners were validated with their real reports:
+
+| Runner | Report | Reference | Watch out for |
+|---|---|---|---|
+| pytest | `--junitxml=junit.xml` | `tests/test_x.py::[Class::]test_y` | |
+| Maven Surefire 3 | `target/surefire-reports` | `src/test/java/a/XTest.java::[Nested::]method` | |
+| Gradle 8 | `build/test-results/test` | The same, or the `@DisplayName` text | It reports the display name and not the method. A `@ParameterizedTest` needs `name = "…{0}"` and a reference with that text; without it, its variants show up as `[1] x=1` and the method reads as missing. Skipped as up to date, it leaves an old report: run `cleanTest test` |
+| Jest with `jest-junit` | `junit.xml` | `src/x.test.ts::[describe::]title` | Set `addFileAttribute: "true"`. Without it the report does not say which file a test is in, and every reference reads as missing |
+| Vitest | `--reporter=junit --outputFile=junit.xml` | The same | |
+
+A title with a value in it is written as in the file: `stays active at %d minutes`, `$a`, `{0}`.
+
+A report that names no time zone, or no time, is judged by when the file was written.
 
 ## What you must configure
 
@@ -104,7 +118,7 @@ In a merge queue, add `--combined`: a changed anchored file is then revalidated 
 ## What it cannot detect
 
 - That `conforming` is true when the mapped test is weak.
-- A value changed without a delta when the mapped tests do not pin it. `check` reruns those tests and leaves the notice `anchored code changed without a delta`; if they pass, so does `check`, even if another test of the project fails.
+- A value changed without a delta when the mapped tests do not pin it. `check` reruns those tests and leaves the notice `anchored code changed without a delta`; if they pass, so does `check`, even if another test of the project fails. `fold` and `bootstrap` ask the agent for a test that fails if the value changes. That is an instruction, not a control.
 - That an `[inferred]` rule is right. Test evidence is required when a change adds or modifies a rule, not when `bootstrap` deduces it or when you validate it, so such a rule can reach `ready` as `unverified`, and a `conforming` it claims is not checked against the report until a later change touches it.
 - Conflicts of meaning between two different rules.
 - Behaviour changed without a spec, in code no rule anchors, when no test breaks.

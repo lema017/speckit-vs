@@ -1,0 +1,19 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="jest tests" tests="6" failures="1" errors="0" time="3.197">
+  <testsuite name="SessionManager" errors="0" failures="1" skipped="1" timestamp="2026-11-05T07:07:54" time="3.053" tests="6">
+    <testcase classname="SessionManager expires after 15 minutes" name="SessionManager expires after 15 minutes" file="src/auth/session.test.ts">
+    </testcase>
+    <testcase classname="SessionManager when idle stays active at 1 minutes" name="SessionManager when idle stays active at 1 minutes" file="src/auth/session.test.ts">
+    </testcase>
+    <testcase classname="SessionManager when idle stays active at 15 minutes" name="SessionManager when idle stays active at 15 minutes" file="src/auth/session.test.ts">
+    </testcase>
+    <testcase classname="SessionManager remembers the device" name="SessionManager remembers the device" file="src/auth/session.test.ts">
+      <skipped />
+    </testcase>
+    <testcase classname=" the limit is 15" name=" the limit is 15" file="src/auth/session.test.ts">
+    </testcase>
+    <testcase classname=" this one fails" name=" this one fails" file="src/auth/session.test.ts">
+      <failure />
+    </testcase>
+  </testsuite>
+</testsuites>

@@ -42,7 +42,8 @@ $ARGUMENTS
    - **Read the code.** Write what it does, not what the spec asks. If the spec says 15 and the code says 30, write 30 with `State: discrepant`. Never soften it and never change the rule text.
    - Use `conforming` only if you verified it. If you could not determine it, use `unverified`.
    - `Code` is `file`, `file::Class`, `file::function` or `file::.method()`. `apply` rejects a symbol that does not appear in the file, so copy it from what you read.
-   - `Tests` names tests that exercise this behaviour. `Tests: manual: <reason>` only if the project allows manual evidence.
+   - `Tests` names tests that exercise this behaviour. At least one must fail if the value in the rule changes. A test that reads the same constant as the code keeps passing with any value, so it does not count. If no test fails when the value changes, use `State: unverified` and report it. `Tests: manual: <reason>` only if the project allows manual evidence.
+   - Test references: pytest `file::[Class::]test`; JUnit `file::[Nested::]method`, or the `@DisplayName` text under Gradle, which does not report the method; Jest and Vitest `file::[describe::]title`, with each title as the file writes it, including `%d`.
 
 4. For a `REMOVED` rule, delete its block from `## Rule Status`. If it has `Replaced-By: none`, add under `## Retirement Evidence`:
 

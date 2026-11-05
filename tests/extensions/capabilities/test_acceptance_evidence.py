@@ -454,31 +454,6 @@ def test_references_map_to_a_real_pytest_report(repo, ref, expected):
     assert module.test_result(ref, module.junit_cases(repo.path / report)) == expected
 
 
-# Written by hand from the documented shape of these reports, not from a real run. They pin one
-# thing only: until a language is validated, its references block instead of passing by accident.
-SUREFIRE = """<testsuite name="com.acme.auth.SessionTest" tests="1" failures="0">
-  <testcase name="expiry" classname="com.acme.auth.SessionTest" time="0.01"/>
-</testsuite>"""
-JEST_JUNIT = """<testsuites name="jest tests"><testsuite name="session" tests="1">
-  <testcase classname="session expires" name="session expires after 15 minutes" time="0.01"/>
-</testsuite></testsuites>"""
-
-
-@pytest.mark.parametrize(
-    "report, ref",
-    [
-        (SUREFIRE, "src/test/java/com/acme/auth/SessionTest.java::expiry"),
-        (SUREFIRE, "src/test/java/com/acme/auth/SessionTest.java::SessionTest::expiry"),
-        (JEST_JUNIT, "tests/session.test.ts::session expires after 15 minutes"),
-    ],
-    ids=["java-method", "java-class", "typescript"],
-)
-def test_other_languages_fail_closed_until_they_are_validated(repo, report, ref):
-    repo.write("report.xml", report)
-    module = script_module()
-    assert module.test_result(ref, module.junit_cases(repo.path / "report.xml")) == "missing"
-
-
 # ---------------------------------------------------------------- options, off by default
 
 

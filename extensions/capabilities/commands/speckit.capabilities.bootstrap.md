@@ -63,7 +63,7 @@ If the input starts with `--validate`, go to **Validating rules**.
    - Tests: `<file>::<test>`
    ```
 
-   Use `conforming` only if a test you read verifies it, and `unverified` otherwise, with `Tests: none`. Never `discrepant`: an inferred rule says what the code does, so there is nothing to differ from. `apply` rejects a symbol that does not appear in the file, so copy it from what you read. Do not invent reasons under `Decisions`.
+   Use `conforming` only if a test you read would fail if the value in the rule changed. A test that reads the same constant as the code keeps passing with any value, so it does not count. Otherwise use `unverified`, with `Tests: none`. Never `discrepant`: an inferred rule says what the code does, so there is nothing to differ from. `apply` rejects a symbol that does not appear in the file, so copy it from what you read. Do not invent reasons under `Decisions`. Test references: pytest `file::[Class::]test`; JUnit `file::[Nested::]method`, or the `@DisplayName` text under Gradle, which does not report the method; Jest and Vitest `file::[describe::]title`, with each title as the file writes it, including `%d`.
 10. Run `{SCRIPT} apply --change <record> --staged <staging> --no-tasks`. `invalid-staging`: fix the drafts and run it again. `base-changed`: start again from step 8. `busy`: try again when it finishes.
 11. Run `{SCRIPT} check --mode dev --change <record>`. Report the capabilities, the rules, which are `unverified`, and any suspected bug. Remind the user that the rules stay `[inferred]` until validated.
 

@@ -23,7 +23,7 @@ import subprocess
 import sys
 import uuid
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 try:
@@ -60,6 +60,8 @@ STATES = {"conforming", "discrepant", "unverified"}
 CATALOG_SECTIONS = {"Overview", "Rules", "Related Capabilities"}
 FORBIDDEN_NAMES = {"plan.md", "tasks.md", "README.md"}
 REPORT_SKEW_SECONDS = 300
+SCRIPT_TESTS = (".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts")
+TITLE_SLOT = re.compile(r"%[a-zA-Z#]|\$[A-Za-z_][\w.]*|\{[^{}]*\}")
 DEFAULTS = {"feature_roots": "specs", "allow_manual_evidence": "false", "allow_partial_features": "false"}
 GITIGNORE_LINE = ".specify/capabilities/"
 GITATTRIBUTES_LINES = (
@@ -523,7 +525,8 @@ def blocks(text, title):
         if key == "tests" and value.startswith("manual:"):
             current["manual"] = value[len("manual:"):].strip() or "no reason given"
         elif key in ("code", "tests"):
-            current[key] = [ref.strip(" `") for ref in value.split(",") if ref.strip(" `") not in ("", "none")]
+            quoted = re.findall(r"`([^`]+)`", value)
+            current[key] = quoted or [ref.strip() for ref in value.split(",") if ref.strip() not in ("", "none")]
         else:
             current[key] = value
     return out
@@ -1139,29 +1142,55 @@ def junit_cases(path):
     cases = []
     for case in ET.parse(str(path)).getroot().iter("testcase"):
         passed = not any(child.tag in ("failure", "error", "skipped") for child in case)
-        cases.append((case.get("name") or "", case.get("classname") or "", passed))
+        cases.append((case.get("name") or "", case.get("classname") or "", passed, case.get("file") or ""))
     return cases
 
 
+def title_matches(title, name):
+    """A title as the file writes it (``at %d minutes``, ``at {0} minutes``) matches each of its variants."""
+    if title == name:
+        return True
+    pieces = TITLE_SLOT.split(title)
+    return len(pieces) > 1 and re.fullmatch(".+".join(re.escape(piece) for piece in pieces), name) is not None
+
+
+def same_file(ref_path, path):
+    """Either may be relative to a subdirectory: a runner's root is not always the repository's."""
+    return bool(path) and (ref_path == path or ref_path.endswith("/" + path) or path.endswith("/" + ref_path))
+
+
+def script_test_hits(parts, cases):
+    """``path::[describe::]title``. Jest names the file in ``file``, Vitest in ``classname``. No file, no match."""
+    title = " ".join(" ".join(parts[1:]).split())
+    return [case for case in cases if same_file(parts[0], case[3] or case[1]) and title_matches(title, " ".join(case[0].replace(" > ", " ").split()))]
+
+
+def class_test_hits(parts, cases):
+    """``path::[Class::]name``: pytest, and JUnit, which writes ``$`` for a nested class and ``()``, ``(long)[1]`` after a method."""
+    expected = ".".join([re.sub(r"\.[^./]+$", "", parts[0]).replace("/", ".")] + parts[1:-1])
+    name = parts[-1]
+    hits = []
+    for case in cases:
+        classname = case[1].replace("$", ".")
+        same_class = classname == expected or classname.endswith("." + expected) or expected.endswith("." + classname)
+        if same_class and (case[0].startswith((name + "[", name + "(")) or title_matches(name, case[0])):
+            hits.append(case)
+    return hits
+
+
 def test_result(ref, cases):
-    """``path::[Class::]name``. Every parametrized variant must pass; skipped is not passed."""
+    """Every variant of a test must pass; skipped is not passed."""
     parts = ref.split("::")
-    path, name = parts[0], parts[-1]
-    module = path[:-3] if path.endswith(".py") else path
-    expected = ".".join([module.replace("/", ".")] + parts[1:-1])
-    hits = [
-        case for case in cases
-        if (case[0] == name or case[0].startswith(name + "["))
-        and (case[1] == expected or case[1].endswith("." + expected))
-    ]
+    hits = (script_test_hits if parts[0].endswith(SCRIPT_TESTS) else class_test_hits)(parts, cases)
     if not hits:
         return "missing"
     return "passed" if all(case[2] for case in hits) else "failed"
 
 
-def report_timestamp(value):
+def report_moment(value):
+    """None if it names no zone: Gradle and Jest write UTC there, older pytest local time, and nothing says which."""
     moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    return moment.astimezone(timezone.utc).timestamp()
+    return moment.timestamp() if moment.tzinfo else None
 
 
 # ---------------------------------------------------------------- check
@@ -1238,33 +1267,54 @@ class Check:
             raise CapError("no merge base with %s; CI must fetch the whole history (fetch-depth: 0)" % self.base)
         self.merge_base = merge_base.strip()
 
+    def report_files(self):
+        """Each ``--report`` is a file or a directory: Surefire and Gradle write one XML per class."""
+        files = []
+        for value in self.report:
+            path = self.root / value
+            if path.is_dir():
+                found = sorted(item for item in path.rglob("*.xml") if item.is_file())
+                if not found:
+                    raise CapError("no XML test report in %s" % value)
+                files.extend(found)
+            elif path.is_file():
+                files.append(path)
+            else:
+                raise CapError("test report not found: %s" % value)
+        return files
+
+    def written_at(self, tree, path):
+        """The oldest suite that names its zone. Without one, when the file was written."""
+        moments = []
+        for suite in tree.iter("testsuite"):
+            value = suite.get("timestamp")
+            if not value:
+                continue
+            try:
+                moment = report_moment(value)
+            except ValueError:
+                self.notes.append("test report timestamp not understood: %r" % value)
+                continue
+            if moment is not None:
+                moments.append(moment)
+        return min(moments) if moments else path.stat().st_mtime
+
     def load_report(self):
         if not self.report:
             return
-        path = self.root / self.report
-        if not path.is_file():
-            raise CapError("test report not found: %s" % self.report)
-        try:
-            cases = junit_cases(path)
-            tree = ET.parse(str(path)).getroot()
-        except ET.ParseError as error:
-            raise CapError("test report is not valid XML: %s" % error)
-        rejected = []
-        if git(self.root, "ls-files", "--error-unmatch", "--", str(path)) is not None:
-            rejected.append("test report %s is tracked by git; evidence must come from this run" % self.report)
+        cases, rejected = [], []
         head_time = int((git(self.root, "log", "-1", "--format=%ct", "HEAD") or "0").strip() or 0)
-        for suite in tree.iter("testsuite"):
-            stamp_value = suite.get("timestamp")
-            if not stamp_value:
-                continue
+        for path in self.report_files():
+            name = os.path.relpath(str(path), str(self.root))
             try:
-                moment = report_timestamp(stamp_value)
-            except ValueError:
-                self.notes.append("test report timestamp not understood: %r" % stamp_value)
-                continue
-            if moment < head_time - REPORT_SKEW_SECONDS:
-                rejected.append("test report %s is older than the evaluated commit" % self.report)
-                break
+                cases.extend(junit_cases(path))
+                tree = ET.parse(str(path)).getroot()
+            except ET.ParseError as error:
+                raise CapError("test report is not valid XML: %s: %s" % (name, error))
+            if git(self.root, "ls-files", "--error-unmatch", "--", str(path)) is not None:
+                rejected.append("test report %s is tracked by git; evidence must come from this run" % name)
+            elif self.written_at(tree, path) < head_time - REPORT_SKEW_SECONDS:
+                rejected.append("test report %s is older than the evaluated commit" % name)
         for message in rejected:
             self.soft(message)
         if not rejected:
@@ -1709,7 +1759,7 @@ def build_parser():
     parser.add_argument("--no-tasks", action="store_true")
     parser.add_argument("--mode", choices=["dev", "ci"], default="dev")
     parser.add_argument("--base")
-    parser.add_argument("--report")
+    parser.add_argument("--report", action="extend", nargs="+", help="check: JUnit XML files or directories that hold them")
     parser.add_argument("--combined", action="store_true", help="evaluate a merge queue commit: changed anchors must be revalidated by this commit's tests")
     return parser
 

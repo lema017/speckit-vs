@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuite name="com.example.auth.SessionServiceTest" tests="7" skipped="1" failures="0" errors="0" timestamp="2026-11-05T07:16:15" time="0.205">
+  <testcase name="[1] minutes=1" classname="com.example.auth.SessionServiceTest" />
+  <testcase name="[2] minutes=15" classname="com.example.auth.SessionServiceTest" />
+  <testcase name="rememberMeIsNotImplemented()" classname="com.example.auth.SessionServiceTest">
+    <skipped />
+  </testcase>
+  <testcase name="active at 2 minutes" classname="com.example.auth.SessionServiceTest" />
+  <testcase name="active at 3 minutes" classname="com.example.auth.SessionServiceTest" />
+  <testcase name="una sesion de 16 minutos expira" classname="com.example.auth.SessionServiceTest" />
+  <testcase name="timeoutIsFifteenMinutes()" classname="com.example.auth.SessionServiceTest" />
+  </testsuite>

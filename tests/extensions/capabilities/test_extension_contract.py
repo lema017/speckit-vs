@@ -331,6 +331,26 @@ def test_locate_prompt_is_read_only_and_says_where_the_answer_comes_from():
     assert "`rg`" in text and "origin" in text
 
 
+@pytest.mark.parametrize("name", ["fold", "bootstrap"])
+def test_prompts_teach_the_reference_of_each_runner(name):
+    text = (EXT_DIR / "commands" / ("speckit.capabilities.%s.md" % name)).read_text(encoding="utf-8")
+    assert "JUnit `file::[Nested::]method`" in text and "Jest and Vitest `file::[describe::]title`" in text
+
+
+def test_readme_names_only_the_runners_that_were_validated_and_their_traps():
+    text = (EXT_DIR / "README.md").read_text(encoding="utf-8")
+    for needle in ("Maven Surefire 3", "Gradle 8", "`jest-junit`", "Vitest", 'addFileAttribute: "true"', "`cleanTest test`", "judged by when the file was written"):
+        assert needle in text
+
+
+@pytest.mark.parametrize("name", ["fold", "bootstrap"])
+def test_prompts_ask_for_a_test_that_pins_the_value(name):
+    text = (EXT_DIR / "commands" / ("speckit.capabilities.%s.md" % name)).read_text(encoding="utf-8")
+    assert "A test that reads the same constant as the code keeps passing with any value" in text
+    assert "if the value in the rule changes" in text or "if the value in the rule changed" in text
+    assert "unverified" in text
+
+
 @pytest.mark.parametrize("name", ["review", "fold", "bootstrap"])
 def test_prompts_that_can_write_the_block_report_when_it_was_skipped(name):
     text = (EXT_DIR / "commands" / ("speckit.capabilities.%s.md" % name)).read_text(encoding="utf-8")
