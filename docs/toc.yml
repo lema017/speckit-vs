@@ -52,6 +52,8 @@
       href: how-to/spec-persistence.md
     - name: Maintain specifications after delivery
       href: how-to/evolving-specs.md
+    - name: Keep a catalog of current behaviour
+      href: how-to/capabilities.md
     - name: Adapt Spec Kit to your process
       href: how-to/customization.md
 

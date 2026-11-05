@@ -5,7 +5,7 @@
 </div>
 
 > [!NOTE]
-> This repository is a fork of [github/spec-kit](https://github.com/github/spec-kit) that adds the [`/speckit.clarify-deep`](docs/reference/agentic-sdd.md#speckitclarify-deep) command. Install it from this repository, not from PyPI: the `specify-cli` package on PyPI is the original project and does not include this command.
+> This repository is a fork of [github/spec-kit](https://github.com/github/spec-kit) that adds a [catalog of current behaviour](docs/how-to/capabilities.md), installed by default in new projects, and the [`/speckit.clarify-deep`](docs/reference/agentic-sdd.md#speckitclarify-deep) command. Install it from this repository, not from PyPI: the `specify-cli` package on PyPI is the original project and does not include this command.
 
 <p align="center">
     <a href="https://github.com/github/spec-kit/releases/latest"><img src="https://img.shields.io/github/v/release/github/spec-kit" alt="Latest Release"/></a>

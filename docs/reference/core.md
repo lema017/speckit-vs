@@ -18,6 +18,8 @@ specify init [<project_name>]
 | `--allow-symlinks`       | Persist permission for contained symlinks in migrated FileHelper operations; default is deny |
 | `--ignore-agent-tools`   | Skip checks for AI coding agent CLI tools                                |
 | `--preset <id>`          | Install a preset during initialization                                   |
+| `--extension <spec>`     | Install an extension during initialization. Repeatable                   |
+| `--no-default-extensions` | Do not install the extensions a new project gets by default (`capabilities`) |
 
 Creates a new Spec Kit project with the necessary directory structure, templates, scripts, and AI coding agent integration files.
 
