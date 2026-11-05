@@ -200,7 +200,7 @@ def installed_project(tmp_path_factory) -> Path:
     project = tmp_path_factory.mktemp("installed") / "project"
     project.mkdir()
     subprocess.run(["git", "init", "-q", "-b", "main", "."], cwd=project, check=True)
-    specify(project, "init", "--here", "--force", "--non-interactive", "--integration", "claude", "--script", "sh", "--no-default-extensions")
+    specify(project, "init", "--here", "--force", "--non-interactive", "--ignore-agent-tools", "--integration", "claude", "--script", "sh", "--no-default-extensions")
     specify(project, "extension", "add", "capabilities")
     return project
 
@@ -264,7 +264,7 @@ def test_template_composes_without_pyyaml_and_disable_or_remove_restore_the_core
     project = tmp_path / "project"
     project.mkdir()
     subprocess.run(["git", "init", "-q", "-b", "main", "."], cwd=project, check=True)
-    specify(project, "init", "--here", "--force", "--non-interactive", "--integration", "claude", "--script", "sh", "--no-default-extensions")
+    specify(project, "init", "--here", "--force", "--non-interactive", "--ignore-agent-tools", "--integration", "claude", "--script", "sh", "--no-default-extensions")
     core = resolved_template(project)
     assert MARK not in core
 
@@ -287,7 +287,7 @@ def test_installed_project_gets_the_block_in_the_file_of_its_integration(tmp_pat
     project = tmp_path / "project"
     project.mkdir()
     subprocess.run(["git", "init", "-q", "-b", "main", "."], cwd=project, check=True)
-    specify(project, "init", "--here", "--force", "--non-interactive", "--integration", "claude", "--script", "sh", "--no-default-extensions")
+    specify(project, "init", "--here", "--force", "--non-interactive", "--ignore-agent-tools", "--integration", "claude", "--script", "sh", "--no-default-extensions")
     specify(project, "extension", "add", "capabilities")
     change = "specs/001-x"
     (project / change).mkdir(parents=True)
