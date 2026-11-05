@@ -24,8 +24,10 @@ from .conftest import (
     SPEC,
     EXPIRY_15,
     EXPIRY_30,
+    TEST_EXPIRY,
     TEST_FREE,
     Repo,
+    added,
     change_expiry,
     delta_block,
     deliver,
@@ -543,6 +545,235 @@ def test_a_validation_whose_text_differs_is_rejected(bare):
     rc, out = bare.cap("review", "--change", record)
     assert rc == 2 and out["status"] == "invalid"
     assert "[inferred]" in bare.read(SPEC)
+
+
+# ---------------------------------------------------------------- a claim of conformity
+
+
+CODE_ANCHOR = "`src/auth/session.py::SessionManager`"
+TEST_30 = "`tests/auth/test_session.py::test_expiry`"
+
+
+def test_an_inferred_rule_that_claims_conforming_is_ready_when_its_test_passes(bare):
+    bare.git("checkout", "-q", "-b", "bootstrap")
+    run_bootstrap(bare, bootstrap_record(), rule_block("R-session-expiry", "conforming", CODE_ANCHOR, TEST_30))
+    bare.commit("bootstrap")
+    rc, out = bare.ci()
+    assert rc == 0 and out["states"][RECORD] == "ready", out
+
+
+def test_an_inferred_rule_that_claims_conforming_blocks_when_its_test_fails(bare):
+    """bootstrap and a change of the value on one branch, which a model run found to pass."""
+    bare.git("checkout", "-q", "-b", "bootstrap")
+    run_bootstrap(bare, bootstrap_record(), rule_block("R-session-expiry", "conforming", CODE_ANCHOR, TEST_30))
+    bare.commit("bootstrap")
+    bare.set_code(expiry=99, tests=False)
+    bare.commit("the value moved on the same branch")
+    rc, out = bare.ci()
+    assert rc == 1 and hard_with(out, "R-session-expiry", "test_expiry", "failed"), out
+    assert out["states"][RECORD] == "prepared", "ready means check passed"
+
+
+def test_an_inferred_rule_that_claims_conforming_needs_a_test(bare):
+    bare.git("checkout", "-q", "-b", "bootstrap")
+    run_bootstrap(bare, bootstrap_record(), rule_block("R-session-expiry", "conforming", CODE_ANCHOR, "none"))
+    bare.commit("bootstrap")
+    rc, out = bare.ci()
+    assert rc == 1 and hard_with(out, "R-session-expiry", "no mapped test"), out
+
+
+def test_an_inferred_rule_that_says_discrepant_blocks(bare):
+    bare.git("checkout", "-q", "-b", "bootstrap")
+    run_bootstrap(bare, bootstrap_record(), rule_block("R-session-expiry", "discrepant", CODE_ANCHOR, "none"))
+    bare.commit("bootstrap")
+    rc, out = bare.ci()
+    assert rc == 1 and hard_with(out, "R-session-expiry", "state is discrepant"), out
+    assert out["states"][RECORD] != "ready"
+
+
+def test_validating_a_rule_the_catalog_says_is_discrepant_blocks(bare):
+    """It would turn into an approved requirement while the catalog says the code differs."""
+    bare.git("checkout", "-q", "-b", "bootstrap")
+    run_bootstrap(bare, bootstrap_record(), rule_block("R-session-expiry", "discrepant", CODE_ANCHOR, "none"))
+    bare.commit("bootstrap")
+    deliver(bare, "bootstrap", "validate")
+    record = validate(bare)
+    bare.commit("validated")
+    rc, out = bare.ci()
+    assert rc == 1 and hard_with(out, "R-session-expiry", "state is discrepant"), out
+    assert out["states"][record] != "ready"
+
+
+def test_an_inferred_rule_that_says_unverified_owes_no_evidence(bare):
+    bare.git("checkout", "-q", "-b", "bootstrap")
+    run_bootstrap(bare, bootstrap_record(), rule_block("R-session-expiry", "unverified", CODE_ANCHOR, "none"))
+    bare.commit("bootstrap")
+    rc, out = bare.ci()
+    assert rc == 0 and out["states"][RECORD] == "ready", out
+
+
+def test_an_inferred_rule_that_claims_conforming_goes_stale_when_its_code_moves(bare):
+    """As an added rule does. The mapped test still passes, because the file changed elsewhere."""
+    bare.git("checkout", "-q", "-b", "bootstrap")
+    run_bootstrap(bare, bootstrap_record(), rule_block("R-session-expiry", "conforming", CODE_ANCHOR, TEST_30))
+    bare.commit("bootstrap")
+    bare.replace("src/auth/session.py", "class SessionManager:", "# A comment.\nclass SessionManager:")
+    bare.commit("the anchored file moved")
+    rc, out = bare.ci()
+    assert rc == 1 and hard_with(out, "R-session-expiry", "stale"), out
+
+
+def validate(repo, tmp_implementation=None):
+    rc, out = repo.cap("locate", "--capability", "login")
+    literal = out["rules"][0]["text"]
+    validated = fill(prompt_blocks()[2], capability="login", literal_text=literal).replace("R-<name>", "R-session-expiry")
+    record = CAT + "/_changes/20261105-validate-login"
+    repo.write(record + "/capability-delta.md", "# Validate\n\n" + delta_block(validated))
+    repo.review(record)
+    prepared = repo.prepare(record, "--no-tasks")
+    if tmp_implementation:
+        repo.draft(prepared, tmp_implementation(repo.read(prepared["staging"] + "/login/implementation.md")))
+    rc, out = repo.cap("apply", "--change", record, "--staged", prepared["staging"], "--no-tasks")
+    assert rc == 0 and out["status"] == "published", out
+    return record
+
+
+def test_validating_while_the_code_moves_blocks_when_the_mapped_test_fails(bare):
+    bare.git("checkout", "-q", "-b", "bootstrap")
+    run_bootstrap(bare, bootstrap_record(), rule_block("R-session-expiry", "conforming", CODE_ANCHOR, TEST_30))
+    bare.commit("bootstrap")
+    deliver(bare, "bootstrap", "validate")
+    validate(bare)
+    bare.set_code(expiry=99, tests=False)
+    bare.commit("validated, and the value moved")
+    rc, out = bare.ci()
+    assert rc == 1 and hard_with(out, "R-session-expiry", "test_expiry", "failed"), out
+
+
+def test_validating_a_conforming_rule_is_ready_when_its_test_passes(bare):
+    """A validation stamps no anchors, so nothing can call it stale."""
+    bare.git("checkout", "-q", "-b", "bootstrap")
+    run_bootstrap(bare, bootstrap_record(), rule_block("R-session-expiry", "conforming", CODE_ANCHOR, TEST_30))
+    bare.commit("bootstrap")
+    deliver(bare, "bootstrap", "validate")
+    record = validate(bare)
+    bare.commit("validated")
+    rc, out = bare.ci()
+    assert rc == 0 and out["states"][record] == "ready", out
+
+
+def test_validating_and_claiming_conforming_for_the_first_time_needs_evidence(bare):
+    bare.git("checkout", "-q", "-b", "bootstrap")
+    run_bootstrap(bare, bootstrap_record(), rule_block("R-session-expiry", "unverified", CODE_ANCHOR, "none"))
+    bare.commit("bootstrap")
+    deliver(bare, "bootstrap", "validate")
+    record = validate(bare, lambda text: text.replace("State: unverified", "State: conforming"))
+    bare.commit("validated")
+    rc, out = bare.ci()
+    assert rc == 1 and hard_with(out, "R-session-expiry", "no mapped test"), out
+    assert out["states"][record] != "ready"
+
+
+# ---------------------------------------------------------------- a pull request with no delta
+
+
+
+
+def delivered_change(repo):
+    change_expiry(repo)
+    deliver(repo, "feat", "later")
+
+
+@pytest.mark.parametrize("state", ["discrepant", "unverified"])
+def test_a_rule_cannot_be_given_up_to_change_its_value(repo, state):
+    """The value moves and the row says so, so nothing else looks at it."""
+    delivered_change(repo)
+    repo.set_code(expiry=99, tests=False)
+    text = repo.read(IMPL)
+    start = text.index("### R-session-expiry")
+    row = text[start:]
+    row = row.replace("- State: conforming", "- State: %s" % state, 1).replace("- Tests: `%s`" % TEST_EXPIRY, "- Tests: none", 1)
+    repo.write(IMPL, text[:start] + row)
+    repo.commit("the value moved and the row gave up")
+    rc, out = repo.ci()
+    assert rc == 1 and hard_with(out, "R-session-expiry", "state went from conforming to %s" % state), out
+
+
+def test_giving_a_rule_up_with_no_change_of_code_leaves_a_notice(repo):
+    """Recording what was seen is allowed. The limit is stated: the next pull request can change the value."""
+    delivered_change(repo)
+    repo.replace(IMPL, "- Observed: Expira a los 15 minutos.\n- State: conforming", "- Observed: Sigue en 45.\n- State: discrepant")
+    repo.commit("record a discrepancy")
+    rc, out = repo.ci()
+    assert rc == 0, out
+    assert any("state went from conforming to discrepant" in note for note in out["notes"]), out
+
+
+def test_renaming_the_mapped_test_blocks(repo):
+    delivered_change(repo)
+    repo.replace("tests/auth/test_session.py", "def test_expiry", "def test_expiry_again")
+    repo.commit("the mapped test got another name")
+    rc, out = repo.ci()
+    assert rc == 1 and hard_with(out, "R-session-expiry", "test_expiry", "missing"), out
+
+
+def test_deleting_the_mapped_tests_blocks(repo):
+    delivered_change(repo)
+    repo.git("rm", "-q", "tests/auth/test_session.py")
+    repo.commit("the mapped tests are gone")
+    rc, out = repo.ci()
+    assert rc == 1 and hard_with(out, "R-session-expiry", "anchor does not exist"), out
+
+
+def test_moving_the_anchored_code_blocks(repo):
+    delivered_change(repo)
+    repo.git("mv", "src/auth/session.py", "src/auth/sessions.py")
+    repo.commit("the anchored code moved")
+    rc, out = repo.ci()
+    assert rc == 1 and hard_with(out, "R-session-expiry", "anchor does not exist", "src/auth/session.py"), out
+
+
+def test_an_anchor_written_with_a_leading_dot_is_the_same_file(repo):
+    change_expiry(repo)
+    repo.replace(IMPL, "`src/auth/session.py::SessionManager`", "`./src/auth/session.py::SessionManager`")
+    repo.commit("another spelling")
+    deliver(repo, "feat", "later")
+    repo.set_code(expiry=99, tests=False)
+    repo.commit("the value moved")
+    rc, out = repo.ci()
+    assert rc == 1 and hard_with(out, "R-session-expiry", "test_expiry", "failed"), out
+
+
+def test_changing_a_test_file_with_passing_tests_is_fine(repo):
+    delivered_change(repo)
+    repo.replace("tests/auth/test_session.py", "def test_expiry", "def test_new():\n    assert True\n\n\ndef test_expiry")
+    repo.commit("one more test")
+    rc, out = repo.ci()
+    assert rc == 0, out
+
+
+# ---------------------------------------------------------------- a delta that does not parse
+
+
+def test_a_wrapped_field_is_rejected_and_not_cut(repo):
+    wrapped = modified().replace(EXPIRY_15, EXPIRY_15 + "\n  salvo en la intranet, donde expira a los 60.")
+    change = repo.feature("002-x", wrapped)
+    rc, out = repo.cap("review", "--change", change)
+    assert rc == 2 and any("a field takes one line" in error for error in out["errors"]), out
+
+
+def test_a_wrapped_covers_is_rejected(repo):
+    entries = added("R-new", "Una regla.", capability="billing") + "\n### NEW-CAPABILITY billing\n- Covers: Cobros\n  y facturas.\n"
+    change = repo.feature("002-x", entries)
+    rc, out = repo.cap("review", "--change", change)
+    assert rc == 2 and any("a field takes one line" in error for error in out["errors"]), out
+
+
+def test_a_comment_inside_a_delta_is_not_a_field(repo):
+    commented = modified() + "<!--\n  Nota para quien revise,\n  en varias líneas.\n-->\n"
+    change = repo.feature("002-x", commented)
+    rc, out = repo.cap("review", "--change", change)
+    assert rc == 0, out
 
 
 # ---------------------------------------------------------------- a limit, stated

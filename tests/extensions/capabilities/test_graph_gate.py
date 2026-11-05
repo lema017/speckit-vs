@@ -268,6 +268,84 @@ def test_ignores_are_written_once_and_a_choice_of_the_project_is_kept(world):
     assert (world.root / ".graphifyignore").read_text(encoding="utf-8") == "mine/\n"
 
 
+def test_a_project_it_cannot_write_to_is_degraded_and_not_a_traceback(world):
+    world.install()
+    world.write("graphify-out", "a file where the directory goes")
+    rc, out = world.run("explain", "x")
+    assert rc == 6 and out["status"] == "degraded", out
+    assert world.calls() == []
+
+
+def test_anchors_still_answer_by_name_in_a_project_it_cannot_write_to(world):
+    """Anchors do not need the graph, so a directory it cannot create costs a warning and not the answer."""
+    world.install()
+    world.write("graphify-out", "a file where the directory goes")
+    world.write("src/a.py", "class Thing:\n    pass\n")
+    world.write("specs/_capabilities/login/implementation.md", "- Code: `src/a.py::Thing`\n")
+    rc, out = world.run("anchors")
+    assert rc == 0 and out["status"] == "degraded", out
+    assert out["anchors"][0]["found"] == "by-name"
+
+
+@pytest.mark.skipif(not hasattr(os, "geteuid") or os.geteuid() == 0, reason="needs a file this user cannot read")
+def test_a_file_it_cannot_read_is_degraded_and_not_a_traceback(world):
+    world.write("src/a.py", "class Thing:\n    pass\n")
+    world.write("specs/_capabilities/login/implementation.md", "- Code: `src/a.py::Thing`\n")
+    secret = world.root / "src/a.py"
+    secret.chmod(0)
+    try:
+        rc, out = world.run("anchors")
+    finally:
+        secret.chmod(0o644)
+    assert rc == 6 and out["reason"] == "read-failed" and "a.py" in out["detail"], out
+
+
+def test_a_root_that_does_not_exist_is_invalid_input(world, tmp_path):
+    world.install()
+    world.root = tmp_path / "nowhere"
+    rc, out = world.run("status")
+    assert rc == 2 and "--root" in out["stderr"], out
+
+
+@pytest.mark.parametrize(
+    "graph",
+    [
+        {"graph": {"schema_version": 1}, "nodes": ["not a node"]},
+        {"graph": {"schema_version": 1}, "nodes": {"not": "a list"}},
+        {"graph": ["not a table"], "nodes": []},
+        ["not", "a", "graph"],
+    ],
+)
+def test_a_graph_of_another_shape_falls_back_to_the_name(world, graph):
+    world.install()
+    world.graph.write_text(json.dumps(graph), encoding="utf-8")
+    world.write("src/a.py", "class Thing:\n    pass\n")
+    world.write("specs/_capabilities/login/implementation.md", "- Code: `src/a.py::Thing`\n")
+    rc, out = world.run("anchors")
+    assert rc == 0 and out["status"] == "degraded", out
+    assert out["anchors"][0]["found"] == "by-name"
+
+
+def test_a_node_whose_fields_are_not_text_is_left_out(world):
+    world.install()
+    world.graph.write_text(json.dumps({"graph": {"schema_version": 1}, "nodes": [{"source_file": ["not", "text"], "label": "x"}]}), encoding="utf-8")
+    world.write("src/a.py", "class Thing:\n    pass\n")
+    world.write("specs/_capabilities/login/implementation.md", "- Code: `src/a.py::Thing`\n")
+    rc, out = world.run("anchors")
+    assert rc == 0 and out["anchors"][0]["found"] == "by-name", out
+
+
+def test_nothing_is_written_through_a_link_that_leaves_the_project(world, tmp_path):
+    world.install()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (world.root / "graphify-out").symlink_to(elsewhere)
+    (world.root / ".graphifyignore").symlink_to(elsewhere / "ignored")
+    rc, out = world.run("update")
+    assert rc == 0 and out["wrote"] == [], out
+    assert not (elsewhere / ".gitignore").exists() and not (elsewhere / "ignored").exists()
+
+
 # ---------------------------------------------------------------- anchors, with a graph
 
 
@@ -298,6 +376,18 @@ def test_an_anchor_outside_the_project_is_missing_even_if_the_file_exists(world,
     world.write("specs/_capabilities/login/implementation.md", "### R-a\n- Code: `../outside.java::Outside`\n")
     rc, out = world.run("anchors")
     assert rc == 0 and out["missing"] == ["../outside.java::Outside"]
+
+
+def test_anchors_read_a_reference_as_the_main_script_does(world):
+    world.write("src/a.py", "class Manager:\n    def expiry(self):\n        pass\n")
+    world.write(
+        "specs/_capabilities/login/implementation.md",
+        "- Code: `src/a.py::Manager::expiry`, `src/a.py::Manager::gone`\n\n- Code: src/deleted.py::gone, none\n",
+    )
+    rc, out = world.run("anchors")
+    found = {row["ref"]: row["found"] for row in out["anchors"]}
+    assert found == {"src/a.py::Manager::expiry": "by-name", "src/a.py::Manager::gone": "missing", "src/deleted.py::gone": "missing"}, out
+    assert out["missing"] == ["src/a.py::Manager::gone", "src/deleted.py::gone"]
 
 
 def test_a_repeated_symbol_in_a_file_is_ambiguous(world):

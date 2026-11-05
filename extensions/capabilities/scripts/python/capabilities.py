@@ -17,6 +17,7 @@ import fnmatch
 import hashlib
 import json
 import os
+import posixpath
 import re
 import shutil
 import subprocess
@@ -62,7 +63,7 @@ CATALOG_SECTIONS = {"Overview", "Rules", "Related Capabilities"}
 FORBIDDEN_NAMES = {"plan.md", "tasks.md", "README.md"}
 REPORT_SKEW_SECONDS = 300
 SCRIPT_TESTS = (".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts")
-TITLE_SLOT = re.compile(r"%[a-zA-Z#]|\$[A-Za-z_][\w.]*|\{[^{}]*\}")
+TITLE_SLOT = re.compile(r"%[a-zA-Z#]|\$\{[^{}]*\}|\$[A-Za-z_][\w.]*|\{[^{}]*\}")
 DEFAULTS = {"feature_roots": "specs", "allow_manual_evidence": "false", "allow_partial_features": "false"}
 GITIGNORE_LINE = ".specify/capabilities/"
 GITATTRIBUTES_LINES = (
@@ -382,7 +383,7 @@ def parse_delta(text):
         return None, ["delta marker missing"]
     delta = {"raw": raw, "none": None, "entries": [], "new": {}}
     errors, current, new_capability = [], None, None
-    for line in raw.splitlines()[1:]:
+    for line in re.sub(r"<!--.*?-->", "", raw, flags=re.S).splitlines():
         match = ENTRY.match(line)
         if match:
             current, new_capability = {"op": match.group(1), "id": match.group(2)}, None
@@ -405,6 +406,8 @@ def parse_delta(text):
             continue
         match = re.match(r"^- ([A-Za-z-]+): (.*)$", line)
         if not match:
+            if line.strip() and (current is not None or new_capability):
+                errors.append("unexpected line, a field takes one line: %s" % line.strip())
             continue
         key, value = match.group(1).lower(), norm(match.group(2))
         if current is not None:
@@ -549,7 +552,7 @@ def retirement_evidence(text):
 
 
 def anchor_file(ref):
-    return ref.split("::")[0]
+    return posixpath.normpath(ref.split("::")[0])
 
 
 def anchor_resolves(root, ref):
@@ -1189,6 +1192,8 @@ def class_test_hits(parts, cases):
 def test_result(ref, cases):
     """Every variant of a test must pass; skipped is not passed."""
     parts = ref.split("::")
+    if not "".join(TITLE_SLOT.split(parts[-1])).strip():
+        return "missing"
     hits = (script_test_hits if parts[0].endswith(SCRIPT_TESTS) else class_test_hits)(parts, cases)
     if not hits:
         return "missing"
@@ -1385,7 +1390,7 @@ class Check:
             self.hard.append("%s: the delta of a delivered change was edited; it is the record that backs the rule, declare a new change instead" % source)
         lock_rel = source + "/" + LOCK_NAME
         if self.show(self.merge_base, lock_rel) != read(self.root / lock_rel):
-            self.hard.append("%s: the lock of a delivered change was changed or removed" % source)
+            self.hard.append("%s: the lock of a delivered change was changed or removed; restore it with git checkout %s -- %s, and declare a new change to change a rule" % (source, self.base, lock_rel))
         if norm(text) != norm(before):
             self.notes.append("%s: record already delivered on %s was edited in this change" % (source, self.base))
         return True
@@ -1419,7 +1424,7 @@ class Check:
         self.revalidated.append({"rule": rule_id, "files": files, "tests": row["tests"]})
         return []
 
-    def rule_evidence(self, rule_id, row, lock):
+    def rule_evidence(self, rule_id, row, lock, fresh=True):
         problems = []
         if row["state"] != "conforming":
             problems.append("%s: state is %s (%s)" % (rule_id, row["state"], row["observed"]))
@@ -1429,7 +1434,7 @@ class Check:
             if not anchor_resolves(self.root, ref):
                 problems.append("%s: code anchor does not resolve: %s" % (rule_id, ref))
         tests = self.tests_problems(rule_id, row)
-        return problems + tests + self.freshness_problems(rule_id, row, lock, tests)
+        return problems + tests + (self.freshness_problems(rule_id, row, lock, tests) if fresh else [])
 
     def retirement_problems(self, entry, source, lock):
         rule_id, replacement = entry["id"], entry["replaced-by"]
@@ -1549,6 +1554,11 @@ class Check:
                     problems.append("%s: no Rule Status block" % entry["id"])
                 else:
                     problems.extend(self.rule_evidence(entry["id"], row, lock))
+            else:
+                # INFERRED and VALIDATED owe nothing while unverified. A claim needs evidence, and discrepant blocks. A validation stamps no anchors.
+                row = self.head_status.get(entry["capability"], {}).get(entry["id"])
+                if row is not None and row["state"] != "unverified":
+                    problems.extend(self.rule_evidence(entry["id"], row, lock, fresh=entry["op"] != "VALIDATED"))
         if self.mode == "ci":
             self.hard.extend(messages)
             self.hard.extend("%s: %s" % (source, problem) for problem in problems)
@@ -1698,12 +1708,20 @@ class Check:
         self.hard.append("%s: new retired row does not match a delta in this change: %s" % (rel, " | ".join(row)))
 
     def check_rule_status_changes(self):
-        """Rule Status may change without a delta, but a claim of conformity needs evidence."""
+        """Rule Status may change without a delta, but a claim of conformity needs evidence and a state cannot be given up while its code moves."""
+        touched = {posixpath.normpath(name) for name in self.names}
         for capability in self.capabilities:
             old = rule_status(self.show(self.merge_base, cap_rel(capability, "implementation.md")))
             new = self.head_status[capability]
             for rule_id, row in sorted(new.items()):
-                if (capability, rule_id) in self.covered or old.get(rule_id) == row or row["state"] != "conforming":
+                if (capability, rule_id) in self.covered or old.get(rule_id) == row:
+                    continue
+                was = old.get(rule_id)
+                if row["state"] != "conforming":
+                    if was and was["state"] != row["state"]:
+                        message = "%s (%s): state went from %s to %s with no delta in this change" % (rule_id, capability, was["state"], row["state"])
+                        anchored = {anchor_file(ref) for ref in was["code"] + was["tests"] + row["code"] + row["tests"]}
+                        (self.soft if touched & anchored else self.notes.append)(message)
                     continue
                 for problem in self.tests_problems(rule_id, row):
                     self.soft("%s (Rule Status changed to conforming): %s" % (capability, problem))
@@ -1715,13 +1733,20 @@ class Check:
                     self.soft("%s (%s): Rule Status block removed while the rule is still in force" % (rule_id, capability))
 
     def check_anchored_code(self):
-        """Code anchored to a rule changed: its tests must pass even without a delta."""
-        touched = set(self.names)
+        """A file anchored to a rule changed: its anchors must still exist and its tests must pass, even without a delta."""
+        touched = {posixpath.normpath(name) for name in self.names}
         for capability in self.capabilities:
             for rule_id, row in sorted(self.head_status[capability].items()):
-                if (capability, rule_id) in self.covered or not touched & {anchor_file(ref) for ref in row["code"]}:
+                if (capability, rule_id) in self.covered:
                     continue
-                self.notes.append("%s: anchored code changed without a delta" % rule_id)
+                code_changed = touched & {anchor_file(ref) for ref in row["code"]}
+                if not code_changed and not touched & {anchor_file(ref) for ref in row["tests"]}:
+                    continue
+                if code_changed:
+                    self.notes.append("%s: anchored code changed without a delta" % rule_id)
+                for ref in row["code"] + row["tests"]:
+                    if not anchor_resolves(self.root, ref):
+                        self.soft("%s: anchor does not exist: %s" % (rule_id, ref))
                 if not row["tests"]:
                     continue
                 for problem in self.tests_problems(rule_id, row):

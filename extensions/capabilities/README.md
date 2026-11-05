@@ -6,6 +6,8 @@ Lets a new session find out, without being told, what behaviour is in force, whi
 specify extension add capabilities
 ```
 
+`specify init` installs it in a new project, unless you pass `--no-default-extensions`, choose `--script ps` or an integration with no commands. A re-init never adds it, so `specify extension remove capabilities` lasts.
+
 Disable it with `specify extension disable capabilities`. The core spec template comes back.
 
 ## What it adds to a project
@@ -41,7 +43,7 @@ Prompts run hooks in install order, so install `capabilities` before `git` if yo
 | Command | What it does | Writes |
 |---|---|---|
 | `speckit.capabilities.bootstrap` | Proposes a capability map for a project that already has code and waits for your approval. Then lists the chosen capabilities as `planned` and consolidates them through a record | The catalog, only after you approve. Rules stay `[inferred]` until you validate them with `--validate` |
-| `speckit.capabilities.locate` | Answers where a behaviour lives, which change set it and which tests cover it, from the catalog first. Says when part of the answer comes from the code | Nothing |
+| `speckit.capabilities.locate` | Answers where a behaviour lives, which change set it and which tests cover it, from the catalog first. Says when part of the answer comes from the code | Nothing of yours. With Graphify installed, the graph leaves its own untracked files (see below) |
 
 The script has two subcommands for them: `scaffold --capability <name> --covers "<one line>"` and `locate [--capability <name>]`.
 
@@ -50,7 +52,7 @@ The script has two subcommands for them: `scaffold --capability <name> --covers 
 When `review` seals a delta, or `prepare` is `ready`, or `scaffold` lists a capability, a block between `<!-- SPECKIT CAPABILITIES START -->` and `<!-- SPECKIT CAPABILITIES END -->` is added or refreshed. It tells a session to read the catalog before answering where a behaviour lives or changing it.
 
 - The file is the first of these: `context_files` or `context_file` in the `agent-context` configuration, the file of the integration in `.specify/init-options.json`, `AGENTS.md`.
-- Everything outside the markers stays byte for byte. If the markers are unbalanced, or the file points outside the repository, the file is left alone and `setup` says so.
+- Everything outside the markers stays byte for byte, except the frontmatter a `.mdc` file needs (`alwaysApply`) when it has none. If the markers are unbalanced, or the file points outside the repository, the file is left alone and `setup` says so.
 - Outside the Spec Kit flow this is an instruction an agent can ignore. It is not an enforcement mechanism; CI is.
 
 ## Script exit codes
@@ -92,7 +94,7 @@ python3 .specify/extensions/capabilities/scripts/python/capabilities.py graph st
 - Every read runs `update` first, because `query` does not say when the graph is old. In a repository of 350 source files that took 2 s with no changes and 44 s after a change. If it fails, nothing is read from the old graph.
 - It writes `graphify-out/`, which ignores itself, and `.graphifyignore` if you have none. No tracked file changes.
 - `by-name` means the graph has no such node, but the file contains the name: Graphify does not model a Java `static` field, for instance.
-- Without Graphify, `status` says so with exit code 0, the rest exit with 6, and `anchors` checks by file and name.
+- Without Graphify, `status` says so and `anchors` checks by file and name, both with exit code 0. `explain`, `affected`, `query` and `update` exit with 6.
 
 Validated with the real tool on Python, Java and TypeScript projects. A model has not been run through this path.
 
@@ -106,6 +108,10 @@ python3 .specify/extensions/capabilities/scripts/python/capabilities.py check --
 
 In a merge queue, add `--combined`: a changed anchored file is then revalidated by the mapped tests of that commit, and the output lists `revalidated`.
 
+`states` reports each change on its own, so you can see which one is at fault. The exit code is what blocks: a change can say `ready` while a problem outside it returns 1.
+
+`check` does not run tests. It reads your report, and only for the rules this pull request touches: those in its delta, those whose anchored code or test files it changes, and those whose Rule Status it changes. A pull request that touches none of them passes even if a mapped test of another rule is failing.
+
 | Check | Fails when |
 |---|---|
 | Delta applied | The catalog does not say `To` |
@@ -114,7 +120,8 @@ In a merge queue, add `--combined`: a changed anchored file is then revalidated 
 | Provenance | A rule's tag does not point to a delta that sets that text |
 | Sealed record | The delta or lock of a delivered change was edited, or the document removed |
 | History | A row of the base was removed or edited, or a new row matches no delta |
-| Evidence | A rule is not `conforming`, or its mapped tests did not pass in this run's report |
+| Evidence | A rule this change adds or modifies is not `conforming`, a rule it infers or validates is `discrepant`, or the mapped tests of a rule that says `conforming` did not pass in this run's report |
+| Observation | With no delta: a rule's state changes while this change touches its anchored files, or a file anchored to a rule no longer exists, or that rule's mapped tests do not pass |
 | Retirement | A retired rule has no evidence (see below) |
 | Discovery | A new `spec.md` under `feature_roots`, or with `FR-###` lines anywhere, has no delta |
 
@@ -130,7 +137,9 @@ In a merge queue, add `--combined`: a changed anchored file is then revalidated 
 | Jest with `jest-junit` | `junit.xml` | `src/x.test.ts::[describe::]title` | Set `addFileAttribute: "true"`. Without it the report does not say which file a test is in, and every reference reads as missing |
 | Vitest | `--reporter=junit --outputFile=junit.xml` | The same | |
 
-A title with a value in it is written as in the file: `stays active at %d minutes`, `$a`, `{0}`.
+A title with a value in it is written as in the file: `stays active at %d minutes`, `$a`, `${a}`, `{0}`. A title that is only a placeholder matches nothing and reads as missing.
+
+A reference matches every test with that path and name, and all of them must pass. So in a monorepo, a test with the same path or class in two modules reads as one, and if one of those modules did not run, nothing notices.
 
 A report that names no time zone, or no time, is judged by when the file was written.
 
@@ -149,10 +158,16 @@ A report that names no time zone, or no time, is judged by when the file was wri
 ## What it cannot detect
 
 - That `conforming` is true when the mapped test is weak.
-- A value changed without a delta when the mapped tests do not pin it. `check` reruns those tests and leaves the notice `anchored code changed without a delta`; if they pass, so does `check`, even if another test of the project fails. `fold` and `bootstrap` ask the agent for a test that fails if the value changes. That is an instruction, not a control.
-- That an `[inferred]` rule is right. Test evidence is required when a change adds or modifies a rule, not when `bootstrap` deduces it or when you validate it, so such a rule can reach `ready` as `unverified`, and a `conforming` it claims is not checked against the report until a later change touches it.
+- A value changed without a delta when the mapped tests do not pin it. `check` reads those tests in the report and leaves the notice `anchored code changed without a delta`; if they passed, so does `check`, even if another test of the project fails. `fold` and `bootstrap` ask the agent for a test that fails if the value changes. That is an instruction, not a control.
+- That an `[inferred]` rule is right. `bootstrap` deduces it from the code. It can reach `ready` as `unverified` with no test. If it says `conforming`, its mapped tests must pass in the report, which shows the code does what those tests expect and not that the rule is what you wanted.
+- A rule given up in two steps. A pull request that only records `discrepant` or `unverified` leaves a notice and passes, because recording what was seen is allowed. The next pull request can change that code without a delta, since nothing pins it any more. Read the notice in review.
 - Conflicts of meaning between two different rules.
 - Behaviour changed without a spec, in code no rule anchors, when no test breaks.
 - A pull request that weakens its own check. CI runs the script, the config and the test command of the revision under review, so `check` only leaves a notice when `.specify/extensions/capabilities/` changes. Protect that directory and the workflow with code owners.
+
+## Known limits
+
+- `fold` on a feature that was already delivered rewrites its lock, and `check` rejects it with the way out: restore the lock with `git checkout`, and declare a new change to change a rule. It fails closed, but `fold` does not stop you first, because it does not know the base.
+- The `init` step of a workflow has no way to opt out of the default install. Use `specify extension remove capabilities` afterwards.
 
 `.specify/capabilities/` is local working state and is git-ignored. Delete it only when no fold is running and `recover` reports `clean`.

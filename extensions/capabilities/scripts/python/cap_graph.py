@@ -85,12 +85,13 @@ def ensure_ignores(root):
     """Never overwrites a choice of the project, and changes no tracked file: an agent can ask a question without leaving a diff."""
     wrote = []
     ignore = root / ".graphifyignore"
-    if not ignore.exists():
+    if not ignore.exists() and not ignore.is_symlink():
         ignore.write_text("\n".join(IGNORED) + "\n", encoding="utf-8")
         wrote.append(".graphifyignore")
-    own = root / "graphify-out" / ".gitignore"
-    if not own.exists():
-        own.parent.mkdir(exist_ok=True)
+    out = root / "graphify-out"
+    own = out / ".gitignore"
+    if not out.is_symlink() and not own.exists() and not own.is_symlink():
+        out.mkdir(exist_ok=True)
         own.write_text("*\n", encoding="utf-8")
         wrote.append("graphify-out/.gitignore")
     return wrote
@@ -100,7 +101,10 @@ def refresh(root):
     """``query`` does not say when the graph is old, so every read updates it first. Returns what to report, or None on failure."""
     if shutil.which("graphify") is None:
         return None
-    wrote = ensure_ignores(root)
+    try:
+        wrote = ensure_ignores(root)
+    except OSError:
+        return None
     done = tool(root, ["update", "."], UPDATE_SECONDS)
     if done is None or done[0] != 0 or not (root / GRAPH).is_file():
         return None
@@ -113,11 +117,15 @@ def load_index(root):
         data = json.loads((root / GRAPH).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    if not isinstance(data, dict) or (data.get("graph") or {}).get("schema_version") != SCHEMA:
+    graph = data.get("graph") if isinstance(data, dict) else None
+    nodes = data.get("nodes") if isinstance(data, dict) else None
+    if not isinstance(graph, dict) or graph.get("schema_version") != SCHEMA or not isinstance(nodes, list):
         return None
     index = {}
-    for node in data.get("nodes") or []:
-        if node.get("source_file") and node.get("label"):
+    for node in nodes:
+        if not isinstance(node, dict):
+            return None
+        if isinstance(node.get("source_file"), str) and isinstance(node.get("label"), str) and node["source_file"] and node["label"]:
             index.setdefault((node["source_file"], node["label"]), []).append(node)
     return index
 
@@ -135,13 +143,14 @@ def resolve(index, ref):
 
 
 def named_in_file(root, ref):
-    """Not a parse: the file exists and the name appears in it as a word."""
-    path, _, symbol = ref.partition("::")
+    """Not a parse: the file exists and each symbol appears in it as a word, as anchor_resolves in capabilities.py reads it."""
+    path, *symbols = ref.split("::")
     target = (root / path).resolve()
     if root not in target.parents or not target.is_file():
         return False
-    name = symbol.strip(".()")
-    return not name or re.search(r"(?<!\w)%s(?!\w)" % re.escape(name), target.read_bytes().decode("utf-8", "replace")) is not None
+    text = target.read_bytes().decode("utf-8", "replace")
+    names = [symbol.split("[")[0].strip(".()") for symbol in symbols]
+    return all(re.search(r"(?<!\w)%s(?!\w)" % re.escape(name), text) for name in names if name)
 
 
 def repeated_name(root, term):
@@ -159,7 +168,7 @@ def code_anchors(root, capability):
     found = {}
     for path in sorted((root / CATALOG).glob(pattern)):
         for line in CODE_LINE.findall(path.read_text(encoding="utf-8", errors="replace")):
-            for ref in QUOTED.findall(line):
+            for ref in QUOTED.findall(line) or [part.strip() for part in line.split(",") if part.strip() not in ("", "none")]:
                 found.setdefault(ref, path.parent.name)
     return found
 
@@ -245,6 +254,8 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
     root = Path(args.root).resolve()
+    if not root.is_dir():
+        parser.error("--root is not a directory")
     if args.capability and not re.fullmatch(r"[a-z][a-z0-9-]*", args.capability):
         parser.error("invalid capability name")
     if any(term.startswith("-") for term in args.terms):
@@ -255,13 +266,16 @@ def main():
         parser.error("query takes technical English words")
     if args.command in ("status", "update", "anchors") and args.terms:
         parser.error("%s takes no terms" % args.command)
-    if args.command == "status":
-        return cmd_status(root)
-    if args.command == "update":
-        return cmd_update(root)
-    if args.command == "anchors":
-        return cmd_anchors(root, args.capability)
-    return cmd_read(root, args.command, args.terms, args.depth, args.all)
+    try:
+        if args.command == "status":
+            return cmd_status(root)
+        if args.command == "update":
+            return cmd_update(root)
+        if args.command == "anchors":
+            return cmd_anchors(root, args.capability)
+        return cmd_read(root, args.command, args.terms, args.depth, args.all)
+    except OSError as error:
+        return degraded("read-failed", detail=str(error))
 
 
 if __name__ == "__main__":

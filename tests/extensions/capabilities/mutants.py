@@ -153,6 +153,26 @@ MUTANTS += [
     ("ignored-catalog-counts-tracked", 'git(root, "check-ignore", "-q", CATALOG + "/index.md")', 'git(root, "check-ignore", "-q", "--no-index", CATALOG + "/index.md")'),
 ]
 
+MUTANTS += [
+    # bootstrap and validate: a claim of conformity needs evidence.
+    ("inferred-skips-evidence", 'if row is not None and row["state"] != "unverified":', 'if row is not None and row["state"] != "unverified" and entry["op"] == "VALIDATED":'),
+    ("validated-skips-evidence", 'if row is not None and row["state"] != "unverified":', 'if row is not None and row["state"] != "unverified" and entry["op"] == "INFERRED":'),
+    ("discrepant-owes-nothing", 'if row is not None and row["state"] != "unverified":', 'if row is not None and row["state"] == "conforming":'),
+    ("inferred-never-stale", 'fresh=entry["op"] != "VALIDATED")', 'fresh=False)'),
+    ("validated-always-stale", 'fresh=entry["op"] != "VALIDATED")', 'fresh=True)'),
+    # What the independent review found. Each one was a way through CI.
+    ("state-given-up", 'if was and was["state"] != row["state"]:', "if False:"),
+    ("state-given-up-is-only-a-note", '(self.soft if touched & anchored else self.notes.append)(message)', "self.notes.append(message)"),
+    ("state-recorded-always-blocks", '(self.soft if touched & anchored else self.notes.append)(message)', "self.soft(message)"),
+    ("test-file-not-anchored", 'if not code_changed and not touched & {anchor_file(ref) for ref in row["tests"]}:', "if not code_changed:"),
+    ("anchors-not-rechecked", 'self.notes.append("%s: anchored code changed without a delta" % rule_id)\n                for ref in row["code"] + row["tests"]:', 'self.notes.append("%s: anchored code changed without a delta" % rule_id)\n                for ref in []:'),
+    ("anchor-spelling", 'return posixpath.normpath(ref.split("::")[0])', 'return ref.split("::")[0]'),
+    ("wrapped-field-skipped", "if line.strip() and (current is not None or new_capability):", "if False:"),
+    ("comment-is-a-field", 're.sub(r"<!--.*?-->", "", raw, flags=re.S).splitlines()', "raw.splitlines()"),
+    ("placeholder-title-matches", 'if not "".join(TITLE_SLOT.split(parts[-1])).strip():', "if False:"),
+    ("template-literal-slot", r'''|\$\{[^{}]*\}|''', "|"),
+]
+
 # The door to Graphify. Each one is checked with test_graph_gate.py alone.
 GATE_MUTANTS = [
     ("gate-leaks-the-environment", "env=graph_env()", "env=dict(os.environ, **graph_env())"),
@@ -176,6 +196,14 @@ GATE_MUTANTS = [
     ("gate-dash-reaches-the-tool", 'if any(term.startswith("-") for term in args.terms):', "if False:"),
     ("gate-spanish-silent", "if any(ord(char) > 127 for term in terms for char in term):", "if False:"),
     ("gate-output-not-cut", '"output": stdout[:MAX_OUTPUT], "truncated"', '"output": stdout, "truncated"'),
+    ("gate-writes-through-a-link", "ignore.is_symlink()", "False"),
+    ("gate-out-dir-through-a-link", "out.is_symlink()", "False"),
+    ("gate-write-error-escapes", "except OSError:\n        return None", "except ZeroDivisionError:\n        return None"),
+    ("gate-graph-of-any-shape", 'isinstance(node.get("source_file"), str)', "True"),
+    ("gate-root-not-checked", "if not root.is_dir():", "if False:"),
+    ("gate-read-error-escapes", 'except OSError as error:\n        return degraded("read-failed"', 'except ZeroDivisionError as error:\n        return degraded("read-failed"'),
+    ("gate-anchor-symbols-cut", 'path, *symbols = ref.split("::")', 'path, *symbols = ref.split("::")[:2]'),
+    ("gate-unquoted-anchors-dropped", 'QUOTED.findall(line) or [part.strip() for part in line.split(",") if part.strip() not in ("", "none")]', "QUOTED.findall(line)"),
 ]
 # In capabilities.py, also checked with test_graph_gate.py alone.
 GATE_DOOR_MUTANTS = [

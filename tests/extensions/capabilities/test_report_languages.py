@@ -101,6 +101,35 @@ def test_a_title_as_the_file_writes_it(title, name, expected):
     assert script_module().title_matches(title, name) is expected
 
 
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "src/x.test.ts::%s",
+        "src/x.test.ts::{0}",
+        "src/x.test.ts::${value}",
+        "src/x.test.ts::a block::%s",
+        "src/test/java/a/XTest.java::{0}",
+    ],
+)
+def test_a_title_with_nothing_but_placeholders_names_no_test(ref):
+    """It would match every test of the file, and a report with another test would pass it."""
+    module = script_module()
+    cases = [("a block other", "src/x.test.ts", True, ""), ("other", "a.XTest", True, "")]
+    assert module.test_result(ref, cases) == "missing"
+
+
+def test_a_template_literal_matches_as_one_placeholder():
+    module = script_module()
+    assert module.title_matches("caps at ${LIMIT} tries", "caps at 5 tries")
+    assert not module.title_matches("caps at ${LIMIT} tries", "caps at 5 calls")
+
+
+def test_one_spelling_of_an_anchored_path():
+    module = script_module()
+    assert module.anchor_file("./src/a.py::Thing") == "src/a.py"
+    assert module.anchor_file("src/a.py::Thing") == "src/a.py"
+
+
 def test_a_title_with_a_comma_stays_one_reference():
     text = "## Rule Status\n\n### R-x\n- Tests: `a.ts::one, two`, `a.ts::three`\n- Code: a.py::f, b.py::g\n\n### R-y\n- Tests: none\n"
     found = script_module().blocks(text, "Rule Status")
