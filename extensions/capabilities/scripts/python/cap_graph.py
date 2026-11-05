@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""The only door to Graphify, an optional code graph: where code is and what a change affects.
+"""The only door to Graphify, the code graph this fork installs with specify: where code is and what a change affects.
 
-It never decides what a requirement is, and nothing else in the extension needs it. Graphify is
-never installed from here. Standard library only, so any Python 3 can run it.
+It never decides what a requirement is. Graphify arrives as a dependency of specify, so it lives
+beside the real specify and may not be on PATH. It is never installed from here. Standard library
+only, so any Python 3 can run it.
 
 Only ``update``, ``explain``, ``affected`` and ``query`` reach the tool: never ``extract``,
 ``install``, ``watch``, hooks or ``--strict``. It runs without LLM keys in its environment.
 
-Exit codes: 0 done, 2 invalid input, 6 Graphify cannot answer: use the anchors and ``rg``.
+Exit codes: 0 done, 2 invalid input, 6 Graphify cannot answer, and ``reason`` says why:
+``not-installed`` needs specify reinstalled, ``no-code`` is a project with nothing to graph yet,
+``update-failed`` and ``read-failed`` are failures of the tool. The last three continue with the
+anchors and ``rg``.
 """
 
 from __future__ import annotations
@@ -23,7 +27,8 @@ from pathlib import Path
 
 OK, INVALID, UNAVAILABLE = 0, 2, 6
 PINNED = "0.9.102"
-INSTALL = "uv tool install graphifyy==%s" % PINNED
+INSTALL = "uv tool install specify-cli --force --from git+https://github.com/lema017/speckit-vs.git"
+NO_CODE = "No code files found"
 GRAPH = "graphify-out/graph.json"
 SCHEMA = 1
 CATALOG = "specs/_capabilities"
@@ -45,11 +50,17 @@ def emit(obj, code=OK):
 
 
 def degraded(reason, **extra):
-    return emit(dict({"status": "degraded", "reason": reason, "fallback": "use the anchors and rg", "install": INSTALL}, **extra), UNAVAILABLE)
+    report = {"status": "degraded", "reason": reason, "fallback": "use the anchors and rg"}
+    if reason == "not-installed":
+        report["install"] = INSTALL
+    return emit(dict(report, **extra), UNAVAILABLE)
 
 
-def no_graph():
-    return degraded("update-failed" if shutil.which("graphify") else "not-installed")
+def find_tool():
+    """Beside the real specify first: it is the version this fork ships, and it is not on PATH. Then PATH."""
+    specify = shutil.which("specify")
+    beside = shutil.which("graphify", path=os.path.dirname(os.path.realpath(specify))) if specify else None
+    return beside or shutil.which("graphify")
 
 
 def graph_env():
@@ -61,7 +72,7 @@ def graph_env():
 
 def tool(root, args, seconds):
     """(returncode, stdout, stderr), or None if it could not run or did not finish."""
-    path = shutil.which("graphify")
+    path = find_tool()
     if path is None:
         return None
     try:
@@ -98,17 +109,19 @@ def ensure_ignores(root):
 
 
 def refresh(root):
-    """``query`` does not say when the graph is old, so every read updates it first. Returns what to report, or None on failure."""
-    if shutil.which("graphify") is None:
-        return None
+    """``query`` does not say when the graph is old, so every read updates it first. Returns (what to report, None) or (None, why not)."""
+    if find_tool() is None:
+        return None, "not-installed"
     try:
         wrote = ensure_ignores(root)
     except OSError:
-        return None
+        return None, "update-failed"
     done = tool(root, ["update", "."], UPDATE_SECONDS)
+    if done is not None and done[0] != 0 and NO_CODE in done[1] + done[2]:
+        return None, "no-code"
     if done is None or done[0] != 0 or not (root / GRAPH).is_file():
-        return None
-    return {"wrote": wrote, "warnings": version_warnings(version_of(root))}
+        return None, "update-failed"
+    return {"wrote": wrote, "warnings": version_warnings(version_of(root))}, None
 
 
 def load_index(root):
@@ -174,23 +187,23 @@ def code_anchors(root, capability):
 
 
 def cmd_status(root):
-    if shutil.which("graphify") is None:
+    if find_tool() is None:
         return emit({"status": "degraded", "available": False, "fallback": "use the anchors and rg", "install": INSTALL, "pinned": PINNED})
     version = version_of(root)
     return emit({"status": "ok", "available": True, "version": version, "pinned": PINNED, "graph": (root / GRAPH).is_file(), "warnings": version_warnings(version)})
 
 
 def cmd_update(root):
-    state = refresh(root)
+    state, why = refresh(root)
     if state is None:
-        return no_graph()
+        return degraded(why)
     return emit(dict({"status": "ok", "graph": GRAPH}, **state))
 
 
 def cmd_read(root, args, terms, depth, show_all):
-    state = refresh(root)
+    state, why = refresh(root)
     if state is None:
-        return no_graph()
+        return degraded(why)
     warnings = state["warnings"]
     if args == "query":
         if any(ord(char) > 127 for term in terms for char in term):
@@ -222,7 +235,7 @@ def cmd_anchors(root, capability):
     """Whether the code anchors of the catalog still exist. Works with or without the tool, and says which."""
     anchors = code_anchors(root, capability)
     warnings, index = [], None
-    state = refresh(root)
+    state, _ = refresh(root)
     if state is None:
         warnings.append("no graph: an anchor counts if its file exists and contains the name")
     else:
