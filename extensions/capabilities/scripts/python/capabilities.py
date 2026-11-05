@@ -1828,7 +1828,7 @@ def dispatch(args, root):
 
 
 def run_graph(args):
-    """The optional graph has its own door: nothing in this script needs it."""
+    """The graph has its own door, and check and fold do not use it."""
     gate = Path(__file__).resolve().with_name("cap_graph.py")
     return subprocess.run([sys.executable, "-I", "-S", str(gate), *args], check=False).returncode
 

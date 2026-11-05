@@ -7,12 +7,16 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
+import tomllib
+from pathlib import Path
 
 import pytest
 
-from .conftest import PYTHON, SCRIPT
+from .conftest import PYTHON, ROOT, SCRIPT
 
 GATE = SCRIPT.with_name("cap_graph.py")
+REINSTALL = "uv tool install specify-cli --force --from git+https://github.com/lema017/speckit-vs.git"
 MAIN = SCRIPT
 PINNED = "0.9.102"
 JAVA = "src/main/java/com/example/auth/SessionService.java"
@@ -41,6 +45,7 @@ env >> "{env_log}"
 case "$1" in
   --version) echo "graphify {version}"; exit 0 ;;
   update)
+    {update_output}
     [ "{update_rc}" = 0 ] || exit {update_rc}
     mkdir -p graphify-out
     cp "{graph}" graphify-out/graph.json
@@ -56,6 +61,7 @@ class World:
         self.root.mkdir()
         self.bin = tmp_path / "bin"
         self.bin.mkdir()
+        self.tool_bin = tmp_path / "uv-tools" / "specify-cli" / "bin"
         self.log = tmp_path / "calls.log"
         self.env_log = tmp_path / "env.log"
         self.graph = tmp_path / "graph.json"
@@ -68,15 +74,29 @@ class World:
             "GEMINI_API_KEY": "secret-gemini",
         }
 
-    def install(self, version=PINNED, update_rc=0, read_rc=0, answer='echo "output of $1"'):
+    def install(self, version=PINNED, update_rc=0, read_rc=0, answer='echo "output of $1"', update_output=":", into=None):
         if os.name == "nt":
             pytest.skip("the stand-in for Graphify is a shell script, which Windows cannot execute")
-        path = self.bin / "graphify"
+        path = (into or self.bin) / "graphify"
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
-            FAKE.format(log=self.log, env_log=self.env_log, graph=self.graph, version=version, update_rc=update_rc, read_rc=read_rc, answer=answer),
+            FAKE.format(log=self.log, env_log=self.env_log, graph=self.graph, version=version, update_rc=update_rc, read_rc=read_rc, answer=answer, update_output=update_output),
             encoding="utf-8",
         )
         path.chmod(path.stat().st_mode | stat.S_IEXEC)
+        return self
+
+    def install_specify(self, link=True):
+        """A specify as ``uv tool install`` leaves it: the link on PATH, and the real one in the environment of the tool."""
+        real = self.tool_bin / "specify"
+        real.parent.mkdir(parents=True, exist_ok=True)
+        real.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        real.chmod(real.stat().st_mode | stat.S_IEXEC)
+        on_path = self.bin / "specify"
+        if link:
+            on_path.symlink_to(real)
+        else:
+            shutil.copy(str(real), str(on_path))
         return self
 
     def write(self, rel, text):
@@ -113,7 +133,7 @@ def test_status_without_graphify_says_how_to_go_on(world):
     rc, out = world.run("status")
     assert rc == 0
     assert out["available"] is False and out["status"] == "degraded"
-    assert out["install"] == "uv tool install graphifyy==" + PINNED
+    assert out["install"] == REINSTALL
     assert "rg" in out["fallback"]
 
 
@@ -123,6 +143,13 @@ def test_without_graphify_every_read_is_degraded_and_nothing_is_written(world, a
     assert rc == 6
     assert out["status"] == "degraded" and out["reason"] == "not-installed"
     assert world.tree() == []
+
+
+@pytest.mark.parametrize("args", [("update",), ("explain", "SessionService"), ("affected", "SessionService"), ("query", "session")])
+def test_without_graphify_the_way_out_is_to_reinstall_specify(world, args):
+    _, out = world.run(*args)
+    assert out["install"] == REINSTALL
+    assert "graphifyy" not in out["install"]
 
 
 def test_anchors_without_graphify_fall_back_to_the_file_and_the_name_and_say_so(world):
@@ -447,18 +474,160 @@ def test_a_flag_cannot_reach_the_tool_after_a_double_dash(world, terms):
     assert world.calls() == []
 
 
-# ---------------------------------------------------------------- the real tool, when it is installed
+# ---------------------------------------------------------------- where the tool is found
+
+
+def test_the_tool_beside_specify_is_found_with_nothing_on_path(world):
+    world.install_specify().install(into=world.tool_bin)
+    assert not (world.bin / "graphify").exists()
+    rc, out = world.run("status")
+    assert rc == 0 and out["available"] is True and out["version"] == PINNED and out["warnings"] == []
+    rc, out = world.run("update")
+    assert rc == 0 and out["status"] == "ok"
+
+
+def test_the_tool_beside_specify_wins_over_the_one_on_path(world):
+    world.install_specify().install(version="9.9.9").install(into=world.tool_bin)
+    _, out = world.run("status")
+    assert out["version"] == PINNED and out["warnings"] == []
+
+
+def test_the_tool_on_path_still_works_and_warns_about_its_version(world):
+    world.install_specify().install(version="9.9.9")
+    _, out = world.run("status")
+    assert out["available"] is True and out["version"] == "9.9.9"
+    assert out["warnings"] == ["Graphify 9.9.9 is not the validated " + PINNED]
+
+
+def test_specify_alone_does_not_count_as_the_tool(world):
+    world.install_specify()
+    rc, out = world.run("update")
+    assert rc == 6 and out["reason"] == "not-installed"
+    assert world.tree() == []
+
+
+def test_a_copy_of_specify_finds_what_is_beside_the_copy(world):
+    world.install_specify(link=False).install(into=world.tool_bin)
+    rc, out = world.run("update")
+    assert rc == 6 and out["reason"] == "not-installed"
+
+
+# ---------------------------------------------------------------- a project without code
+
+
+def test_a_project_without_code_is_not_a_failure_of_the_tool(world):
+    world.install(update_rc=1, update_output='echo "[graphify watch] No code files found - nothing to rebuild."')
+    for args in (("update",), ("query", "session")):
+        rc, out = world.run(*args)
+        assert rc == 6 and out["status"] == "degraded" and out["reason"] == "no-code"
+        assert "install" not in out
+
+
+def test_another_failed_update_is_still_a_failure(world):
+    world.install(update_rc=1, update_output='echo "something else went wrong"')
+    rc, out = world.run("update")
+    assert rc == 6 and out["reason"] == "update-failed"
+    assert "install" not in out
+
+
+def test_no_code_in_a_successful_update_changes_nothing(world):
+    world.install(update_output='echo "No code files found in one folder"')
+    rc, out = world.run("update")
+    assert rc == 0 and out["status"] == "ok"
+
+
+# ---------------------------------------------------------------- the real tool, which arrives with specify
 
 
 def real_graphify():
-    path = shutil.which("graphify")
-    if not path:
-        return None
-    done = subprocess.run([path, "--version"], capture_output=True, encoding="utf-8", errors="replace")
-    return path if PINNED in (done.stdout or "") else None
+    """The one installed with this environment, as specify gets it. It is a dependency, so it must be there."""
+    path = shutil.which("graphify", path=str(Path(sys.executable).parent))
+    assert path, "graphifyy is a dependency of specify, so it must be beside this Python"
+    return path
 
 
-@pytest.mark.skipif(real_graphify() is None, reason="Graphify %s is not installed" % PINNED)
+def test_the_dependency_and_the_gate_pin_the_same_version():
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert "graphifyy==" + PINNED in project["project"]["dependencies"]
+    assert 'PINNED = "%s"' % PINNED in GATE.read_text(encoding="utf-8")
+
+
+def test_the_installed_tool_is_the_pinned_version():
+    done = subprocess.run([real_graphify(), "--version"], capture_output=True, encoding="utf-8", errors="replace")
+    assert PINNED in done.stdout
+
+
+# Every path out of the machine refuses and records. Which modules load proves nothing: graphify.security
+# imports http.client, ssl and urllib.request in every command.
+NETWORK_PROBE = """
+import json, os, socket, sys
+
+attempts = []
+leave = os._exit
+
+def report():
+    sys.stderr.write("\\nNETWORK " + json.dumps({"attempts": attempts, "modules": sorted(sys.modules)}) + "\\n")
+    sys.stderr.flush()
+
+def report_and_leave(code):
+    report()
+    leave(code)
+
+os._exit = report_and_leave
+
+def refuse(*args, **kwargs):
+    attempts.append(repr(args))
+    raise OSError("no network in this test")
+
+socket.socket.connect = refuse
+socket.socket.connect_ex = refuse
+socket.getaddrinfo = refuse
+socket.create_connection = refuse
+sys.argv = ["graphify", *sys.argv[1:]]
+from graphify.__main__ import main
+try:
+    main()
+except SystemExit:
+    pass
+finally:
+    report()
+"""
+
+
+def network_use(root, *args):
+    env = {key: value for key, value in os.environ.items() if key in ("PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "TMPDIR", "TEMP", "TMP")}
+    # With the seed already set, update does not restart itself, which would leave the probe behind.
+    env.update(GRAPHIFY_BACKEND="none", GRAPHIFY_QUERY_LOG_DISABLE="1", PYTHONHASHSEED="0")
+    done = subprocess.run([sys.executable, "-c", NETWORK_PROBE, *args], cwd=str(root), env=env, capture_output=True, encoding="utf-8", errors="replace")
+    line = next(line for line in done.stderr.splitlines() if line.startswith("NETWORK "))
+    return json.loads(line[len("NETWORK "):])
+
+
+@pytest.mark.parametrize("args", [("update", "."), ("affected", "src/session.py::helper"), ("query", "session expiry"), ("explain", "src/session.py::SessionManager")])
+def test_the_commands_the_gate_uses_try_no_connection(tmp_path, args):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "session.py").write_text("class SessionManager:\n    def expiry(self):\n        return helper()\n\n\ndef helper():\n    return 15\n", encoding="utf-8")
+    # The first update is a full build, the other commands read what it wrote.
+    assert network_use(tmp_path, "update", ".")["attempts"] == []
+    assert network_use(tmp_path, *args)["attempts"] == []
+
+
+def test_the_network_probe_notices_a_connection(tmp_path):
+    probe = NETWORK_PROBE.replace("from graphify.__main__ import main", "def main():\n    socket.create_connection(('example.invalid', 80))")
+    done = subprocess.run([sys.executable, "-c", probe], cwd=str(tmp_path), capture_output=True, encoding="utf-8", errors="replace")
+    line = next(line for line in done.stderr.splitlines() if line.startswith("NETWORK "))
+    assert "example.invalid" in json.loads(line[len("NETWORK "):])["attempts"][0]
+
+
+def test_the_real_tool_says_when_there_is_no_code(tmp_path):
+    root = tmp_path / "empty"
+    root.mkdir()
+    env = dict(os.environ, HOME=str(tmp_path), PATH=str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", ""))
+    done = subprocess.run([PYTHON, "-I", "-S", str(GATE), "update", "--root", str(root)], capture_output=True, encoding="utf-8", env=env)
+    assert done.returncode == 6, done.stdout
+    assert json.loads(done.stdout)["reason"] == "no-code"
+
+
 def test_the_real_tool_answers_through_the_gate(tmp_path):
     root = tmp_path / "project"
     (root / "src").mkdir(parents=True)
@@ -467,7 +636,7 @@ def test_the_real_tool_answers_through_the_gate(tmp_path):
     (root / "tests" / "test_session.py").write_text("def test_noise():\n    pass\n", encoding="utf-8")
     (root / "specs/_capabilities/login").mkdir(parents=True)
     (root / "specs/_capabilities/login/implementation.md").write_text("### R-a\n- Code: `src/session.py::SessionManager`, `src/session.py::Gone`\n", encoding="utf-8")
-    env = dict(os.environ, HOME=str(tmp_path))
+    env = dict(os.environ, HOME=str(tmp_path), PATH=str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", ""))
 
     def gate(*args):
         done = subprocess.run([PYTHON, "-I", "-S", str(GATE), *args, "--root", str(root)], capture_output=True, encoding="utf-8", env=env)
