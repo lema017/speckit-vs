@@ -8,6 +8,8 @@
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads) *(optional — required only when the git extension is enabled)*
 
+Installing this fork also installs [Graphify](https://github.com/Graphify-Labs/graphify) `0.9.102`, the code graph of the `capabilities` extension, as a dependency of `specify`. It adds about 116 MB and 30 packages, and it is not on your `PATH`. `specify check` reports its version.
+
 ## Installation
 
 > [!IMPORTANT]

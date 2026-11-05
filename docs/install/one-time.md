@@ -22,6 +22,10 @@ uvx --from git+https://github.com/lema017/speckit-vs.git specify init . --integr
 uvx --from git+https://github.com/lema017/speckit-vs.git specify init --here --integration copilot
 ```
 
+## Limits of a one-time run
+
+After `specify init`, a one-time run leaves no `specify` and no Graphify on your machine, so the `capabilities` hooks stop and show the command to install `specify`. Install it to use the catalog. The first graph of the project is still built during `specify init`.
+
 ## When to use persistent installation instead
 
 If you plan to use Spec Kit regularly, a persistent installation is recommended:

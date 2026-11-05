@@ -14,6 +14,7 @@
 | **CLI Tool — manual fallback (pipx)** | `pipx install --force git+https://github.com/lema017/speckit-vs.git@vX.Y.Z` | Same as above, for pipx installs. |
 | **Project Files** | Run `specify integration upgrade <key>`, then `specify extension update` | Refresh installed integration files and extensions in your project |
 | **Both** | Run CLI upgrade, then project update | Recommended for major version updates |
+| **The `capabilities` extension** | `specify extension add capabilities --force` | After upgrading the CLI. Registers new hooks and keeps your configuration |
 
 ---
 
@@ -158,6 +159,8 @@ Run:
 ```bash
 specify extension update
 ```
+
+To register the new hooks of the `capabilities` extension, run `specify extension add capabilities --force` instead. It keeps your configuration.
 
 With no extension argument, this updates all installed extensions. Use `specify extension update <extension-id-or-name>` to update only one extension. See the [extension CLI reference](extensions/cli.md#update-extensions) for details.
 

@@ -42,8 +42,8 @@ and a check that can stop a pull request that disagrees with that record.
 | Specs say what one change wanted, not what is true today. To find the current session timeout, you read every spec that touched it, in order | It keeps the rules in force in one catalog, by capability, and copies each approved change there by script | [The capability catalog](#the-capability-catalog) |
 | A new spec can contradict or change a rule that nobody remembered, or change again after you reviewed it | It loads the affected rules before writing the spec, which then declares each change with a literal `From` and `To`. Before planning, it compares the spec with the sealed delta and you decide | `context`, `review` |
 | Once a feature ships, nothing keeps track of a requirement and code that disagree | It records the requirement and what the code does separately, and neither overwrites the other | `fold` |
-| A new agent session has to search for where a behaviour lives, which change set it, and which test covers it | Each rule records its origin, code, and tests. `locate` answers from the catalog first and warns when a reference no longer exists. An optional code graph answers what a change affects | [Graphify](#graphify-a-code-graph-for-the-catalog) |
-| `/speckit.clarify` stops at five questions, even when decisions depend on each other | It interviews you in rounds until every open decision is settled. It looks up facts itself and asks you only for decisions, each with a recommended answer | [`/speckit.clarify-deep`](#clarify-until-the-decisions-are-settled) |
+| A new agent session has to search for where a behaviour lives, which change set it, and which test covers it | Each rule records its origin, code, and tests. `locate` answers from the catalog first and warns when a reference no longer exists. A code graph answers what a change affects | [Graphify](#graphify-a-code-graph-for-the-catalog) |
+| `/speckit.clarify` stops at five questions, even when decisions depend on each other | It interviews you in rounds until every open decision is settled. Before the first question, a hook gives it what the catalog and the code graph already know. It looks up other facts itself and asks you only for decisions, each with a recommended answer | [`/speckit.clarify-deep`](#clarify-until-the-decisions-are-settled) |
 | A pull request can change a recorded rule or its tested code without a spec, or two branches can change the same rule | It compares the pull request with the catalog and your test report, and fails if they do not agree | [`check`](#catch-drift-at-the-pull-request) |
 | Code written before Spec Kit has no recorded rules | It proposes a capability map from the code and waits for your approval. Rules stay `[inferred]` until you validate them | `/speckit.capabilities.bootstrap` |
 
@@ -174,14 +174,15 @@ your approval. To remove it, run `specify extension remove capabilities`. See th
 
 ### Graphify: a code graph for the catalog
 
-[Graphify](https://github.com/Graphify-Labs/graphify) is an optional tool that maps
-how your code connects. The catalog knows what was decided, and the graph knows
-where the code is and what a change affects. It never decides what a requirement
-is.
+[Graphify](https://github.com/Graphify-Labs/graphify) maps how your code connects, and
+it is part of this fork: it installs with `specify`, `specify init` builds the first
+graph, and `specify check` reports its version. The catalog knows what was decided, and
+the graph knows where the code is and what a change affects. It never decides what a
+requirement is.
 
 <picture>
   <source media="(prefers-reduced-motion: reduce)" srcset="media/graphify-locate.png">
-  <img src="media/graphify-locate.gif" width="830" alt="Two questions go to locate. Where does the session expire is answered by the catalog with the rule, the change that set it, its code, and its test. What breaks if I change it has no answer in the catalog, so it goes to Graphify, which lists the code that depends on Session.">
+  <img src="media/graphify-locate.gif" width="830" alt="Two questions go to locate. Where does the session expire is answered by the catalog with the rule, the change that set it, its code, and its test. What breaks if I change it has no answer in the catalog, so it goes to Graphify, which comes with specify and lists the code that depends on Session. If it is missing, the command stops and shows how to reinstall.">
 </picture>
 
 To ask, use your own words or the command:
@@ -196,23 +197,38 @@ To ask, use your own words or the command:
 | What does changing this affect | `graph affected`, which warns when a name repeats, so you confirm in the code |
 | What is this anchor or name | `graph explain` |
 | Anything else about the code | `graph query`, with technical English keywords. Spanish or a whole question finds almost nothing |
-| Graphify cannot answer, or is not installed | A search of the code with `rg` |
+| Graphify cannot answer | A search of the code with `rg` |
+| Graphify is missing | Nothing: the command stops and shows how to reinstall `specify` |
 
 Each answer says which part came from the graph or the code.
 
-```bash
-uv tool install graphifyy==0.9.102
-```
+| Command | How it uses the graph |
+| --- | --- |
+| `context`, before the spec is written | Finds capabilities that their `covers` text did not reveal |
+| `clarify-context`, before the first question | The same, plus what each rule touched reaches in the code |
+| `locate` | When the catalog does not answer |
+| `bootstrap` | Builds it first, and takes its groupings only as hints |
 
-- **The extension works without it** and never installs it.
+`check` and `fold` do not use it, so your CI does not need it.
+
+- **It comes with the install:** version `0.9.102`, always the same one, in the
+  environment of `specify` and not on your `PATH`. It adds about 116 MB and 30 packages.
+- **The agent installs nothing:** if Graphify is missing, the command stops and shows
+  the command to run. A one-time run with `uvx` leaves no `specify` behind, so install
+  it to use the catalog.
+- **A failure does not block you:** a project with no code yet is reported and the
+  command goes on. If the graph cannot be built, it warns you and searches with `rg`.
 - **Every read updates the graph first:** 2 seconds with no changes, and 44 seconds
   after a change, in a repository of 350 source files.
-- **It writes only ignored files:** `graphify-out/`, which ignores itself, and
-  `.graphifyignore` if you have none. No tracked file changes.
-- **It reaches only part of the tool:** `update`, `explain`, `affected`, and `query`,
-  with no LLM keys in its environment.
-- **Validation so far:** it was run with the real tool on Python, Java, and
-  TypeScript. No model has used this path yet.
+- **It leaves little behind:** `graphify-out/`, which ignores itself, and
+  `.graphifyignore` if you have none, which you can commit. No tracked file changes.
+- **It stays on your machine:** only `update`, `explain`, `affected`, and `query` reach
+  the tool, with no LLM keys in its environment. A test checks that those four attempt
+  no connection.
+- **Tests stay out of the graph:** the tests a change reaches come from the catalog.
+- **Validation so far:** it was run with the real tool on Python, Java, and TypeScript.
+  A model has used it through the hook before clarify, in test projects of up to 126
+  source files. See the limits below.
 
 ### Clarify until the decisions are settled
 
@@ -223,8 +239,14 @@ so the commands after them work the same way.
 
 <picture>
   <source media="(prefers-reduced-motion: reduce)" srcset="media/clarify-deep.png">
-  <img src="media/clarify-deep.gif" width="830" alt="On the left, clarify answers five questions and stops, reporting the rest as deferred. On the right, clarify-deep works in rounds: each answer opens new questions, one is resolved from the repository, and it ends when nothing is open and you confirm. The counts are illustrative.">
+  <img src="media/clarify-deep.gif" width="830" alt="On the left, clarify answers five questions and stops, reporting the rest as deferred. On the right, clarify-deep starts with what the catalog and the graph know, so one question is already settled. It works in rounds: each answer opens new questions, one is resolved from the repository, and it ends when nothing is open and you confirm. The counts are illustrative.">
 </picture>
+
+Before the first question, both commands run a hook that reads the catalog and the
+graph. It separates what is settled, which the interview does not ask, from what it
+must ask: a spec that contradicts an approved rule, a rule nobody approved or that the
+code does not follow, and code the change reaches beyond its delta. It never decides
+for you.
 
 Use `/speckit.clarify` when a short pass is enough, and `/speckit.clarify-deep`
 when the feature is costly to get wrong. You can stop the interview at any time,
@@ -253,7 +275,8 @@ Surefire, Gradle, Jest, or Vitest, and only for the rules the pull request touch
 - **Untouched rules:** it checks only the rules a pull request touches.
 - **Agents:** the block that points agents to the catalog is an instruction they can ignore. Only CI enforces anything.
 - **Rules given up in two steps:** a pull request that only records `discrepant` passes with a notice, and the next one can change that code without a delta.
-- **Validation so far:** it has been validated with Claude Code and one model, and each agent scenario ran once. It has not been run on Windows or under GitHub Actions, and no model has used the code graph. With `--script ps`, it is installed only if you ask for it.
+- **Validation so far:** it has been validated with Claude Code and one model, and each agent scenario ran once. It has not been run on Windows or under GitHub Actions. With `--script ps`, it is installed only if you ask for it.
+- **The hook before clarify:** it passed all its scenarios, but so did the same model without it in the seven scenarios compared, because the block for agents already sends it to the catalog and it searched the code on its own. One run per scenario, with the hook costing about 20% more and taking about 1.6 times as long. So it gives a step that does not depend on an instruction an agent can ignore, not a measured improvement. Other models, large repositories, and long interviews were not measured.
 
 This comparison is with Spec Kit's core. The
 [community catalog](https://github.github.io/spec-kit/reference/catalogs.html) has
@@ -320,6 +343,20 @@ This example uses GitHub Copilot.
 uv tool install specify-cli --from git+https://github.com/lema017/speckit-vs.git
 specify init my-project --integration copilot
 cd my-project
+```
+
+This also installs [Graphify](#graphify-a-code-graph-for-the-catalog), and `specify init`
+builds the first graph of the project. `specify check` tells you if it is missing.
+
+To bring a project you already have up to date, run these from its directory. The
+second command keeps your configuration:
+
+```bash
+uv tool install specify-cli --force --from git+https://github.com/lema017/speckit-vs.git
+```
+
+```bash
+specify extension add capabilities --force
 ```
 
 <a id="-supported-ai-coding-agent-integrations"></a>

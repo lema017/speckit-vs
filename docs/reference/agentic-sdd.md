@@ -81,7 +81,7 @@ Interviews you about the current spec until every open decision is settled, with
 
 Use `/speckit.clarify` when a short pass over the highest-impact gaps is enough, since it stops at five questions. Use `/speckit.clarify-deep` when decisions depend on each other or the feature is costly to get wrong, and you can spend the time on a longer interview. It stays out of implementation and tech-stack choices, which belong in `/speckit.plan`.
 
-Both commands write the same `## Clarifications` section, re-evaluate `checklists/requirements.md`, and run the same `before_clarify` and `after_clarify` hooks, so `/speckit.plan` and later commands work the same after either one.
+Both commands write the same `## Clarifications` section, re-evaluate `checklists/requirements.md`, and run the same `before_clarify` and `after_clarify` hooks, so `/speckit.plan` and later commands work the same after either one. The `capabilities` extension uses `before_clarify` to give both of them what the catalog and the code graph already know, before the first question. See the [catalog guide](../how-to/capabilities.md).
 
 The interview method is adapted from the [`grilling` skill](https://github.com/mattpocock/skills/tree/main/skills/productivity/grilling) by Matt Pocock (MIT License).
 
