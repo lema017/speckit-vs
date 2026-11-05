@@ -6,6 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from specify_cli import app
+from specify_cli._graphify import REINSTALL_COMMAND
 from tests.conftest import strip_ansi
 
 
@@ -68,3 +69,24 @@ class TestCheckTip:
 
         assert result.exit_code == 0
         fetch_latest.assert_not_called()
+
+
+class TestCheckReportsGraphify:
+    """Graphify is part of specify, so without it specify is not ready."""
+
+    def _run(self, version):
+        with patch("specify_cli.check_tool", return_value=True), patch("specify_cli.command_check.graphify_version", return_value=version):
+            return runner.invoke(app, ["check"])
+
+    def test_shows_the_version_and_is_ready(self):
+        result = self._run("1.2.3")
+        assert result.exit_code == 0, result.output
+        assert "1.2.3" in result.output
+        assert "ready to use" in result.output
+
+    def test_without_it_is_not_ready_and_says_how_to_reinstall(self):
+        result = self._run(None)
+        assert result.exit_code == 1
+        assert "ready to use" not in result.output
+        assert "not ready" in result.output
+        assert REINSTALL_COMMAND in result.output.replace("\n", "")
