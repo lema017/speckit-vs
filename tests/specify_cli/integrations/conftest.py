@@ -5,6 +5,12 @@ import pytest
 from tests.specify_cli.integrations._helpers import _copy_project_template, _init_project
 
 
+@pytest.fixture(autouse=True)
+def _core_init_only(monkeypatch: pytest.MonkeyPatch):
+    """These tests pin what an integration installs. The fork's default extension has its own, in test_command_init.py."""
+    monkeypatch.setattr("specify_cli.command_init.DEFAULT_EXTENSIONS", ())
+
+
 @pytest.fixture(scope="module")
 def status_copilot_template(tmp_path_factory):
     return _init_project(tmp_path_factory.mktemp("status-copilot"), "copilot")

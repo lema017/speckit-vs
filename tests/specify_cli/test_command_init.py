@@ -25,10 +25,12 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from specify_cli import app
-from specify_cli.command_init import _shell_quote_arg
+from specify_cli.command_init import _installs_extension, _shell_quote_arg
+from specify_cli.integrations import INTEGRATION_REGISTRY, get_integration
 from tests.conftest import requires_bash
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
@@ -376,3 +378,226 @@ def test_init_force_keeps_recovered_markers(tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert IntegrationManifest.load("codex", project).is_recovered(rel)
+
+
+# ---------------------------------------------------------------- default extensions
+
+
+def _default_ext_init(tmp_path: Path, *args: str, name: str = "demo", script: str = "sh"):
+    """Run init in a directory, in the shape a user runs it. Returns the project and the output."""
+    project = tmp_path / name
+    project.mkdir(exist_ok=True)
+    previous = os.getcwd()
+    try:
+        os.chdir(project)
+        result = CliRunner().invoke(
+            app,
+            ["init", "--here", "--force", "--integration", "claude", "--script", script, "--ignore-agent-tools", *args],
+            catch_exceptions=False,
+        )
+    finally:
+        os.chdir(previous)
+    assert result.exit_code == 0, result.output
+    return project, _strip(result.output)
+
+
+def _installed(project: Path) -> list[str]:
+    registry = project / ".specify" / "extensions" / ".registry"
+    if not registry.is_file():
+        return []
+    return list(json.loads(registry.read_text(encoding="utf-8")).get("extensions", {}))
+
+
+def _hook_order(project: Path, event: str) -> list[str]:
+    config = yaml.safe_load((project / ".specify" / "extensions.yml").read_text(encoding="utf-8"))
+    return [hook["extension"] for hook in config["hooks"].get(event, [])]
+
+
+def _init_for(project: Path, key: str, *args: str) -> dict[str, bytes]:
+    project.mkdir()
+    options = ["--integration-options", "--commands-dir .myagent/commands/"] if key == "generic" else []
+    previous = os.getcwd()
+    try:
+        os.chdir(project)
+        result = CliRunner().invoke(
+            app,
+            ["init", "--here", "--force", "--integration", key, "--script", "sh", "--ignore-agent-tools", *options, *args],
+            catch_exceptions=False,
+        )
+    finally:
+        os.chdir(previous)
+    assert result.exit_code == 0, result.output
+    return {str(path.relative_to(project)): path.read_bytes() for path in project.rglob("*") if path.is_file()}
+
+
+# The extension's files that do not carry its name, and the records init timestamps on every run.
+_DEFAULT_ALSO_WRITES = {".specify/extensions.yml", ".specify/extensions/.registry"}
+_TIMESTAMPED = (".manifest.json", "workflow-registry.json")
+
+
+@pytest.mark.parametrize("key", sorted(INTEGRATION_REGISTRY))
+def test_on_every_integration_the_default_adds_only_its_own(tmp_path: Path, monkeypatch, key: str):
+    """The tests of the core run without the default, so this is what covers the two together."""
+    # hermes installs its skills in the home directory, the core ones too.
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
+    core = _init_for(tmp_path / "core", key, "--no-default-extensions")
+    with_default = _init_for(tmp_path / "default", key)
+    changed = {path for path in core if core[path] != with_default.get(path) and not path.endswith(_TIMESTAMPED)}
+    assert changed == set()
+    added = set(with_default) - set(core)
+    if not get_integration(key).list_command_templates():
+        assert added == set()
+        return
+    assert {path for path in added if "capabilities" not in path} == _DEFAULT_ALSO_WRITES
+    in_project = [path for path in added if "capabilities" in path and not path.startswith(".specify/")]
+    assert in_project or list((tmp_path / "home").rglob("*capabilities*")), "no command reached this integration"
+
+
+def test_a_new_project_gets_the_default_extensions(tmp_path: Path):
+    project, output = _default_ext_init(tmp_path)
+    assert _installed(project) == ["capabilities"]
+    assert "Install extension: capabilities" in output
+    assert (project / ".claude/skills/speckit-capabilities-locate/SKILL.md").is_file()
+    assert _hook_order(project, "before_specify") == ["capabilities"]
+    assert "## Capability Delta" in (project / ".specify/extensions/capabilities/templates/spec-template.md").read_text(encoding="utf-8")
+
+
+def test_the_default_runs_before_what_the_user_asks_for(tmp_path: Path):
+    """Prompts run hooks in install order: fold has to run before the commit offer of git."""
+    project, _ = _default_ext_init(tmp_path, "--extension", "git")
+    assert _installed(project) == ["capabilities", "git"]
+    assert _hook_order(project, "after_implement")[0] == "capabilities"
+
+
+def test_asking_for_a_default_by_name_installs_it_once_where_it_was_asked(tmp_path: Path):
+    project, output = _default_ext_init(tmp_path, "--extension", "git", "--extension", "capabilities")
+    assert _installed(project) == ["git", "capabilities"]
+    assert output.count("Install extension: capabilities") == 1
+
+
+def test_asking_for_a_default_by_its_directory_replaces_it(tmp_path: Path):
+    """The default would install first, and the copy that was asked for would fail as already installed."""
+    source = Path(__file__).resolve().parents[2] / "extensions" / "capabilities"
+    project, output = _default_ext_init(tmp_path, "--extension", str(source))
+    assert _installed(project) == ["capabilities"]
+    assert "already installed" not in output
+
+
+@pytest.mark.parametrize(
+    ("spec", "expected"),
+    [
+        ("capabilities", True),
+        ("git", False),
+        ("https://example.invalid/releases/capabilities-1.0.0.zip", True),
+        ("https://example.invalid/capabilities", True),
+        ("https://example.invalid/other-1.0.0.zip", False),
+        ("./does-not-exist", False),
+    ],
+)
+def test_what_counts_as_asking_for_an_extension(spec: str, expected: bool):
+    assert _installs_extension(spec, "capabilities") is expected
+
+
+def test_a_workflow_run_directory_does_not_make_a_project_existing(tmp_path: Path):
+    """The engine creates ``.specify/workflows/runs/`` before its init step runs."""
+    (tmp_path / "demo" / ".specify" / "workflows" / "runs").mkdir(parents=True)
+    project, _ = _default_ext_init(tmp_path)
+    assert _installed(project) == ["capabilities"]
+
+
+def test_no_default_extensions_leaves_the_core_project(tmp_path: Path):
+    project, output = _default_ext_init(tmp_path, "--no-default-extensions")
+    assert _installed(project) == []
+    assert "capabilities" not in output
+    assert not (project / ".specify/extensions/capabilities").exists()
+    assert not (project / ".claude/skills/speckit-capabilities-locate").exists()
+    assert "Capability Delta" not in (project / ".specify/templates/spec-template.md").read_text(encoding="utf-8")
+
+
+def test_an_explicit_extension_wins_over_no_default_extensions(tmp_path: Path):
+    project, _ = _default_ext_init(tmp_path, "--no-default-extensions", "--extension", "capabilities")
+    assert _installed(project) == ["capabilities"]
+
+
+def test_removing_a_default_lasts_through_a_re_init(tmp_path: Path):
+    project, _ = _default_ext_init(tmp_path)
+    previous = os.getcwd()
+    try:
+        os.chdir(project)
+        removed = CliRunner().invoke(app, ["extension", "remove", "capabilities", "--force"], catch_exceptions=False)
+    finally:
+        os.chdir(previous)
+    assert removed.exit_code == 0, removed.output
+    assert _installed(project) == []
+
+    project, output = _default_ext_init(tmp_path)
+    assert _installed(project) == []
+    assert "Install extension: capabilities" not in output
+
+
+def test_an_existing_project_is_not_given_a_default_it_never_had(tmp_path: Path):
+    project, _ = _default_ext_init(tmp_path, "--no-default-extensions")
+    project, _ = _default_ext_init(tmp_path)
+    assert _installed(project) == []
+
+
+def test_a_re_init_keeps_the_default_of_a_project_that_has_it(tmp_path: Path):
+    project, _ = _default_ext_init(tmp_path)
+    project, _ = _default_ext_init(tmp_path)
+    assert _installed(project) == ["capabilities"]
+
+
+def test_powershell_does_not_get_a_default_validated_only_with_python3(tmp_path: Path):
+    """The prompts call ``python3``, which a Windows machine may not have. Nothing here ran on Windows."""
+    project, output = _default_ext_init(tmp_path, script="ps")
+    assert _installed(project) == []
+    assert "--extension capabilities" in output.replace("\n", " ")
+
+    project, _ = _default_ext_init(tmp_path, "--extension", "capabilities", name="asked", script="ps")
+    assert _installed(project) == ["capabilities"]
+
+
+@pytest.mark.parametrize("args", [(), ("--no-default-extensions",)])
+def test_the_powershell_note_is_for_a_new_project_that_did_not_opt_out(tmp_path: Path, args: tuple[str, ...]):
+    _, first = _default_ext_init(tmp_path, *args, script="ps")
+    assert ("--extension capabilities" in first.replace("\n", " ")) == (not args)
+    _, again = _default_ext_init(tmp_path, *args, script="ps")
+    assert "--extension capabilities" not in again.replace("\n", " ")
+
+
+def test_the_powershell_note_is_not_for_a_project_that_has_it(tmp_path: Path):
+    source = Path(__file__).resolve().parents[2] / "extensions" / "capabilities"
+    project, output = _default_ext_init(tmp_path, "--extension", str(source), script="ps")
+    assert _installed(project) == ["capabilities"]
+    assert "not installed with PowerShell" not in output.replace("\n", " ")
+    _, again = _default_ext_init(tmp_path, script="ps")
+    assert "not installed with PowerShell" not in again.replace("\n", " ")
+
+
+def test_an_integration_with_no_commands_does_not_get_a_default(tmp_path: Path):
+    """Nothing could invoke its commands, and trying would show a failure on a healthy init."""
+    project = tmp_path / "none-project"
+    project.mkdir()
+    previous = os.getcwd()
+    try:
+        os.chdir(project)
+        result = CliRunner().invoke(app, ["init", "--here", "--force", "--integration", "none", "--script", "sh", "--ignore-agent-tools"], catch_exceptions=False)
+    finally:
+        os.chdir(previous)
+    assert result.exit_code == 0, result.output
+    assert _installed(project) == []
+    assert "capabilities" not in _strip(result.output)
+
+
+def test_a_default_that_fails_to_install_does_not_stop_init(tmp_path: Path, monkeypatch):
+    import specify_cli.command_init as command_init
+
+    def fail(*_args, **_kwargs):
+        raise ValueError("no bundle here")
+
+    monkeypatch.setattr(command_init, "_install_extension_during_init", fail)
+    project, output = _default_ext_init(tmp_path)
+    assert _installed(project) == []
+    assert "no bundle here" in output
+    assert (project / ".specify/templates/spec-template.md").is_file()

@@ -5,6 +5,12 @@ import pytest
 from specify_cli.integrations.base import MarkdownIntegration
 
 
+@pytest.fixture(autouse=True)
+def _core_init_only(monkeypatch: pytest.MonkeyPatch):
+    """These tests pin what an integration installs. The fork's default extension has its own, in test_command_init.py."""
+    monkeypatch.setattr("specify_cli.command_init.DEFAULT_EXTENSIONS", ())
+
+
 def _redirect_home(monkeypatch: pytest.MonkeyPatch, home) -> None:
     """Point HOME/USERPROFILE/XDG env vars at an isolated *home* directory."""
     for path in (home, home / ".cache", home / ".config", home / ".local" / "share"):

@@ -144,10 +144,11 @@ def test_script_uses_only_the_standard_library_and_parses_as_python_3_9():
 
 def test_readme_exit_codes_match_the_script():
     readme = (EXT_DIR / "README.md").read_text(encoding="utf-8")
-    for code in range(6):
+    for code in range(7):
         assert re.search(r"^\| %d \| " % code, readme, re.M)
     source = SCRIPT.read_text(encoding="utf-8")
     assert "OK, HARD, INVALID, DECISION, RECOVER, BUSY = 0, 1, 2, 3, 4, 5" in source
+    assert "OK, INVALID, UNAVAILABLE = 0, 2, 6" in SCRIPT.with_name("cap_graph.py").read_text(encoding="utf-8")
 
 
 def test_runs_on_the_oldest_supported_python_when_it_is_available():
@@ -199,7 +200,7 @@ def installed_project(tmp_path_factory) -> Path:
     project = tmp_path_factory.mktemp("installed") / "project"
     project.mkdir()
     subprocess.run(["git", "init", "-q", "-b", "main", "."], cwd=project, check=True)
-    specify(project, "init", "--here", "--force", "--non-interactive", "--integration", "claude", "--script", "sh")
+    specify(project, "init", "--here", "--force", "--non-interactive", "--integration", "claude", "--script", "sh", "--no-default-extensions")
     specify(project, "extension", "add", "capabilities")
     return project
 
@@ -263,7 +264,7 @@ def test_template_composes_without_pyyaml_and_disable_or_remove_restore_the_core
     project = tmp_path / "project"
     project.mkdir()
     subprocess.run(["git", "init", "-q", "-b", "main", "."], cwd=project, check=True)
-    specify(project, "init", "--here", "--force", "--non-interactive", "--integration", "claude", "--script", "sh")
+    specify(project, "init", "--here", "--force", "--non-interactive", "--integration", "claude", "--script", "sh", "--no-default-extensions")
     core = resolved_template(project)
     assert MARK not in core
 
@@ -286,7 +287,7 @@ def test_installed_project_gets_the_block_in_the_file_of_its_integration(tmp_pat
     project = tmp_path / "project"
     project.mkdir()
     subprocess.run(["git", "init", "-q", "-b", "main", "."], cwd=project, check=True)
-    specify(project, "init", "--here", "--force", "--non-interactive", "--integration", "claude", "--script", "sh")
+    specify(project, "init", "--here", "--force", "--non-interactive", "--integration", "claude", "--script", "sh", "--no-default-extensions")
     specify(project, "extension", "add", "capabilities")
     change = "specs/001-x"
     (project / change).mkdir(parents=True)

@@ -98,6 +98,64 @@ def _confirm_extension_url_trust(
     return approvals
 
 
+# What a new project gets from ``specify init`` in this fork.
+DEFAULT_EXTENSIONS = ("capabilities",)
+
+
+def _with_default_extensions(
+    requested: list[str] | None,
+    project_path: Path,
+    selected_script: str,
+    has_commands: bool,
+    skip_defaults: bool,
+) -> list[str]:
+    """Return the extensions this init installs, the defaults first.
+
+    Prompts run hooks in install order, so a default runs before what the user
+    adds, and ``fold`` before the commit offer of ``git``. Only a new project
+    gets the defaults, so removing one lasts through a re-init. PowerShell
+    projects do not: the prompts call ``python3``, which Windows may not have.
+    Nor does an integration with no commands: nothing could invoke them.
+    """
+    requested = list(requested or [])
+    if (
+        skip_defaults
+        or not has_commands
+        or selected_script == "ps"
+        or _is_existing_project(project_path)
+    ):
+        return requested
+    return [
+        name for name in DEFAULT_EXTENSIONS
+        if not any(_installs_extension(spec, name) for spec in requested)
+    ] + requested
+
+
+def _is_existing_project(project_path: Path) -> bool:
+    """Whether Spec Kit was set up here. A workflow run creates ``.specify/workflows/`` before its init step."""
+    specify = project_path / ".specify"
+    return specify.is_dir() and any(child.name != "workflows" for child in specify.iterdir())
+
+
+def _installs_extension(spec: str, name: str) -> bool:
+    """Whether an ``--extension`` value is this extension: its id, a directory that holds it, or a URL to it."""
+    from urllib.parse import urlparse
+
+    import yaml
+
+    if spec == name:
+        return True
+    parsed = urlparse(spec)
+    if parsed.scheme in ("http", "https"):
+        tail = parsed.path.rstrip("/").rsplit("/", 1)[-1]
+        return tail == name or tail.startswith((name + "-", name + "."))
+    try:
+        data = yaml.safe_load((Path(spec).expanduser() / "extension.yml").read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        return False
+    return isinstance(data, dict) and isinstance(data.get("extension"), dict) and data["extension"].get("id") == name
+
+
 def _install_extension_during_init(project_path: Path, ext_spec: str, speckit_version: str) -> str:
     """Install a single extension during ``specify init``.
 
@@ -347,6 +405,11 @@ def register(app: typer.Typer) -> None:
             "--extension",
             help="Install an extension during initialization (bundled name, local path, or HTTPS URL). Repeatable.",
         ),
+        no_default_extensions: bool = typer.Option(
+            False,
+            "--no-default-extensions",
+            help="Do not install the extensions a new project gets by default (capabilities).",
+        ),
         trust_extension_urls: bool = typer.Option(
             False,
             "--trust-extension-urls",
@@ -392,6 +455,7 @@ def register(app: typer.Typer) -> None:
             specify init my-project --integration claude --preset healthcare-compliance  # With preset
             specify init my-project --integration copilot --extension git  # With bundled extension
             specify init my-project --extension git --extension selftest  # Multiple extensions
+            specify init my-project --no-default-extensions  # Without the capabilities extension
             specify init my-project --extension ./my-extensions/custom-ext  # Local path extension
             specify init my-project --extension https://example.com/extensions/my-ext.zip --trust-extension-urls  # URL extension (non-interactive)
         """
@@ -648,6 +712,27 @@ def register(app: typer.Typer) -> None:
 
         console.print(f"[cyan]Selected coding agent integration:[/cyan] {selected_ai}")
         console.print(f"[cyan]Selected script type:[/cyan] {selected_script}")
+
+        has_commands = bool(resolved_integration.list_command_templates())
+        is_new_project = not _is_existing_project(project_path)
+        extensions = _with_default_extensions(
+            extensions,
+            project_path,
+            selected_script,
+            has_commands,
+            no_default_extensions,
+        )
+        if (
+            selected_script == "ps"
+            and has_commands
+            and is_new_project
+            and not no_default_extensions
+            and not any(_installs_extension(spec, "capabilities") for spec in extensions)
+        ):
+            console.print(
+                "[dim]The capabilities extension is not installed with PowerShell scripts: it has not "
+                "been validated on Windows. To try it, use --extension capabilities.[/dim]"
+            )
 
         tracker = StepTracker("Initialize Specify Project")
 

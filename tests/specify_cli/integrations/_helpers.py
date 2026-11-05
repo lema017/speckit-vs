@@ -21,6 +21,7 @@ def _init_project(tmp_path, integration="copilot", integration_options=None):
         "--integration", integration,
         "--script", "sh",
         "--ignore-agent-tools",
+        "--no-default-extensions",
     ]
     if integration_options:
         args += ["--integration-options", integration_options]
