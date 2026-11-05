@@ -19,7 +19,7 @@ from tests.conftest import requires_bash
 
 from .conftest import EXT_DIR, MARK, ROOT, SCRIPT, modified, spec_text
 
-COMMANDS = {"context", "review", "fold", "check", "bootstrap", "locate"}
+COMMANDS = {"context", "clarify-context", "review", "fold", "check", "bootstrap", "locate"}
 OLD_SENTENCE = "If a `before_specify` hook ran successfully in the Pre-Execution Checks above, it will have created/switched to a git branch"
 NEW_SENTENCE = "If a `before_specify` hook's output contains `BRANCH_NAME` and `FEATURE_NUM`, that hook created or switched to a git branch."
 NO_INVENT = "A hook that does not output them created no branch: do not infer or invent these values."
@@ -41,6 +41,7 @@ def test_manifest_is_valid_and_lists_every_command():
 def test_hooks_are_mandatory_and_unconditional():
     hooks = manifest_data()["hooks"]
     assert hooks["before_specify"]["command"] == "speckit.capabilities.context"
+    assert hooks["before_clarify"]["command"] == "speckit.capabilities.clarify-context"
     assert hooks["after_specify"]["command"] == "speckit.capabilities.review"
     assert hooks["before_plan"]["command"] == "speckit.capabilities.review"
     assert hooks["after_implement"]["command"] == "speckit.capabilities.fold"
@@ -208,7 +209,7 @@ def installed_project(tmp_path_factory) -> Path:
 @requires_bash
 def test_install_registers_hooks_commands_and_config(installed_project: Path):
     hooks = yaml.safe_load((installed_project / ".specify" / "extensions.yml").read_text(encoding="utf-8"))["hooks"]
-    for event, command in (("before_specify", "context"), ("after_specify", "review"), ("before_plan", "review"), ("after_implement", "fold"), ("after_converge", "fold")):
+    for event, command in (("before_specify", "context"), ("before_clarify", "clarify-context"), ("after_specify", "review"), ("before_plan", "review"), ("after_implement", "fold"), ("after_converge", "fold")):
         registered = [hook for hook in hooks[event] if hook["extension"] == "capabilities"]
         assert len(registered) == 1
         assert registered[0]["command"] == "speckit.capabilities.%s" % command
@@ -219,6 +220,47 @@ def test_install_registers_hooks_commands_and_config(installed_project: Path):
     assert "{SCRIPT}" not in text
     assert ".specify/extensions/capabilities/scripts/python/capabilities.py ensure" in text
     assert ".specify/extensions/capabilities/scripts/python/capabilities.py review --accept" in text
+    context = (installed_project / ".claude/skills/speckit-capabilities-context/SKILL.md").read_text(encoding="utf-8")
+    assert "{SCRIPT}" not in context
+    assert ".specify/extensions/capabilities/scripts/python/capabilities.py status --capability" in context
+
+
+@requires_bash
+@pytest.mark.parametrize("skill", ["speckit-clarify", "speckit-clarify-deep"])
+def test_both_kinds_of_clarify_reach_the_hook(installed_project: Path, skill):
+    text = (installed_project / ".claude/skills" / skill / "SKILL.md").read_text(encoding="utf-8")
+    assert "hooks.before_clarify" in text
+
+
+@requires_bash
+def test_the_clarify_context_skill_is_installed_ready_to_run(installed_project: Path):
+    text = (installed_project / ".claude/skills/speckit-capabilities-clarify-context/SKILL.md").read_text(encoding="utf-8")
+    assert "{SCRIPT}" not in text
+    assert ".specify/extensions/capabilities/scripts/python/capabilities.py clarify-context" in text
+    assert ".specify/extensions/capabilities/scripts/python/capabilities.py graph status" in text
+
+
+@requires_bash
+def test_a_project_from_before_gets_the_hook_and_keeps_its_config(tmp_path):
+    """The documented way to bring an existing project up to date."""
+    project = tmp_path / "project"
+    project.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main", "."], cwd=project, check=True)
+    specify(project, "init", "--here", "--force", "--non-interactive", "--ignore-agent-tools", "--integration", "claude", "--script", "sh", "--no-default-extensions")
+    specify(project, "extension", "add", "capabilities")
+    config = project / ".specify/extensions/capabilities/capabilities-config.yml"
+    mine = config.read_bytes() + b"# a choice of this project\n"
+    config.write_bytes(mine)
+    registry = project / ".specify/extensions.yml"
+    data = yaml.safe_load(registry.read_text(encoding="utf-8"))
+    data["hooks"]["before_clarify"] = [hook for hook in data["hooks"]["before_clarify"] if hook["extension"] != "capabilities"]
+    registry.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    specify(project, "extension", "add", "capabilities", "--force")
+
+    assert config.read_bytes() == mine
+    hooks = yaml.safe_load(registry.read_text(encoding="utf-8"))["hooks"]["before_clarify"]
+    assert [hook["command"] for hook in hooks if hook["extension"] == "capabilities"] == ["speckit.capabilities.clarify-context"]
 
 
 @requires_bash

@@ -1075,6 +1075,10 @@ def cmd_status(root, capability):
             "rule_status": rule_status(implementation),
             "history": read(root / cap_rel(capability, "history.md")) or "",
         })
+    return emit(catalog_summary(root))
+
+
+def catalog_summary(root):
     rows = re.findall(r"^\| \[([a-z0-9-]+)\][^|]*\| ([^|]*) \|", read(root / INDEX) or "", re.M)
     capabilities = {}
     for name, covers in rows:
@@ -1087,12 +1091,32 @@ def cmd_status(root, capability):
             "not_conforming": sorted(rule_id for rule_id, row in statuses.items() if row["state"] != "conforming"),
         }
     planned = re.findall(r"^\| ([a-z][a-z0-9-]*) \| ([^|]*) \| planned \|", read(root / INDEX) or "", re.M)
-    return emit({
+    return {
         "catalog": (root / INDEX).is_file(),
         "capabilities": capabilities,
         "planned": {name: covers for name, covers in planned if name not in capabilities},
         "journal_pending": (root / JOURNAL).exists(),
-    })
+    }
+
+
+def cmd_clarify_context(root, given):
+    """Read-only. The feature, its parsed delta and every capability, before the first question of clarify.
+
+    Ends well without a feature: clarify runs its own check right after this and reports it.
+    """
+    feature, spec, delta, errors = None, None, None, []
+    try:
+        change = resolve_change(root, given)
+        feature = source_of(root, change)
+    except (CapError, ValueError, AttributeError):
+        change = None
+    text = read(change / DOCS[0]) if change is not None else None
+    if text is not None:
+        spec = "%s/%s" % (feature, DOCS[0])
+        delta, errors = parse_delta(text)
+    if delta is not None:
+        delta = {key: value for key, value in delta.items() if key != "raw"}
+    return emit(dict(catalog_summary(root), feature=feature, spec=spec, delta=delta, delta_errors=errors))
 
 
 def cmd_locate(root, capability):
@@ -1785,7 +1809,7 @@ class Check:
 
 def build_parser():
     parser = argparse.ArgumentParser(description="Capability catalog mechanics")
-    parser.add_argument("command", choices=["status", "locate", "scaffold", "ensure", "review", "prepare", "apply", "recover", "check"])
+    parser.add_argument("command", choices=["status", "locate", "clarify-context", "scaffold", "ensure", "review", "prepare", "apply", "recover", "check"])
     parser.add_argument("--root", default=".")
     parser.add_argument("--change", action="append", default=[])
     parser.add_argument("--capability")
@@ -1805,6 +1829,8 @@ def dispatch(args, root):
         return cmd_status(root, args.capability)
     if args.command == "locate":
         return cmd_locate(root, args.capability)
+    if args.command == "clarify-context":
+        return cmd_clarify_context(root, args.change)
     if args.command == "scaffold":
         return cmd_scaffold(root, args.capability, args.covers)
     if args.command == "recover":
