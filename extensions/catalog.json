@@ -48,6 +48,20 @@
         "qa"
       ]
     },
+    "capabilities": {
+      "name": "Capability Catalog",
+      "id": "capabilities",
+      "version": "0.1.0",
+      "description": "Keeps the approved behaviour of each capability, its origin, its code and its tests discoverable across sessions.",
+      "author": "lema017",
+      "repository": "https://github.com/lema017/speckit-vs",
+      "bundled": true,
+      "tags": [
+        "catalog",
+        "requirements",
+        "traceability"
+      ]
+    },
     "git": {
       "name": "Git Branching Workflow",
       "id": "git",

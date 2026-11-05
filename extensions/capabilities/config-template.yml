@@ -1,0 +1,16 @@
+# Capability Catalog configuration. Flat keys only: capabilities.py reads this
+# with the standard library so that any python3 can run it, in CI too.
+# Version this file: CI reads it to find your feature specs.
+
+# Comma-separated directories (globs allowed per path segment) that hold feature
+# specs. A new spec.md at any depth under one of them must carry a capability delta.
+# Example: specs, features, modules/*/specs
+feature_roots: specs
+
+# Accept "Tests: manual: <reason>" as evidence. When false, a rule without an
+# automated test blocks `ready`.
+allow_manual_evidence: false
+
+# Allow a feature with open tasks to be integrated while the catalog has not
+# folded its delta yet. When false, a feature is integrated complete.
+allow_partial_features: false

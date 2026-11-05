@@ -1,0 +1,48 @@
+# Example workflow. Copy it to .github/workflows/ in your project and replace the test command.
+#
+# This file blocks nothing by itself. For it to stop a merge you must also:
+#   1. Mark `capabilities-check` as a required status check in a ruleset or branch protection.
+#   2. Turn on "Require branches to be up to date" or a merge queue. Without one of them the
+#      check compares against an old base and two incompatible branches can both pass.
+#
+# Not exercised on GitHub yet: `capabilities.py check` was tested locally with real pytest
+# reports, but this workflow, its event fields and required checks have not been run there.
+name: capabilities-check
+
+on:
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  capabilities-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the check needs the merge base
+          ref: ${{ github.event.pull_request.head.sha || github.sha }} # the PR head, not GitHub's test merge
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      # Replace with your test command. It must write JUnit XML in this same run.
+      - name: Run tests
+        run: python -m pytest --junitxml=junit.xml
+
+      # always(): when the tests fail, the check still names the rule they back.
+      - name: Check capabilities (pull request)
+        if: ${{ always() && github.event_name == 'pull_request' }}
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: python3 .specify/extensions/capabilities/scripts/python/capabilities.py check --mode ci --base "origin/$BASE_REF" --report junit.xml
+
+      # --combined: the queue commit also holds other PRs, so a changed anchor is not a failure
+      # by itself. It must be revalidated by the tests of this commit.
+      - name: Check capabilities (merge queue)
+        if: ${{ always() && github.event_name == 'merge_group' }}
+        env:
+          BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: python3 .specify/extensions/capabilities/scripts/python/capabilities.py check --mode ci --base "$BASE_SHA" --report junit.xml --combined

@@ -1,0 +1,64 @@
+schema_version: "1.0"
+
+extension:
+  id: capabilities
+  name: "Capability Catalog"
+  version: "0.1.0"
+  description: "Keeps the approved behaviour of each capability, its origin, its code and its tests discoverable across sessions."
+  author: lema017
+  repository: https://github.com/lema017/speckit-vs
+  license: MIT
+
+requires:
+  speckit_version: ">=1.0.0"
+
+provides:
+  templates:
+    - name: spec-template
+      file: templates/spec-template.md
+      description: "Core spec template plus the mandatory Capability Delta section"
+  commands:
+    - name: speckit.capabilities.context
+      file: commands/speckit.capabilities.context.md
+      description: "Load the approved rules a request touches. Read-only; creates no branch."
+    - name: speckit.capabilities.review
+      file: commands/speckit.capabilities.review.md
+      description: "Validate the capability delta and surface spec changes made after review"
+    - name: speckit.capabilities.fold
+      file: commands/speckit.capabilities.fold.md
+      description: "Publish an approved delta to the catalog and record what the code does"
+    - name: speckit.capabilities.check
+      file: commands/speckit.capabilities.check.md
+      description: "Report the state of the changes on this branch and the integrity of the catalog"
+  config:
+    - name: "capabilities-config.yml"
+      template: "config-template.yml"
+      description: "Feature roots and evidence options"
+      required: false
+
+hooks:
+  before_specify:
+    command: speckit.capabilities.context
+    optional: false
+    description: "Load approved rules before writing the spec"
+  after_specify:
+    command: speckit.capabilities.review
+    optional: false
+    description: "Validate and seal the capability delta"
+  before_plan:
+    command: speckit.capabilities.review
+    optional: false
+    description: "Surface spec changes made after the delta was sealed"
+  after_implement:
+    command: speckit.capabilities.fold
+    optional: false
+    description: "Publish the delta and record what the code does"
+  after_converge:
+    command: speckit.capabilities.fold
+    optional: false
+    description: "Refresh the catalog after convergence"
+
+tags:
+  - "catalog"
+  - "requirements"
+  - "traceability"

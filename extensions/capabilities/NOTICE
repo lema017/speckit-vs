@@ -1,0 +1,10 @@
+Capability Catalog extension for Spec Kit.
+
+The command structure, the rule-writing conventions, the retired-rule table, the
+reserved file names and the propose-then-wait flow were adapted from
+spec-kit-domain-spec by Jina Park (MIT License):
+https://github.com/jinaparkdev/spec-kit-domain-spec
+
+This extension deliberately does not adopt that project's authoring rule that
+code wins when a document and the code disagree: here the catalog keeps the
+approved requirement and implementation.md records what was observed.
