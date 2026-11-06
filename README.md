@@ -46,9 +46,11 @@ and a check that can stop a pull request that disagrees with that record.
 | `/speckit.clarify` stops at five questions, even when decisions depend on each other | It interviews you in rounds until every open decision is settled. Before the first question, a hook gives it what the catalog and the code graph already know. It looks up other facts itself and asks you only for decisions, each with a recommended answer | [`/speckit.clarify-deep`](#clarify-until-the-decisions-are-settled) |
 | A pull request can change a recorded rule or its tested code without a spec, or two branches can change the same rule | It compares the pull request with the catalog and your test report, and fails if they do not agree | [`check`](#catch-drift-at-the-pull-request) |
 | Code written before Spec Kit has no recorded rules | It proposes a capability map from the code and waits for your approval. Rules stay `[inferred]` until you validate them | `/speckit.capabilities.bootstrap` |
+| While agents work, you cannot see what the whole plan is, which tasks are done, or which agent did what | Each spec gets a page that stays current, with every task, the totals, who did what, and the notes on each task | [Progress page](#see-how-far-a-spec-has-come) |
 
-`/speckit.clarify`, `/speckit.plan`, `/speckit.tasks`, `/speckit.implement`,
-`/speckit.converge`, and `/speckit.analyze` are unchanged. `/speckit.specify` only
+`/speckit.clarify`, `/speckit.plan`, `/speckit.tasks`, `/speckit.converge`, and
+`/speckit.analyze` do the same work, and only record that they ran and link to the
+progress page. `/speckit.implement` also reports each task. `/speckit.specify` also
 gains a handoff to `/speckit.clarify-deep`. `specify self check` and
 `specify self upgrade` follow this repository instead of `github/spec-kit`.
 
@@ -269,6 +271,24 @@ Surefire, Gradle, Jest, or Vitest, and only for the rules the pull request touch
 > [!IMPORTANT]
 > The workflow the extension ships is an example and blocks nothing by itself. Until you mark `capabilities-check` as a required status check and turn on up-to-date branches or a merge queue, the result is only informative. See [What you must configure](extensions/capabilities/README.md#what-you-must-configure).
 
+### See how far a spec has come
+
+Every spec gets a local page that opens by itself the first time and reloads while you work. It needs no server and no network, and it works in all 43 integrations.
+
+![The progress page of a spec: totals, the steps from constitution to converge, and the tasks by phase, one of them open to show its note and history. The data is an example.](docs/images/progress-page.png)
+
+Spec Kit gives agents instructions and does not run them, so the page keeps apart what it can guarantee and what a model reports:
+
+| On the page | Where it comes from |
+| --- | --- |
+| Totals, and which tasks are done | `tasks.md`, never the model's word |
+| Which steps ran | The script at the head of each command |
+| The page being current | A hook after each tool call in the 10 integrations with native events. In the others, each command, or `specify progress watch` |
+| In progress, blocked, notes | The model reports them through a script, in one call that also checks the box |
+| Who did it | Labelled on each report: seen by the harness, from the project setup, or declared by the agent |
+
+If a model skips a report, the totals stay right, and the page only lacks that detail. See the [guide](docs/how-to/progress.md) for the commands, what goes into Git, and how to turn off the parts that act on their own.
+
 ### What it does not solve
 
 - **Weak tests:** it cannot tell whether a `conforming` rule is true when its mapped test is weak, or notice a value changed without a delta when no mapped test pins it.
@@ -276,6 +296,7 @@ Surefire, Gradle, Jest, or Vitest, and only for the rules the pull request touch
 - **Agents:** the block that points agents to the catalog is an instruction they can ignore. Only CI enforces anything.
 - **Rules given up in two steps:** a pull request that only records `discrepant` passes with a notice, and the next one can change that code without a delta.
 - **Validation so far:** it has been validated with Claude Code and one model, and each agent scenario ran once. It has not been run on Windows or under GitHub Actions. With `--script ps`, it is installed only if you ask for it.
+- **Who did what:** each harness's hook message comes from its published reference, and was not captured from a live session. If one sends something else, its reports keep a weaker label. On small tasks, models report several at once, so "in progress" may barely show. See [Limits](docs/how-to/progress.md#limits).
 - **The hook before clarify:** it passed all its scenarios, but so did the same model without it in the seven scenarios compared, because the block for agents already sends it to the catalog and it searched the code on its own. One run per scenario, with the hook costing about 20% more and taking about 1.6 times as long. So it gives a step that does not depend on an instruction an agent can ignore, not a measured improvement. Other models, large repositories, and long interviews were not measured.
 
 This comparison is with Spec Kit's core. The
@@ -321,6 +342,7 @@ Spec Kit combines ready-to-use processes with composable mechanisms:
 | Access private catalogs and component downloads | [Authentication](https://github.github.io/spec-kit/reference/authentication.html) |
 | Work offline or behind a firewall | [Local sources and self-hosted catalogs](https://github.github.io/spec-kit/install/air-gapped.html) |
 | Inspect which layer supplies a command, template, or script | [Artifact inventory](https://github.github.io/spec-kit/reference/artifacts.html) |
+| Follow every task of a spec and what each agent did | [Progress page](docs/how-to/progress.md) |
 
 Search the active catalogs with commands such as `specify extension search`,
 `specify preset search`, `specify workflow search`, and `specify bundle search`.
@@ -505,6 +527,7 @@ the whole process.
 
 - [CLI reference](https://github.github.io/spec-kit/reference/overview.html) and [process commands](https://github.github.io/spec-kit/reference/agentic-sdd.html#command-overview)
 - [How-to guides](https://github.github.io/spec-kit/how-to/index.html) for applying Spec Kit to your project work
+- [See how far a spec has come](docs/how-to/progress.md), the progress page this fork adds
 - [SDD philosophy](https://github.github.io/spec-kit/how-to/sdd.html), [full methodology](./spec-driven.md), and [evolving existing specs](https://github.github.io/spec-kit/how-to/evolving-specs.html)
 - [Project history](https://github.github.io/spec-kit/history.html)
 - [How Spec Kit uses Spec Kit](./CONTRIBUTING.md#does-spec-kit-use-spec-kit)

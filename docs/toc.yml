@@ -54,6 +54,8 @@
       href: how-to/evolving-specs.md
     - name: Keep a catalog of current behaviour
       href: how-to/capabilities.md
+    - name: See how far a spec has come
+      href: how-to/progress.md
     - name: Adapt Spec Kit to your process
       href: how-to/customization.md
 
