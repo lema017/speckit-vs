@@ -2,6 +2,34 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.4.0] - 2026-11-05
+
+### Changed
+
+- chore(security): generate the audit snapshot for the Python that CI uses
+- chore(security): refresh the audit snapshot for Graphify
+- docs: say Graphify is part of the fork and what the hook before clarify adds
+- feat(capabilities): give clarify what the catalog and the graph know
+- feat(capabilities): make context, locate and bootstrap use the graph
+- feat(cli): build the first graph in init and report Graphify in check
+- feat(capabilities): ship Graphify with specify and find it beside specify
+- fix(extensions): make extension update read the catalog of this fork
+- test(capabilities): fix the last two test failures on Windows
+- fix(capabilities): publish on Windows and clear the Windows test failures
+- test(extensions): run capabilities contract tests without the claude CLI
+- docs: explain what this fork changes and point its links here
+- test(extensions): repair four mutants left stale by the gate hardening
+- docs: add a guide to the capabilities catalog
+- feat(init): install the capabilities extension in new projects
+- fix(extensions): close ways through capabilities check found in review
+- feat(extensions): add an optional Graphify gate to capabilities
+- feat(extensions): read Surefire, Gradle, Jest and Vitest reports in capabilities check
+- feat(extensions): add bootstrap, locate and the agent block to capabilities
+- fix(extensions): name the rules at stake in capabilities review
+- feat(extensions): add capabilities catalog extension
+- fix(ci): use the fork's install URL in release notes
+- chore: begin 1.3.2.dev0 development
+
 ## [1.3.1] - 2026-11-03
 
 ### Changed
