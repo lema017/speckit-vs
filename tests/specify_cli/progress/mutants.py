@@ -154,7 +154,7 @@ MUTANTS = [
     ("finished-specify-not-recorded", 'return not (name == "specify" and status == "in_progress")', 'return name != "specify"'),
     ("any-harness-accepted", "if isinstance(harness, str) and _HARNESS_NAME.match(harness):", "if harness:"),
     ("harness-pattern-too-loose", '_HARNESS_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]{0,40}$")', '_HARNESS_NAME = re.compile(r"^.{1,60}$")'),
-    ("harness-claims-to-be-observed", '"source": "configured"', '"source": "observed"'),
+    ("harness-claims-to-be-observed", 'actor["source"] = "declared" if name else "configured"', 'actor["source"] = "declared" if name else "observed"'),
     ("long-note-not-cut", 'event["note"] = text[:MAX_NOTE_CHARS]', 'event["note"] = text'),
     ("blank-note-kept", 'text = note.strip() if isinstance(note, str) else ""', 'text = note if isinstance(note, str) else ""'),
     ("non-text-note-crashes", 'text = note.strip() if isinstance(note, str) else ""', 'text = note.strip() if note else ""'),

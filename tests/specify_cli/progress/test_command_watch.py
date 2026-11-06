@@ -33,6 +33,7 @@ def test_it_draws_once_and_then_only_when_something_changed(in_project, monkeypa
     assert "001-login: 1 of 4 tasks done" in output
     assert "001-login: 1 of 1 tasks done" in output
     assert output.count("tasks done") == 2
+    assert len(output.strip().splitlines()) == 3  # The opening line and the two drawings: a look that finds nothing says nothing.
     assert naps == [0.5, 0.5, 0.5]
 
 
