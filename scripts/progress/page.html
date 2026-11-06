@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="generator" content="speckit-progress">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>Spec progress</title>
+<style>
+:root{color-scheme:light dark;--bg:#f6f7f8;--panel:#fff;--ink:#14181d;--soft:#5b6570;--line:#dfe3e7;--track:#e7eaee;
+--done:#1a7f4b;--active:#1f63c9;--blocked:#a85f00;--failed:#c4322b;--pending:#7d8791;--tint:#f0f2f4}
+@media (prefers-color-scheme:dark){:root{--bg:#101316;--panel:#191d21;--ink:#e9edf0;--soft:#a3adb6;--line:#2c3238;--track:#2c3238;
+--done:#3fbf7f;--active:#6ea6ff;--blocked:#e0a040;--failed:#f0736c;--pending:#7d8791;--tint:#22272c}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+body.reading{overflow:hidden}
+main{max-width:1180px;margin:0 auto;padding:20px 16px 48px}
+button,input,select{font:inherit;color:inherit}
+a{color:inherit}
+.mono,code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
+.link{all:unset;cursor:pointer;text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}
+.link:focus-visible{outline:2px solid var(--active);outline-offset:1px}
+header .crumb{font-size:13px;color:var(--soft);margin-bottom:6px;display:flex;gap:12px;justify-content:space-between;flex-wrap:wrap}
+header h1{font-size:24px;line-height:1.2;margin:0;overflow-wrap:anywhere}
+header .id{color:var(--soft);font-size:13px;margin-top:2px;overflow-wrap:anywhere}
+.total{display:flex;align-items:center;gap:14px;margin:16px 0 6px}
+.total .num{font-size:30px;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1}
+.total .pct{color:var(--soft);font-size:13px;font-variant-numeric:tabular-nums}
+.total .bar{flex:1;height:10px;min-width:60px}
+.bar{background:var(--track);border-radius:5px;overflow:hidden;display:flex}
+.bar i{display:block;height:100%}
+.counts{display:flex;flex-wrap:wrap;gap:4px 14px;color:var(--soft);font-size:13px}
+.counts b{color:var(--ink);font-variant-numeric:tabular-nums}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:1px}
+.pipeline{list-style:none;margin:18px 0 0;padding:0;display:grid;grid-template-columns:repeat(9,minmax(0,1fr));background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.pipeline li{border-left:1px solid var(--line);min-width:0;border-top:3px solid var(--track)}
+.pipeline li:first-child{border-left:0}
+.pipeline button{all:unset;box-sizing:border-box;display:block;width:100%;height:100%;padding:10px 10px 11px;cursor:pointer}
+.pipeline button:hover,.pipeline button[aria-expanded=true]{background:var(--tint)}
+.pipeline button:focus-visible{outline:2px solid var(--active);outline-offset:-2px}
+.pipeline .label{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pipeline .fact{color:var(--soft);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pipeline li.done{border-top-color:var(--done)}
+.pipeline li.active{border-top-color:var(--active)}
+.pipeline li.attention{border-top-color:var(--blocked)}
+.pipeline li.skipped .label,.pipeline li.pending .label{color:var(--soft);font-weight:500}
+.stepinfo{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-top:8px;padding:10px 14px;font-size:13px}
+.stepinfo h2{font-size:14px;margin:0 0 2px}
+.stepinfo ul{margin:6px 0 0;padding:0;list-style:none}
+.stepinfo p{margin:4px 0 0;overflow-wrap:anywhere}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:18px;align-items:start;margin-top:18px}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.tools input,.tools select{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:6px 9px;min-height:34px;max-width:100%}
+.tools input{flex:1;min-width:150px}
+.phase{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:12px;overflow:hidden}
+.phase>h2{display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin:0;padding:10px 14px 0;font-size:14px;overflow-wrap:anywhere}
+.phase>h2 .n{color:var(--soft);font-weight:500;font-size:12.5px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.phase .goal{padding:1px 14px 0;color:var(--soft);font-size:12.5px;overflow-wrap:anywhere}
+.phase .pbar{height:3px;margin-top:9px;border-radius:0}
+.task{border-top:1px solid var(--line)}
+.phase .task:first-of-type{border-top:0}
+.task>button{all:unset;box-sizing:border-box;display:grid;grid-template-columns:18px 46px minmax(0,1fr) auto;gap:8px;align-items:start;width:100%;padding:9px 14px;cursor:pointer}
+.task>button:hover{background:var(--tint)}
+.task>button:focus-visible{outline:2px solid var(--active);outline-offset:-2px}
+.task .tid{color:var(--soft);padding-top:1px}
+.task .desc{min-width:0;overflow-wrap:anywhere}
+.task.done .desc{color:var(--soft)}
+.tag{display:inline-block;font-size:11px;border:1px solid var(--line);border-radius:4px;padding:0 4px;margin-right:4px;color:var(--soft);vertical-align:1px}
+.task .meta{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--soft);white-space:nowrap}
+.icon{width:16px;height:16px;margin-top:1px;display:block}
+.who{border-radius:999px;background:var(--tint);padding:0 7px;max-width:170px;overflow:hidden;text-overflow:ellipsis}
+.flag{color:var(--blocked);font-weight:600}
+.detail{padding:2px 14px 13px 40px;font-size:13px}
+.detail h3{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--soft);font-weight:600;margin:10px 0 3px}
+.detail ul{margin:0;padding:0;list-style:none}
+.detail li{margin:3px 0;overflow-wrap:anywhere}
+.when{color:var(--soft);font-size:12px;white-space:nowrap}
+.problem{border-left:3px solid var(--blocked);padding:4px 9px;margin-top:6px;background:var(--tint);border-radius:0 5px 5px 0;overflow-wrap:anywhere}
+.src{color:var(--soft);font-size:12px;margin-top:8px}
+aside section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:12px}
+aside h2{font-size:14px;margin:0 0 8px}
+aside ul{list-style:none;margin:0;padding:0}
+.agent{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:6px 0;border-top:1px solid var(--line)}
+.agent:first-child{border-top:0;padding-top:0}
+.agent .a{font-weight:600;overflow-wrap:anywhere}
+.agent .b{color:var(--soft);font-size:12.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.agent .c{grid-column:1/3;color:var(--soft);font-size:12.5px;overflow-wrap:anywhere}
+.attn li{padding:6px 0;border-top:1px solid var(--line);font-size:13px;overflow-wrap:anywhere}
+.attn li:first-child{border-top:0;padding-top:0}
+.feed li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:4px 0;font-size:13px}
+.feed .text{min-width:0;overflow-wrap:anywhere}
+.docs li{padding:3px 0}
+.empty{color:var(--soft);font-size:13px}
+.live{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.live input{margin:0}
+.stale{color:var(--blocked);font-weight:600}
+dialog{border:1px solid var(--line);border-radius:12px;padding:0;background:var(--panel);color:var(--ink);width:min(860px,calc(100vw - 32px));height:calc(100vh - 48px);max-width:none;max-height:none;overflow:hidden}
+dialog::backdrop{background:rgba(10,14,18,.5)}
+.vwrap{display:flex;flex-direction:column;height:100%}
+.vhead{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--line)}
+.vhead select{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:6px 9px;min-height:34px;flex:1;min-width:140px;max-width:100%}
+.vhead .close{background:var(--tint);border:1px solid var(--line);border-radius:7px;padding:6px 12px;min-height:34px;cursor:pointer}
+.vbody{flex:1;overflow:auto;padding:14px 18px 28px}
+.notice{border-left:3px solid var(--blocked);background:var(--tint);padding:6px 10px;border-radius:0 5px 5px 0;margin:0 0 12px}
+.md{overflow-wrap:anywhere;font-size:14px;line-height:1.55}
+.md h2,.md h3,.md h4,.md h5,.md h6{line-height:1.25;margin:20px 0 6px}
+.md h2{font-size:21px}.md h3{font-size:17px}.md h4{font-size:15px}.md h5,.md h6{font-size:14px}
+.md>:first-child{margin-top:0}
+.md p{margin:8px 0}
+.md hr{border:0;border-top:1px solid var(--line);margin:16px 0}
+.md code{background:var(--tint);border-radius:4px;padding:0 4px}
+.md pre{background:var(--tint);border-radius:7px;padding:10px 12px;overflow:auto;margin:10px 0;white-space:pre}
+.md pre code{background:none;padding:0}
+.md ul{list-style:none;margin:8px 0;padding:0}
+.md li{display:flex;gap:7px;margin:3px 0}
+.md li .mark{flex:none;color:var(--soft)}
+.md li .item{min-width:0}
+.md blockquote{margin:8px 0;padding:2px 12px;border-left:3px solid var(--line);color:var(--soft)}
+.md .wrap{overflow-x:auto;margin:10px 0}
+.md table{border-collapse:collapse;font-size:13px}
+.md th,.md td{border:1px solid var(--line);padding:4px 8px;text-align:left;vertical-align:top}
+.md .url{color:var(--soft);font-size:12.5px}
+.plain{white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
+@media (max-width:980px){.layout{grid-template-columns:minmax(0,1fr)}.pipeline{grid-template-columns:repeat(3,minmax(0,1fr))}.pipeline li{border-left:0;border-bottom:1px solid var(--line)}}
+@media (max-width:560px){.task>button{grid-template-columns:18px 42px minmax(0,1fr)}.task .meta{grid-column:3;white-space:normal;flex-wrap:wrap}.detail{padding-left:14px}.total .num{font-size:24px}.tools select{flex:1}dialog{width:100vw;height:100vh;border-radius:0;border:0}.vbody{padding:12px 14px 24px}}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div class="crumb"><a href="index.html">All specs</a><span class="live"><span id="updated"></span><label class="live"><input type="checkbox" id="auto" checked> Auto-refresh</label></span></div>
+  <h1 id="title"></h1>
+  <div class="id mono" id="sid"></div>
+  <div class="total"><span class="num" id="num"></span><span class="pct" id="pct"></span><span class="bar" id="bar" role="img"></span></div>
+  <div class="counts" id="counts"></div>
+</header>
+<ol class="pipeline" id="pipeline"></ol>
+<div class="stepinfo" id="stepinfo" hidden></div>
+<div class="layout">
+  <div>
+    <div class="tools" id="tools">
+      <input id="q" type="search" placeholder="Search tasks, files, notes" aria-label="Search tasks">
+      <select id="fs" aria-label="Filter by status"></select>
+      <select id="fa" aria-label="Filter by agent"></select>
+    </div>
+    <div id="phases"></div>
+    <div class="empty" id="none" hidden>No tasks match.</div>
+    <div class="empty" id="notasks" hidden>No tasks yet. They appear here once the Tasks step writes tasks.md.</div>
+  </div>
+  <aside>
+    <section><h2>Needs your attention</h2><ul class="attn" id="attn"></ul></section>
+    <section><h2>Who did what</h2><div id="agents"></div></section>
+    <section><h2>Latest activity</h2><ul class="feed" id="feed"></ul></section>
+    <section><h2>Documents</h2><ul class="docs" id="docs"></ul></section>
+  </aside>
+</div>
+</main>
+<dialog id="viewer" aria-label="Document">
+  <div class="vwrap">
+    <div class="vhead">
+      <select id="vname" aria-label="Choose a document"></select>
+      <a id="vopen" target="_blank" rel="noopener noreferrer">Open the file</a>
+      <button type="button" class="close" id="vclose">Close</button>
+    </div>
+    <div class="vbody" id="vbody" tabindex="0"></div>
+  </div>
+</dialog>
+<script type="application/json" id="data">/*DATA*/null</script>
+<script>
+(function () {
+  "use strict";
+  var D = JSON.parse(document.getElementById("data").textContent);
+  var COLORS = {done: "var(--done)", in_progress: "var(--active)", blocked: "var(--blocked)", failed: "var(--failed)", pending: "var(--pending)", skipped: "var(--pending)"};
+  var LABELS = {done: "Done", in_progress: "In progress", blocked: "Blocked", failed: "Failed", pending: "Pending", skipped: "Skipped", note: "Note"};
+  var SOURCES = {observed: "seen by the harness", configured: "from the project setup", declared: "declared by the agent"};
+  var STATES = {done: "Done", active: "In progress", attention: "Needs attention", pending: "Not started", skipped: "Skipped"};
+  var KEY = "speckit-progress:" + D.id, HASH = "#state=";
+  var RELOAD_MS = 5000, QUIET_MS = 3000, STALE_MINUTES = 30, LONG_LINE = 4000;
+
+  function $(id) { return document.getElementById(id); }
+  function el(tag, cls, text) { var n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined && text !== null) n.textContent = text; return n; }
+  function txt(s) { return document.createTextNode(s); }
+
+  // Reloading is how a file:// page refreshes, so what the reader opened has to survive it.
+  // Where storage is refused the URL's fragment still survives; WebKit clears window.name.
+  function load() {
+    try { var raw = sessionStorage.getItem(KEY); if (raw) return JSON.parse(raw) || {}; } catch (e) {}
+    try { if (location.hash.indexOf(HASH) === 0) return JSON.parse(decodeURIComponent(location.hash.slice(HASH.length))) || {}; } catch (e) {}
+    return {};
+  }
+  function save() {
+    var text = JSON.stringify(S);
+    try { sessionStorage.setItem(KEY, text); return; } catch (e) {}
+    try { location.replace(HASH + encodeURIComponent(text)); } catch (e) {}
+  }
+
+  function ago(ts) {
+    if (!ts) return "time unknown";
+    var s = (Date.now() - new Date(ts).getTime()) / 1000;
+    if (isNaN(s)) return "time unknown";
+    s = Math.max(0, s);
+    if (s < 60) return "just now";
+    if (s < 3600) return Math.round(s / 60) + " min ago";
+    if (s < 86400) return Math.round(s / 3600) + " h ago";
+    return Math.round(s / 86400) + " d ago";
+  }
+  function abandoned(t) {
+    if (t.status !== "in_progress") return false;
+    if (!t.last_ts) return true;
+    return (Date.now() - new Date(t.last_ts).getTime()) / 1000 > D.abandon_after_seconds;
+  }
+  function icon(status) {
+    var ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", "0 0 16 16"); svg.setAttribute("class", "icon"); svg.setAttribute("aria-hidden", "true");
+    var c = COLORS[status] || COLORS.pending;
+    function add(name, attrs) { var n = document.createElementNS(ns, name); Object.keys(attrs).forEach(function (k) { n.setAttribute(k, attrs[k]); }); svg.appendChild(n); }
+    if (status === "done") { add("circle", {cx: 8, cy: 8, r: 7, fill: c}); add("path", {d: "M4.5 8.2 7 10.6 11.5 5.8", fill: "none", stroke: "var(--panel)", "stroke-width": 1.8, "stroke-linecap": "round", "stroke-linejoin": "round"}); }
+    else if (status === "in_progress") { add("circle", {cx: 8, cy: 8, r: 6.2, fill: "none", stroke: c, "stroke-width": 1.6}); add("path", {d: "M8 1.8a6.2 6.2 0 0 1 0 12.4z", fill: c}); }
+    else if (status === "blocked") { add("circle", {cx: 8, cy: 8, r: 7, fill: c}); add("rect", {x: 4, y: 7, width: 8, height: 2, rx: 1, fill: "var(--panel)"}); }
+    else if (status === "failed") { add("circle", {cx: 8, cy: 8, r: 7, fill: c}); add("path", {d: "M5.4 5.4l5.2 5.2M10.6 5.4l-5.2 5.2", stroke: "var(--panel)", "stroke-width": 1.8, "stroke-linecap": "round"}); }
+    else if (status === "skipped") { add("circle", {cx: 8, cy: 8, r: 6.2, fill: "none", stroke: c, "stroke-width": 1.6}); add("path", {d: "M5 8h6", stroke: c, "stroke-width": 1.6, "stroke-linecap": "round"}); }
+    else { add("circle", {cx: 8, cy: 8, r: 6.2, fill: "none", stroke: c, "stroke-width": 1.6}); }
+    return svg;
+  }
+
+  var S = load();
+  var open = S.open && typeof S.open === "object" ? S.open : {};
+  var tasks = [], byId = Object.create(null);
+  D.phases.forEach(function (p) { p.tasks.forEach(function (t) { tasks.push(t); if (!byId[t.id]) byId[t.id] = t; }); });
+
+  document.title = D.title + " - Spec progress";
+  $("title").textContent = D.title;
+  $("sid").textContent = D.id;
+
+  // Totals
+  var T = D.totals, gone = tasks.filter(abandoned);
+  var pct = T.total ? Math.round(100 * T.done / T.total) : 0;
+  $("num").textContent = T.done + " / " + T.total;
+  $("pct").textContent = T.total ? pct + "%" : "";
+  $("bar").setAttribute("aria-label", pct + "% of tasks done");
+  ["done", "in_progress", "blocked", "failed"].forEach(function (s) {
+    if (!T[s]) return;
+    var i = el("i"); i.style.width = (100 * T[s] / T.total) + "%"; i.style.background = COLORS[s]; $("bar").appendChild(i);
+  });
+  ["done", "in_progress", "blocked", "failed", "skipped", "pending"].forEach(function (s) {
+    if (s === "skipped" && !T.skipped) return;
+    var c = el("span"), d = el("span", "dot"); d.style.background = COLORS[s];
+    c.appendChild(d); c.appendChild(el("b", "", T[s] || 0)); c.appendChild(txt(" " + LABELS[s].toLowerCase()));
+    $("counts").appendChild(c);
+  });
+
+  // Steps of the workflow
+  function docByName(name) { return (D.documents || []).filter(function (d) { return d.name === name; })[0]; }
+  function drawStep() {
+    var box = $("stepinfo"), step = D.steps.filter(function (s) { return s.name === S.step; })[0];
+    box.textContent = "";
+    box.hidden = !step;
+    if (!step) return;
+    box.appendChild(el("h2", "", step.label + ": " + (STATES[step.state] || step.state)));
+    box.appendChild(el("p", "", step.fact));
+    if (step.details.length) { var u = el("ul"); step.details.forEach(function (d) { u.appendChild(el("li", "", d)); }); box.appendChild(u); }
+    if (step.note) box.appendChild(el("p", "", step.note));
+    if (step.who) box.appendChild(el("p", "", "By " + step.who + (SOURCES[step.actor && step.actor.source] ? " (" + SOURCES[step.actor.source] + ")" : "")));
+    if (step.document && docByName(step.document)) {
+      var p = el("p"), b = el("button", "link", "Read " + step.document);
+      b.type = "button"; b.addEventListener("click", function () { openDoc(step.document); });
+      p.appendChild(b); box.appendChild(p);
+    }
+  }
+  D.steps.forEach(function (s) {
+    var li = el("li", s.state), b = el("button");
+    b.type = "button"; b.setAttribute("aria-expanded", S.step === s.name ? "true" : "false");
+    b.title = s.label + ": " + s.fact;
+    b.appendChild(el("div", "label", s.label));
+    b.appendChild(el("div", "fact", s.fact));
+    b.addEventListener("click", function () {
+      S.step = S.step === s.name ? null : s.name; save(); drawStep();
+      Array.prototype.forEach.call($("pipeline").querySelectorAll("button"), function (n) { n.setAttribute("aria-expanded", n === b && S.step ? "true" : "false"); });
+    });
+    li.appendChild(b);
+    $("pipeline").appendChild(li);
+  });
+  drawStep();
+
+  // Filters
+  var fs = $("fs"), fa = $("fa"), names = [];
+  fs.appendChild(new Option("All statuses", ""));
+  ["pending", "in_progress", "blocked", "failed", "skipped", "done"].forEach(function (s) {
+    if (s !== "skipped" || T.skipped) fs.appendChild(new Option(LABELS[s] + " (" + (T[s] || 0) + ")", s));
+  });
+  tasks.forEach(function (t) { if (t.who && names.indexOf(t.who) < 0) names.push(t.who); });
+  fa.appendChild(new Option("All agents", ""));
+  names.sort().forEach(function (n) { fa.appendChild(new Option(n, n)); });
+  fa.appendChild(new Option("No record", "-"));
+  $("q").value = S.q || ""; fs.value = S.fs || ""; fa.value = S.fa || "";
+  $("tools").hidden = !tasks.length;
+  $("notasks").hidden = !!tasks.length;
+
+  // Tasks
+  function detail(t) {
+    var d = el("div", "detail");
+    if (t.problem) d.appendChild(el("div", "problem", t.problem));
+    if (abandoned(t)) d.appendChild(el("div", "problem", "Possibly abandoned: its last activity was " + ago(t.last_ts) + ". Its session may have ended."));
+    if (t.no_record) d.appendChild(el("div", "src", "Checked in tasks.md, with no record of who did it."));
+    if (t.actor) {
+      d.appendChild(el("h3", "", "Agent"));
+      d.appendChild(el("div", "", t.who + (t.actor.session ? " · session " + t.actor.session : "") + " · " + (SOURCES[t.actor.source] || "source unknown")));
+    }
+    if (t.notes.length) {
+      d.appendChild(el("h3", "", "Notes"));
+      var u = el("ul");
+      t.notes.forEach(function (e) {
+        var li = el("li", "", e.note);
+        li.appendChild(txt(" "));
+        li.appendChild(el("span", "when", "(" + (e.actor ? (e.actor.harness || "unknown") : "unknown") + ", " + ago(e.ts) + ")"));
+        u.appendChild(li);
+      });
+      d.appendChild(u);
+    }
+    if (t.files.length) {
+      d.appendChild(el("h3", "", "Files"));
+      var f = el("ul");
+      t.files.forEach(function (name) { f.appendChild(el("li", "mono", name)); });
+      d.appendChild(f);
+    }
+    if (t.history.length) {
+      d.appendChild(el("h3", "", "History"));
+      var h = el("ul");
+      t.history.forEach(function (e) { h.appendChild(el("li", "", (LABELS[e.status] || e.status) + ", " + (e.actor ? (e.actor.harness || "unknown") : "unknown") + ", " + ago(e.ts))); });
+      d.appendChild(h);
+    }
+    if (t.older_history.length) {
+      d.appendChild(el("h3", "", "Before this task's text changed"));
+      var o = el("ul");
+      t.older_history.forEach(function (e) { o.appendChild(el("li", "", (LABELS[e.status] || e.status) + ", " + ago(e.ts) + (e.note ? ": " + e.note : ""))); });
+      d.appendChild(o);
+    }
+    var where = "tasks.md:" + t.line + (t.section ? " · " + t.section : "") + (t.parallel ? " · can run in parallel" : "");
+    d.appendChild(el("div", "src mono", where));
+    return d;
+  }
+  function matches(t) {
+    var q = $("q").value.trim().toLowerCase();
+    if (fs.value && t.status !== fs.value) return false;
+    if (fa.value === "-" && t.who) return false;
+    if (fa.value && fa.value !== "-" && t.who !== fa.value) return false;
+    if (q) {
+      var hay = [t.id, t.text, t.story || "", t.who || ""].concat(t.files).concat(t.notes.map(function (e) { return e.note; })).join(" ").toLowerCase();
+      if (hay.indexOf(q) < 0) return false;
+    }
+    return true;
+  }
+  function row(t) {
+    var r = el("div", "task " + t.status), b = el("button");
+    b.type = "button"; b.setAttribute("data-fid", t.id); b.setAttribute("aria-expanded", open[t.id] ? "true" : "false");
+    var mark = el("span"); mark.appendChild(icon(t.status)); mark.title = LABELS[t.status];
+    b.appendChild(mark);
+    b.appendChild(el("span", "tid mono", t.id));
+    var desc = el("span", "desc");
+    if (t.story) desc.appendChild(el("span", "tag", t.story));
+    if (t.parallel) desc.appendChild(el("span", "tag", "P"));
+    desc.appendChild(txt(t.text));
+    b.appendChild(desc);
+    var meta = el("span", "meta");
+    if (t.problem) meta.appendChild(el("span", "flag", "Check"));
+    if (abandoned(t)) meta.appendChild(el("span", "flag", "Possibly abandoned"));
+    if (t.notes.length) meta.appendChild(el("span", "", t.notes.length + (t.notes.length === 1 ? " note" : " notes")));
+    if (t.who) { var w = el("span", "who", t.who); w.title = t.who; meta.appendChild(w); }
+    b.appendChild(meta);
+    b.addEventListener("click", function () {
+      var now = !open[t.id];
+      if (now) open[t.id] = 1; else delete open[t.id];
+      b.setAttribute("aria-expanded", now ? "true" : "false");
+      var old = r.querySelector(".detail");
+      if (old) r.removeChild(old);
+      if (now) r.appendChild(detail(t));
+      S.open = open; save();
+    });
+    r.appendChild(b);
+    if (open[t.id]) r.appendChild(detail(t));
+    return r;
+  }
+  function draw() {
+    var box = $("phases"), shown = 0;
+    box.textContent = "";
+    D.phases.forEach(function (p) {
+      var rows = p.tasks.filter(matches);
+      if (!rows.length) return;
+      shown += rows.length;
+      var sec = el("section", "phase"), h = el("h2");
+      var done = p.tasks.filter(function (t) { return t.status === "done"; }).length;
+      h.appendChild(el("span", "", p.name));
+      h.appendChild(el("span", "n", done + " of " + p.tasks.length));
+      sec.appendChild(h);
+      if (p.goal) sec.appendChild(el("div", "goal", p.goal));
+      var bar = el("div", "bar pbar"), fill = el("i");
+      fill.style.width = (100 * done / p.tasks.length) + "%"; fill.style.background = COLORS.done;
+      bar.appendChild(fill); sec.appendChild(bar);
+      rows.forEach(function (t) { sec.appendChild(row(t)); });
+      box.appendChild(sec);
+    });
+    $("none").hidden = shown > 0 || !tasks.length;
+  }
+  function goTo(id) {
+    $("q").value = ""; fs.value = ""; fa.value = "";
+    open[id] = 1; S.q = ""; S.fs = ""; S.fa = ""; S.open = open; save(); draw();
+    var b = document.querySelector('[data-fid="' + id + '"]');
+    if (b) { b.scrollIntoView({block: "center"}); b.focus(); }
+  }
+  function taskLink(id) {
+    if (!byId[id]) return el("span", "mono", id);
+    var b = el("button", "link mono", id);
+    b.type = "button"; b.addEventListener("click", function () { goTo(id); });
+    return b;
+  }
+  [$("q"), fs, fa].forEach(function (n) { n.addEventListener("input", function () { S.q = $("q").value; S.fs = fs.value; S.fa = fa.value; save(); draw(); }); });
+  draw();
+
+  // Needs your attention
+  function attention(id, text) {
+    var li = el("li");
+    if (id) { li.appendChild(taskLink(id)); li.appendChild(txt(" ")); }
+    li.appendChild(txt(text));
+    $("attn").appendChild(li);
+  }
+  D.attention.forEach(function (a) { attention(a.task, a.text); });
+  gone.forEach(function (t) { attention(t.id, "Possibly abandoned: its last activity was " + ago(t.last_ts) + "."); });
+  if (!D.attention.length && !gone.length) $("attn").appendChild(el("li", "empty", "Nothing right now."));
+
+  // Who did what
+  D.agents.forEach(function (r) {
+    var a = el("div", "agent");
+    a.appendChild(el("div", "a", r.label));
+    a.appendChild(el("div", "b", r.done + " done"));
+    a.appendChild(el("div", "c", (r.active.length ? "On " + r.active.join(", ") : r.label === "No record" ? "Checked in tasks.md, with no report of who did it" : "Idle") + (SOURCES[r.source] ? " · " + SOURCES[r.source] : "")));
+    $("agents").appendChild(a);
+  });
+  if (!D.agents.length) $("agents").appendChild(el("div", "empty", "No work recorded yet."));
+
+  // Latest activity
+  D.activity.slice(0, 12).forEach(function (e) {
+    var li = el("li"), text = el("div", "text");
+    var label = e.actor ? (e.actor.harness || "unknown") + (e.actor.agent && e.actor.agent !== "main" ? "/" + e.actor.agent : "") : "unknown";
+    text.appendChild(txt(label + " · " + (LABELS[e.status] || e.status).toLowerCase() + ": "));
+    if (e.kind === "task") text.appendChild(taskLink(e.task)); else text.appendChild(txt(e.step));
+    if (e.note) text.title = e.note;
+    li.appendChild(text);
+    li.appendChild(el("div", "when", ago(e.ts)));
+    $("feed").appendChild(li);
+  });
+  if (!D.activity.length) $("feed").appendChild(el("li", "empty", "Nothing recorded yet."));
+
+  // Reading the documents. Their text was written by a model or a person, so it is never parsed
+  // as HTML: every piece becomes a text node, and links stay text so they cannot be followed.
+  var dlg = $("viewer");
+  function inline(parent, s) {
+    if (s.length > 4000) { parent.appendChild(txt(s)); return; }
+    var re = /`([^`\n]{1,1000})`|\*\*([^*\n]{1,1000})\*\*|\*([^*\n]{1,1000})\*|\[([^\]\n]{1,1000})\]\(([^)\n]{1,1000})\)/g, last = 0, m;
+    while ((m = re.exec(s))) {
+      if (m[3] !== undefined && /^\s|\s$/.test(m[3])) continue;
+      if (m.index > last) parent.appendChild(txt(s.slice(last, m.index)));
+      if (m[1] !== undefined) parent.appendChild(el("code", "", m[1]));
+      else if (m[2] !== undefined) parent.appendChild(el("strong", "", m[2]));
+      else if (m[3] !== undefined) parent.appendChild(el("em", "", m[3]));
+      else { parent.appendChild(txt(m[4] + " ")); parent.appendChild(el("span", "url", "(" + m[5] + ")")); }
+      last = re.lastIndex;
+    }
+    if (last < s.length) parent.appendChild(txt(s.slice(last)));
+  }
+  function cells(line) {
+    var s = line.trim();
+    if (s.charAt(0) === "|") s = s.slice(1);
+    if (s.charAt(s.length - 1) === "|") s = s.slice(0, -1);
+    return s.replace(/\\\|/g, "\u0000").split("|").map(function (c) { return c.trim().replace(/\u0000/g, "|"); });
+  }
+  function isSeparator(line) { return line.length < 2000 && /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(line) && line.indexOf("-") >= 0; }
+  // A browser can take seconds to lay out one enormous unbroken line, so the viewer cuts them.
+  function clipped(src) {
+    return src.split(/\r\n?|\n/).map(function (line) {
+      return line.length > LONG_LINE ? line.slice(0, LONG_LINE) + " … (long line cut, open the file to see it all)" : line;
+    });
+  }
+  function renderMarkdown(src) {
+    var root = el("div", "md"), lines = clipped(src), i = 0, para = [], list = null, m;
+    function flush() { if (para.length) { var p = el("p"); inline(p, para.join(" ")); root.appendChild(p); para = []; } }
+    if (lines[0].trim() === "---") {
+      for (var f = 1; f < Math.min(lines.length, 200); f++) { if (lines[f].trim() === "---") { i = f + 1; break; } }
+    }
+    while (i < lines.length) {
+      var line = lines[i];
+      if (!line.trim()) { flush(); list = null; i++; continue; }
+      if ((m = /^\s*(```+|~~~+)/.exec(line))) {
+        flush(); list = null;
+        var code = [], fence = m[1].charAt(0);
+        i++;
+        while (i < lines.length && !(/^\s*(```+|~~~+)/.test(lines[i]) && lines[i].trim().charAt(0) === fence)) { code.push(lines[i]); i++; }
+        i++;
+        var pre = el("pre"); pre.appendChild(el("code", "", code.join("\n"))); root.appendChild(pre);
+        continue;
+      }
+      if (/^\s*<!--/.test(line)) {
+        flush();
+        while (i < lines.length && lines[i].indexOf("-->") < 0) i++;
+        i++;
+        continue;
+      }
+      if (line.length < 2000) {
+        if ((m = /^(#{1,6})[ \t]+(.+)$/.exec(line))) {
+          flush(); list = null;
+          var h = el("h" + Math.min(+m[1].length + 1, 6));
+          inline(h, m[2].replace(/[ \t#]+$/, ""));
+          root.appendChild(h); i++;
+          continue;
+        }
+        if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { flush(); list = null; root.appendChild(el("hr")); i++; continue; }
+        if (line.indexOf("|") >= 0 && i + 1 < lines.length && isSeparator(lines[i + 1])) {
+          flush(); list = null;
+          var wrap = el("div", "wrap"), table = el("table"), thead = el("thead"), tr = el("tr"), body = el("tbody");
+          cells(line).forEach(function (c) { var th = el("th"); inline(th, c); tr.appendChild(th); });
+          thead.appendChild(tr); table.appendChild(thead); table.appendChild(body);
+          i += 2;
+          while (i < lines.length && lines[i].indexOf("|") >= 0 && lines[i].trim()) {
+            var br = el("tr");
+            cells(lines[i]).forEach(function (c) { var td = el("td"); inline(td, c); br.appendChild(td); });
+            body.appendChild(br); i++;
+          }
+          wrap.appendChild(table); root.appendChild(wrap);
+          continue;
+        }
+      }
+      if ((m = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/.exec(line))) {
+        flush();
+        if (!list) { list = el("ul"); root.appendChild(list); }
+        var li = el("li"), box = /^\[([ xX])\]\s*(.*)$/.exec(m[3]), bullet = /\d/.test(m[2]) ? m[2] : "•";
+        if (box) bullet = box[1] === " " ? "☐" : "☑";
+        li.style.marginLeft = Math.min(Math.floor(m[1].replace(/\t/g, "    ").length / 2), 6) * 14 + "px";
+        li.appendChild(el("span", "mark", bullet));
+        var item = el("span", "item"); inline(item, box ? box[2] : m[3]); li.appendChild(item);
+        list.appendChild(li); i++;
+        continue;
+      }
+      if ((m = /^\s*>\s?(.*)$/.exec(line))) {
+        flush(); list = null;
+        var q = el("blockquote"); inline(q, m[1]); root.appendChild(q); i++;
+        continue;
+      }
+      list = null;
+      para.push(line.trim()); i++;
+    }
+    flush();
+    return root;
+  }
+  function openDoc(name) {
+    var doc = docByName(name);
+    if (!doc) return;
+    S.doc = name; save();
+    $("vname").value = name;
+    $("vopen").setAttribute("href", doc.href);
+    var body = $("vbody");
+    body.textContent = "";
+    if (doc.truncated) body.appendChild(el("p", "notice", "This file is large, so only its first part is shown here. Open the file to read all of it."));
+    if (doc.markdown) body.appendChild(renderMarkdown(doc.text)); else body.appendChild(el("pre", "plain", clipped(doc.text).join("\n")));
+    if (!dlg.open) { if (dlg.showModal) dlg.showModal(); else dlg.setAttribute("open", "open"); }
+    document.body.classList.add("reading");
+    body.scrollTop = 0;
+  }
+  function closed() { delete S.doc; save(); document.body.classList.remove("reading"); }
+  (D.documents || []).forEach(function (d) {
+    $("vname").appendChild(new Option(d.name, d.name));
+    var li = el("li"), b = el("button", "link mono", d.name);
+    b.type = "button"; b.addEventListener("click", function () { openDoc(d.name); });
+    li.appendChild(b);
+    $("docs").appendChild(li);
+  });
+  if (!(D.documents || []).length) $("docs").appendChild(el("li", "empty", "No documents yet."));
+  $("vname").addEventListener("change", function () { openDoc($("vname").value); });
+  $("vclose").addEventListener("click", function () { if (dlg.close) dlg.close(); else { dlg.removeAttribute("open"); closed(); } });
+  dlg.addEventListener("close", closed);
+  dlg.addEventListener("click", function (e) { if (e.target === dlg && dlg.close) dlg.close(); });
+
+  // Keeping the page current
+  function clock() {
+    var u = $("updated"), age = (Date.now() - new Date(D.generated).getTime()) / 60000;
+    u.textContent = "Updated " + ago(D.generated);
+    var stale = T.in_progress > 0 && age > STALE_MINUTES;
+    u.className = stale ? "stale" : "";
+    u.title = stale ? "Nothing has drawn this page for a while. Run: specify progress render" : "";
+  }
+  clock();
+  var auto = $("auto"), touched = 0;
+  auto.checked = S.auto !== false;
+  auto.addEventListener("change", function () { S.auto = auto.checked; save(); });
+  ["pointerdown", "keydown", "wheel"].forEach(function (name) { window.addEventListener(name, function () { touched = Date.now(); }, {passive: true}); });
+  function busy() {
+    if (dlg.open || Date.now() - touched < QUIET_MS) return true;
+    if (document.activeElement === $("q")) return true;
+    var sel = window.getSelection && window.getSelection();
+    return !!(sel && !sel.isCollapsed);
+  }
+  setInterval(function () {
+    clock();
+    if (!auto.checked || document.visibilityState !== "visible" || busy()) return;
+    var a = document.activeElement;
+    S.y = window.scrollY;
+    S.focus = a ? (a.getAttribute("data-fid") || (a.id && a !== document.body ? a.id : null)) : null;
+    save();
+    location.reload();
+  }, RELOAD_MS);
+
+  if (S.y) window.scrollTo(0, S.y);
+  if (S.focus) {
+    var again = /^T\d+$/.test(S.focus) ? document.querySelector('[data-fid="' + S.focus + '"]') : (/^[a-z]+$/.test(S.focus) ? $(S.focus) : null);
+    if (again) again.focus({preventScroll: true});
+  }
+  if (S.doc) openDoc(S.doc);
+})();
+</script>
+</body>
+</html>
