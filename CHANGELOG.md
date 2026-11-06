@@ -2,6 +2,25 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.5.0] - 2026-11-06
+
+### Changed
+
+- test(progress): give the Claude Code sample the shape that session sent
+- docs(progress): record what a live Claude Code session showed
+- test(progress): close the gaps that mutation testing found in the hook
+- test(progress): stop assuming how Windows writes a test's files
+- test(progress): add the hook to the last three file inventories
+- docs: explain the progress page and what it can guarantee
+- feat(progress): add specify progress watch and doctor
+- feat(progress): keep the page current from native events
+- feat(progress): report each task through a script, under a lock
+- fix(progress): let the bash wrappers find their folder from a Windows path
+- fix(progress): close a page before removing it, and keep PowerShell's warning off stderr
+- feat(progress): install the progress view everywhere and wire every command to it
+- feat(progress): add the progress engine, page and commands
+- chore: begin 1.4.1.dev0 development
+
 ## [1.4.0] - 2026-11-05
 
 ### Changed
