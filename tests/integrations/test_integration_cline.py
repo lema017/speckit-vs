@@ -435,6 +435,8 @@ class TestClineIntegration(MarkdownIntegrationTests):
                 "resolve-template.sh",
                 "setup-plan.sh",
                 "setup-tasks.sh",
+                "progress.sh",
+                "run-step.sh",
             ]:
                 files.append(f".specify/scripts/bash/{name}")
         else:
@@ -445,8 +447,13 @@ class TestClineIntegration(MarkdownIntegrationTests):
                 "resolve-template.ps1",
                 "setup-plan.ps1",
                 "setup-tasks.ps1",
+                "progress.ps1",
+                "run-step.ps1",
             ]:
                 files.append(f".specify/scripts/powershell/{name}")
+
+        for name in ["engine.py", "index.html", "page.html"]:
+            files.append(f".specify/scripts/progress/{name}")
 
         for name in [
             "checklist-template.md",

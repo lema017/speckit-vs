@@ -16,6 +16,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
@@ -27,6 +28,11 @@ GENERATOR = "speckit-progress"
 OUTPUT_DIR = Path(".specify") / "progress"
 PAGE_TEMPLATE = "page.html"
 INDEX_TEMPLATE = "index.html"
+LOG_NAME = "progress.jsonl"
+ATTRIBUTES_NAME = ".gitattributes"
+BROWSER_OFF_FILE = ".no-browser"
+BROWSER_OFF_ENV = "SPECKIT_PROGRESS_NO_BROWSER"
+OPENED_PREFIX = ".opened-"
 DATA_PLACEHOLDER = "/*DATA*/null"
 
 MAX_TASKS_BYTES = 5 * 1024 * 1024
@@ -46,6 +52,19 @@ OPEN_STATUSES = frozenset({"in_progress", "blocked", "failed", "skipped"})
 STEP_STATUSES = frozenset({"in_progress", "done", "failed", "skipped", "note"})
 ACTOR_SOURCES = frozenset({"observed", "configured", "declared"})
 STEP_ALIASES = {"clarify-deep": "clarify"}
+STEP_NAMES = ("constitution", "specify", "clarify", "plan", "checklist", "tasks", "analyze", "implement", "converge")
+_UNSAFE_CODES = (
+    list(range(0x00, 0x20)) + list(range(0x7f, 0xa0)) + [0x200e, 0x200f] + list(range(0x202a, 0x202f)) + list(range(0x2066, 0x206a))
+)
+_UNSAFE_TEXT = re.compile("[" + "".join(re.escape(chr(code)) for code in _UNSAFE_CODES) + "]")
+_HARNESS_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]{0,40}$")
+_STATUS_WORDS = (
+    ("in_progress", "in progress"),
+    ("blocked", "blocked"),
+    ("failed", "failed"),
+    ("skipped", "skipped"),
+    ("pending", "pending"),
+)
 
 _CHECKBOX = re.compile(r"^\s*[-*+]\s*\[([ xX])\]\s*(.*)$")
 _LEADING_TAG = re.compile(r"^\[([^\]\n]{1,40})\]\s*")
@@ -567,6 +586,7 @@ def build_steps(root, directory, phases, events, spec):
         status = logged[name]["status"] if name in logged else None
         if status == "in_progress" and step["state"] in ("pending", "skipped"):
             step["state"] = "active"
+            step["fact"] = "started"
         elif status == "failed":
             step["state"] = "attention"
     return steps
@@ -679,7 +699,7 @@ def build_feature(root, directory, out_dir, now=None, include_documents=True):
     if tasks_text and TASKS_PLACEHOLDER in tasks_text[:TEMPLATE_HEAD_CHARS]:
         tasks_text = None  # Still the template: its sample tasks are not this spec's work.
     parsed = parse_tasks(tasks_text)
-    events, bad_lines, log_truncated = read_events(directory / "progress.jsonl")
+    events, bad_lines, log_truncated = read_events(directory / LOG_NAME)
 
     by_task = {}
     for event in events:
@@ -838,6 +858,10 @@ def ensure_output_dir(root):
     return out_dir
 
 
+def _stamp(moment):
+    return moment.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
 def write_atomic(path, text):
     """Write through a temporary file, so a reader never sees half a page."""
     handle, temporary = tempfile.mkstemp(dir=str(path.parent), prefix=".tmp-" + GENERATOR + "-")
@@ -925,7 +949,7 @@ def render_project(root, feature=None, now=None):
             pages.append({"id": data["id"], "path": str(target), "current": is_current, "totals": data["totals"]})
     index = out_dir / INDEX_TEMPLATE
     write_atomic(index, fill_template(_load_template(INDEX_TEMPLATE), {
-        "generated": now.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "generated": _stamp(now),
         "specs": summaries,
     }))
     if feature is None:
@@ -944,6 +968,235 @@ def can_open_browser(env=None, platform=None):
     if platform.startswith("linux") and not (env.get("DISPLAY") or env.get("WAYLAND_DISPLAY")):
         return False
     return True
+
+
+# -- Recording a step -------------------------------------------------------------------------
+
+
+def step_belongs_to_spec(name, status):
+    """The constitution belongs to the project. A /speckit.specify that is only starting has no
+    spec yet: feature.json still names the previous one, which did not take this step."""
+    if name == "constitution":
+        return False
+    return not (name == "specify" and status == "in_progress")
+
+
+def make_step_event(name, status, harness=None, note=None, now=None):
+    event = {"v": SCHEMA_VERSION, "ts": _stamp(now or datetime.now(timezone.utc)), "kind": "step", "step": name, "status": status}
+    text = note.strip() if isinstance(note, str) else ""
+    if text:
+        event["note"] = text[:MAX_NOTE_CHARS]
+    if isinstance(harness, str) and _HARNESS_NAME.match(harness):
+        event["actor"] = {"harness": harness, "source": "configured"}
+    return event
+
+
+def _ensure_union_merge(directory):
+    """Two branches that both add to the log keep both sets of lines instead of a conflict."""
+    path = directory / ATTRIBUTES_NAME
+    if path.is_symlink():
+        return
+    line = LOG_NAME + " merge=union\n"
+    existing, _ = read_limited(path, 64 * 1024)
+    if existing is None:
+        if not path.exists():
+            write_atomic(path, line)
+    elif LOG_NAME not in existing:
+        write_atomic(path, existing + ("" if existing.endswith("\n") else "\n") + line)
+
+
+def _ends_mid_line(path):
+    """True when the last write was cut short, so the next line must not continue it."""
+    try:
+        with path.open("rb") as stream:
+            stream.seek(-1, os.SEEK_END)
+            return stream.read(1) != b"\n"
+    except OSError:
+        return False
+
+
+def append_event(directory, event):
+    """Add one line to the spec's log, as one write. Never through a link, never to a non-file."""
+    path = directory / LOG_NAME
+    if path.is_symlink():
+        raise ProgressError("%s is a symbolic link. Refusing to write through it." % path)
+    if path.exists() and not path.is_file():
+        raise ProgressError("%s is not a file." % path)
+    _ensure_union_merge(directory)
+    data = (json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8", "replace")
+    if _ends_mid_line(path):
+        data = b"\n" + data
+    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+    handle = os.open(str(path), flags, 0o644)
+    try:
+        os.write(handle, data)
+    finally:
+        os.close(handle)
+
+
+# -- Showing it to the person -----------------------------------------------------------------
+
+
+def browser_is_off(root, env=None):
+    env = os.environ if env is None else env
+    if env.get(BROWSER_OFF_ENV, "").strip().lower() not in ("", "0", "false"):
+        return True
+    return (root / OUTPUT_DIR / BROWSER_OFF_FILE).exists()
+
+
+def set_browser(root, enabled):
+    """Turn the automatic opening on or off for this project. The pages are still drawn."""
+    marker = ensure_output_dir(root) / BROWSER_OFF_FILE
+    if enabled:
+        if marker.exists():
+            marker.unlink()
+    else:
+        write_atomic(marker, "Spec Kit does not open progress pages by itself here.\n")
+
+
+def open_in_background(link):
+    """In its own process, so a browser that hangs cannot hang the command that asked for it."""
+    subprocess.Popen(
+        [sys.executable, "-I", "-c", "import sys, webbrowser; webbrowser.open(sys.argv[1])", link],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
+        start_new_session=True,
+    )
+
+
+def open_once(root, page, env=None, opener=None):
+    """Open a spec's page the first time it is drawn, and only where the person can see it."""
+    if browser_is_off(root, env) or not can_open_browser(env):
+        return False
+    page = Path(page)
+    marker = root / OUTPUT_DIR / (OPENED_PREFIX + page.stem)
+    try:
+        os.close(os.open(str(marker), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644))
+    except OSError:
+        return False
+    try:
+        (opener or open_in_background)(page.resolve().as_uri())
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def plain_text(value, limit=MAX_FIELD_CHARS):
+    """File-derived text for a terminal or a model's context: no control or reordering characters."""
+    return _UNSAFE_TEXT.sub(" ", str(value))[:limit]
+
+
+def breakdown(totals):
+    words = ["%d %s" % (totals[key], word) for key, word in _STATUS_WORDS if totals[key]]
+    return ", ".join(words) or "nothing left"
+
+
+def summary_lines(row, link=None, detail=False):
+    """A short report. Notes stay out on purpose: they can hold anything, and this reaches a model."""
+    totals = row["totals"]
+    lines = ["%s (%s)" % (plain_text(row["title"]), plain_text(row["id"]))]
+    if totals["total"]:
+        lines.append("Tasks: %d of %d done, %s" % (totals["done"], totals["total"], breakdown(totals)))
+    else:
+        lines.append("Tasks: none yet")
+    if detail:
+        lines.append("Steps: " + "; ".join("%s: %s" % (step["label"], step["fact"]) for step in row["steps"]))
+        for phase in row["phases"]:
+            lines.append("  %s: %d of %d" % (plain_text(phase["name"]), phase["done"], phase["total"]))
+        for task in row["active"]:
+            who = " (%s)" % plain_text(task["who"]) if task["who"] else ""
+            flag = ", possibly abandoned" if task["id"] in row["abandoned"] else ""
+            lines.append("  %s %s%s%s: %s" % (task["id"], task["status"].replace("_", " "), flag, who, plain_text(task["text"])))
+        for agent in row["agents"]:
+            active = " (on %s)" % ", ".join(agent["active"]) if agent["active"] else ""
+            lines.append("  %s: %d done%s" % (plain_text(agent["label"]), agent["done"], active))
+    if row["attention"]:
+        lines.append("Needs attention: %d, see the page" % len(row["attention"]))
+    if link:
+        lines.append("Page: " + link)
+    return lines
+
+
+def _say(text, stream=None):
+    """Print whatever the output can encode. A character it cannot hold must not stop the command."""
+    stream = sys.stdout if stream is None else stream
+    encoding = getattr(stream, "encoding", None) or "utf-8"
+    stream.write(text.encode(encoding, "replace").decode(encoding) + "\n")
+
+
+def _draw(root, feature, problems):
+    try:
+        return render_project(root, feature)
+    except (ProgressError, OSError) as exc:
+        problems.append(str(exc))
+        return None
+
+
+def _resolve_feature(root, reference, problems):
+    try:
+        return find_feature(root, reference) if reference else current_feature_dir(root)
+    except ProgressError as exc:
+        problems.append(str(exc))
+        return None
+
+
+def _page_link(drawn, feature):
+    if not drawn:
+        return None
+    page = drawn["pages"][0]["path"] if feature is not None and drawn["pages"] else drawn["index"]
+    return Path(page).resolve().as_uri()
+
+
+def _report(root, feature, drawn, problems, detail):
+    link = _page_link(drawn, feature)
+    try:
+        rows = status_data(root, feature)
+    except (ProgressError, OSError) as exc:
+        problems.append(str(exc))
+        return
+    if feature is not None:
+        for line in summary_lines(rows[0], link, detail):
+            _say(line)
+        return
+    for row in rows:
+        _say("%s: %d of %d done" % (plain_text(row["id"]), row["totals"]["done"], row["totals"]["total"]))
+    if not rows:
+        _say("No specs yet.")
+    if link:
+        _say("Page: " + link)
+
+
+def run_step_command(root, name, status, harness=None, note=None, reference=None, quiet=False):
+    """Record a step and redraw. Problems are reported, never raised: the command's work comes first."""
+    problems = []
+    feature = _resolve_feature(root, reference, problems)
+    belongs = step_belongs_to_spec(name, status)
+    if belongs and feature is not None:
+        try:
+            append_event(feature, make_step_event(name, status, harness, note))
+        except (ProgressError, OSError) as exc:
+            problems.append(str(exc))
+    drawn = _draw(root, feature, problems)
+    if belongs and feature is not None and drawn and drawn["pages"]:
+        open_once(root, drawn["pages"][0]["path"])
+    if not quiet:
+        _report(root, feature, drawn, problems, detail=False)
+    for problem in problems:
+        _say("progress: %s" % plain_text(problem, MAX_NOTE_CHARS), sys.stderr)
+    return 0
+
+
+def run_show_command(root, reference=None):
+    """Redraw and report in full. For /speckit.progress, and for the end of a command."""
+    problems = []
+    feature = _resolve_feature(root, reference, problems)
+    drawn = _draw(root, feature, problems)
+    _report(root, feature, drawn, problems, detail=True)
+    for problem in problems:
+        _say("progress: %s" % plain_text(problem, MAX_NOTE_CHARS), sys.stderr)
+    return 0
 
 
 # -- Running it directly ----------------------------------------------------------------------
@@ -988,24 +1241,64 @@ def status_data(root, feature=None, now=None):
     return rows
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description="Draw or read the progress of a Spec Kit project.")
-    parser.add_argument("command", choices=("render", "status"))
+def _parser():
+    parser = argparse.ArgumentParser(
+        prog="progress",
+        allow_abbrev=False,
+        description="Draw or read the progress of a Spec Kit project.",
+    )
     parser.add_argument("--root", default=".", help="Project root (default: current directory)")
-    parser.add_argument("--feature", help="Spec directory name, or a unique prefix of one")
-    args = parser.parse_args(argv)
-    root = Path(args.root)
+    parser.add_argument("--harness", help="The integration running this command")
+    shared = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+    shared.add_argument("--root", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    shared.add_argument("--harness", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    shared.add_argument("--feature", help="Spec directory name, or a unique prefix of one")
+    commands = parser.add_subparsers(dest="command", metavar="COMMAND", required=True)
+    commands.add_parser("render", parents=[shared], allow_abbrev=False, help="Draw the pages. Prints JSON.")
+    commands.add_parser("status", parents=[shared], allow_abbrev=False, help="Read the progress. Prints JSON, writes nothing.")
+    commands.add_parser("show", parents=[shared], allow_abbrev=False, help="Draw the page and report in full.")
+    step = commands.add_parser("step", parents=[shared], allow_abbrev=False, help="Record a step, draw the page and report.")
+    step.add_argument("name", choices=STEP_NAMES + tuple(STEP_ALIASES))
+    step.add_argument("status", choices=sorted(STEP_STATUSES))
+    step.add_argument("--note", help="One line about the step")
+    step.add_argument("--quiet", action="store_true", help="Print nothing")
+    browser = commands.add_parser("browser", parents=[shared], allow_abbrev=False, help="Open pages by themselves, or not.")
+    browser.add_argument("state", choices=("on", "off"))
+    return parser
+
+
+def _run_machine_command(args, root):
     try:
         feature = find_feature(root, args.feature) if args.feature else None
         if args.command == "render":
             result = render_project(root, feature)
-        else:
+        elif args.command == "status":
             result = status_data(root, feature)
+        else:
+            set_browser(root, args.state == "on")
+            result = {"browser": args.state}
     except (ProgressError, OSError) as exc:
         sys.stderr.write("progress: %s\n" % exc)
         return 1
     sys.stdout.write(json.dumps(result, indent=1, ensure_ascii=True) + "\n")
     return 0
+
+
+def main(argv=None):
+    parser = _parser()
+    args = parser.parse_args(argv)
+    root = Path(args.root)
+    if args.command == "step" and args.status == "note" and not (args.note or "").strip():
+        parser.error("a note needs --note")
+    if args.command not in ("step", "show"):
+        return _run_machine_command(args, root)
+    try:
+        if args.command == "show":
+            return run_show_command(root, args.feature)
+        return run_step_command(root, args.name, args.status, args.harness, args.note, args.feature, args.quiet)
+    except Exception as exc:
+        _say("progress: unexpected %s: %s" % (type(exc).__name__, plain_text(exc, MAX_NOTE_CHARS)), sys.stderr)
+        return 0
 
 
 if __name__ == "__main__":

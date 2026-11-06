@@ -5,9 +5,9 @@ handoffs:
     agent: speckit.plan
     prompt: Create a plan for the spec. I am building with...
 scripts:
-   sh: scripts/bash/check-prerequisites.sh --json --paths-only
-   ps: scripts/powershell/check-prerequisites.ps1 -Json -PathsOnly
-   py: scripts/python/check_prerequisites.py --json --paths-only
+   sh: scripts/bash/run-step.sh clarify __AGENT__ scripts/bash/check-prerequisites.sh --json --paths-only
+   ps: scripts/powershell/run-step.ps1 clarify __AGENT__ scripts/powershell/check-prerequisites.ps1 -Json -PathsOnly
+   py: scripts/python/run_step.py clarify __AGENT__ scripts/python/check_prerequisites.py --json --paths-only
 ---
 
 ## User Input
@@ -235,6 +235,8 @@ Context for prioritization: {ARGS}
 ## Mandatory Post-Execution Hooks
 
 **You MUST complete this section before reporting completion to the user.**
+
+First run `{PROGRESS} step clarify done --note "<one line: what was decided>"` once to record this step. End your report to the user with its output. If it fails, say so in one line and carry on: progress never blocks this command.
 
 Check if `.specify/extensions.yml` exists in the project root.
 - If it does not exist, or no hooks are registered under `hooks.after_clarify`, skip to the Completion Report.

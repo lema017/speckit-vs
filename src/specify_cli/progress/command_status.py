@@ -13,13 +13,6 @@ from . import progress_app
 from ._engine import fail, load_engine, named_feature, project_root, terminal_text
 
 _BAR_WIDTH = 24
-_STATUS_WORDS = (
-    ("in_progress", "in progress"),
-    ("blocked", "blocked"),
-    ("failed", "failed"),
-    ("skipped", "skipped"),
-    ("pending", "pending"),
-)
 
 
 def _line(*parts: object) -> None:
@@ -32,18 +25,13 @@ def _bar(done: int, total: int) -> str:
     return "#" * filled + "-" * (_BAR_WIDTH - filled)
 
 
-def _breakdown(totals: dict) -> str:
-    words = ["%d %s" % (totals[key], word) for key, word in _STATUS_WORDS if totals[key]]
-    return ", ".join(words) or "nothing left"
-
-
 def _print_one(row: dict) -> None:
     totals = row["totals"]
     _line(row["title"], "  (", row["id"], ", current)" if row["current"] else ")")
     if totals["total"]:
         percent = round(100 * totals["done"] / totals["total"])
         _line("Tasks  %d of %d  [%s] %d%%" % (totals["done"], totals["total"], _bar(totals["done"], totals["total"]), percent))
-        _line("       ", _breakdown(totals))
+        _line("       ", load_engine().breakdown(totals))
     else:
         _line("Tasks  none yet")
     _line("Steps  ", ", ".join("%s: %s" % (step["label"], step["fact"]) for step in row["steps"]))
@@ -88,7 +76,7 @@ def _print_many(rows: list) -> None:
             Text(terminal_text(name)),
             "%d of %d" % (totals["done"], totals["total"]),
             _bar(totals["done"], totals["total"]),
-            Text(_breakdown(totals) if totals["total"] else "no tasks yet"),
+            Text(load_engine().breakdown(totals) if totals["total"] else "no tasks yet"),
         )
     console.print(table)
 

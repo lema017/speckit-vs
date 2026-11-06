@@ -283,7 +283,7 @@ def test_rendering_init_preserves_command_guidance(tmp_path):
     output = _strip(result.output)
     assert "Start using slash commands" in output
     for command in ("constitution", "specify", "plan", "tasks", "implement", "converge",
-                    "clarify", "clarify-deep", "analyze", "checklist"):
+                    "clarify", "clarify-deep", "progress", "analyze", "checklist"):
         assert f"/speckit.{command}" in output
         assert (tmp_path / "proj" / ".agent" / "commands" / f"speckit.{command}.md").is_file()
     assert "Enhancement Commands" in output
@@ -301,7 +301,7 @@ def test_rendering_init_preserves_skill_guidance(tmp_path, monkeypatch):
     assert "Enhancement Skills" in output
     assert "specify integration switch <key>" not in output
     for command in ("constitution", "specify", "plan", "tasks", "implement", "converge",
-                    "clarify", "clarify-deep", "analyze", "checklist"):
+                    "clarify", "clarify-deep", "progress", "analyze", "checklist"):
         assert f"/speckit-{command}" in output
         assert (tmp_path / "proj" / ".github" / "skills" / f"speckit-{command}" / "SKILL.md").is_file()
 

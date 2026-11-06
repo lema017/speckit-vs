@@ -94,7 +94,7 @@ class SkillsIntegrationTests:
         skill_files = [f for f in created if "scripts" not in f.parts]
 
         expected_commands = {
-            "analyze", "clarify", "clarify-deep", "constitution", "converge", "implement",
+            "analyze", "clarify", "clarify-deep", "progress", "constitution", "converge", "implement",
             "plan", "checklist", "specify", "tasks",
         }
 
@@ -465,7 +465,7 @@ class SkillsIntegrationTests:
     # -- Complete file inventory ------------------------------------------
 
     _SKILL_COMMANDS = [
-        "analyze", "clarify", "clarify-deep", "constitution", "converge", "implement",
+        "analyze", "clarify", "clarify-deep", "progress", "constitution", "converge", "implement",
         "plan", "checklist", "specify", "tasks",
     ]
 
@@ -497,6 +497,11 @@ class SkillsIntegrationTests:
                 ".specify/scripts/bash/resolve-template.sh",
                 ".specify/scripts/bash/setup-plan.sh",
                 ".specify/scripts/bash/setup-tasks.sh",
+                ".specify/scripts/bash/progress.sh",
+                ".specify/scripts/bash/run-step.sh",
+                ".specify/scripts/progress/engine.py",
+                ".specify/scripts/progress/index.html",
+                ".specify/scripts/progress/page.html",
             ]
         else:
             files += [
@@ -506,6 +511,11 @@ class SkillsIntegrationTests:
                 ".specify/scripts/powershell/resolve-template.ps1",
                 ".specify/scripts/powershell/setup-plan.ps1",
                 ".specify/scripts/powershell/setup-tasks.ps1",
+                ".specify/scripts/powershell/progress.ps1",
+                ".specify/scripts/powershell/run-step.ps1",
+                ".specify/scripts/progress/engine.py",
+                ".specify/scripts/progress/index.html",
+                ".specify/scripts/progress/page.html",
             ]
         # Templates
         files += [

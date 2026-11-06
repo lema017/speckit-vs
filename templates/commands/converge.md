@@ -1,9 +1,9 @@
 ---
 description: Assess the current codebase against the feature's spec, plan, and tasks, then append any remaining unbuilt work as new tasks to tasks.md so implement can complete it.
 scripts:
-  sh: scripts/bash/check-prerequisites.sh --json --require-spec --require-tasks --include-tasks
-  ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireSpec -RequireTasks -IncludeTasks
-  py: scripts/python/check_prerequisites.py --json --require-spec --require-tasks --include-tasks
+  sh: scripts/bash/run-step.sh converge __AGENT__ scripts/bash/check-prerequisites.sh --json --require-spec --require-tasks --include-tasks
+  ps: scripts/powershell/run-step.ps1 converge __AGENT__ scripts/powershell/check-prerequisites.ps1 -Json -RequireSpec -RequireTasks -IncludeTasks
+  py: scripts/python/run_step.py converge __AGENT__ scripts/python/check_prerequisites.py --json --require-spec --require-tasks --include-tasks
 ---
 
 ## User Input
@@ -240,6 +240,8 @@ Append to the **end** of `tasks.md`, per the append contract:
   is needed for this feature's specified scope.
 
 ### 9. Check for extension hooks
+
+First run `{PROGRESS} step converge done --note "<one line: what you found and added>"` once to record this step. End your report to the user with its output. If it fails, say so in one line and carry on: progress never blocks this command.
 
 After producing the result, check if `.specify/extensions.yml` exists in the project root.
 

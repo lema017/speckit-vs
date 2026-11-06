@@ -1,9 +1,9 @@
 ---
 description: Generate a custom checklist for the current feature based on user requirements.
 scripts:
-  sh: scripts/bash/check-prerequisites.sh --json --template checklist-template
-  ps: scripts/powershell/check-prerequisites.ps1 -Json -Template checklist-template
-  py: scripts/python/check_prerequisites.py --json --template checklist-template
+  sh: scripts/bash/run-step.sh checklist __AGENT__ scripts/bash/check-prerequisites.sh --json --template checklist-template
+  ps: scripts/powershell/run-step.ps1 checklist __AGENT__ scripts/powershell/check-prerequisites.ps1 -Json -Template checklist-template
+  py: scripts/python/run_step.py checklist __AGENT__ scripts/python/check_prerequisites.py --json --template checklist-template
 ---
 
 ## Checklist Purpose: "Unit Tests for English"
@@ -346,6 +346,8 @@ Sample items:
 - Correct: "Is X clearly specified?"
 
 ## Post-Execution Checks
+
+First run `{PROGRESS} step checklist done` once to record this step. End your report to the user with its output. If it fails, say so in one line and carry on: progress never blocks this command.
 
 **Check for extension hooks (after checklist generation)**:
 Check if `.specify/extensions.yml` exists in the project root.

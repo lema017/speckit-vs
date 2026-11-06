@@ -1,9 +1,9 @@
 ---
 description: Perform a non-destructive cross-artifact consistency and quality analysis across spec.md, plan.md, and tasks.md after task generation.
 scripts:
-  sh: scripts/bash/check-prerequisites.sh --json --require-spec --require-tasks --include-tasks
-  ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireSpec -RequireTasks -IncludeTasks
-  py: scripts/python/check_prerequisites.py --json --require-spec --require-tasks --include-tasks
+  sh: scripts/bash/run-step.sh analyze __AGENT__ scripts/bash/check-prerequisites.sh --json --require-spec --require-tasks --include-tasks
+  ps: scripts/powershell/run-step.ps1 analyze __AGENT__ scripts/powershell/check-prerequisites.ps1 -Json -RequireSpec -RequireTasks -IncludeTasks
+  py: scripts/python/run_step.py analyze __AGENT__ scripts/python/check_prerequisites.py --json --require-spec --require-tasks --include-tasks
 ---
 
 ## User Input
@@ -202,6 +202,8 @@ At end of report, output a concise Next Actions block:
 Ask the user: "Would you like me to suggest concrete remediation edits for the top N issues?" (Do NOT apply them automatically.)
 
 ### 9. Check for extension hooks
+
+First run `{PROGRESS} step analyze done --note "<one line: what you found>"` once to record this step. End your report to the user with its output. If it fails, say so in one line and carry on: progress never blocks this command.
 
 After reporting, check if `.specify/extensions.yml` exists in the project root.
 - If it exists, read it and look for entries under the `hooks.after_analyze` key

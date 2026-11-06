@@ -49,6 +49,17 @@ _TEMPLATE_SUFFIX = ".md"
 _SCRIPT_SUFFIX = ".sh"
 
 
+def _header_script_references(tokens: list[str]) -> list[str]:
+    """Return the scripts a command header runs, including the one a wrapper starts.
+
+    A core command's header reads ``run-step STEP HARNESS SCRIPT [ARG ...]``, so the
+    script doing the command's work is the fourth token, not the first.
+    """
+    if len(tokens) > 3 and Path(tokens[0]).stem.replace("_", "-") == "run-step":
+        return [tokens[0], tokens[3]]
+    return tokens[:1]
+
+
 def _resolve_script_reference(script_root: Path, token: str) -> Path | None:
     """Resolve a command script reference that remains inside *script_root*."""
     posix_path = PurePosixPath(token)
@@ -1081,15 +1092,16 @@ class ArtifactCatalog:
                 if not tokens:
                     continue
 
-                path = None
-                for script_dir in script_dirs:
-                    path = _resolve_script_reference(script_dir, tokens[0])
-                    if path is not None:
-                        break
-                if path is None:
-                    continue
-                name = path.stem.replace("_", "-") if variant == "py" else path.stem
-                selected.setdefault(name, path)
+                for reference in _header_script_references(tokens):
+                    path = None
+                    for script_dir in script_dirs:
+                        path = _resolve_script_reference(script_dir, reference)
+                        if path is not None:
+                            break
+                    if path is None:
+                        continue
+                    name = path.stem.replace("_", "-") if variant == "py" else path.stem
+                    selected.setdefault(name, path)
 
         return selected
 

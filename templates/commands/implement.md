@@ -1,9 +1,9 @@
 ---
 description: Execute the implementation plan by processing and executing all tasks defined in tasks.md
 scripts:
-  sh: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
-  ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
-  py: scripts/python/check_prerequisites.py --json --require-tasks --include-tasks
+  sh: scripts/bash/run-step.sh implement __AGENT__ scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
+  ps: scripts/powershell/run-step.ps1 implement __AGENT__ scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
+  py: scripts/python/run_step.py implement __AGENT__ scripts/python/check_prerequisites.py --json --require-tasks --include-tasks
 ---
 
 ## User Input
@@ -179,6 +179,8 @@ Note: This command assumes a complete task breakdown exists in tasks.md. If task
 ## Mandatory Post-Execution Hooks
 
 **You MUST complete this section before reporting completion to the user.**
+
+First run `{PROGRESS} show` once to redraw the progress page. End your report to the user with its output. If it fails, say so in one line and carry on: progress never blocks this command.
 
 Check if `.specify/extensions.yml` exists in the project root.
 - If it does not exist, or no hooks are registered under `hooks.after_implement`, skip to the Completion Report.

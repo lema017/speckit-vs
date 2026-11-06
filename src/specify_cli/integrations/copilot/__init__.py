@@ -42,6 +42,7 @@ _COPILOT_CORE_COMMANDS = {
     "converge",
     "implement",
     "plan",
+    "progress",
     "specify",
     "tasks",
 }
