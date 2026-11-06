@@ -84,6 +84,11 @@ def test_done_checks_the_box_and_records_what_it_was_told(run, current):
     assert event["files"] == ["src/a.py", "src/b.py"]
 
 
+def test_files_can_come_separated_by_spaces_or_commas_and_in_several_options(run, current):
+    assert run("done", "T002", "--files", "a.py", "b.py", "--files", "c.py,d.py")[0] == 0
+    assert read_log(current)[0]["files"] == ["a.py", "b.py", "c.py", "d.py"]
+
+
 def test_then_closes_one_task_and_opens_the_next_in_one_call(run, current, engine):
     code, out, _ = run("done", "T001", "--then", "T002")
     assert code == 0
@@ -398,12 +403,12 @@ def test_a_page_that_cannot_be_drawn_does_not_undo_the_work(run, current, engine
 
 def test_something_unexpected_is_reported_as_a_failure(run, current, engine, monkeypatch):
     def broken(*args, **kwargs):
-        raise ZeroDivisionError("boom")
+        raise RuntimeError("boom")
 
     monkeypatch.setattr(engine, "parse_tasks", broken)
     code, _, err = run("start", "T001")
     assert code == 1
-    assert "unexpected ZeroDivisionError: boom" in err
+    assert "unexpected RuntimeError: boom" in err
 
 
 def test_a_box_already_checked_is_left_as_it_was_and_the_call_still_counts(project, run):
@@ -507,6 +512,23 @@ def test_the_lock_waits_for_its_turn(run, current, project, engine):
     assert code == 0
     assert waited >= 0.25
     assert b"[X] T001" in tasks_bytes(current)
+
+
+def test_the_page_is_drawn_while_the_lock_is_held(run, current, engine, monkeypatch):
+    draw = engine.render_project
+    found = []
+
+    def checking(root, feature, *args, **kwargs):
+        try:
+            with engine.spec_lock(root, feature, timeout=0):
+                found.append("free")
+        except engine.ProgressError:
+            found.append("held")
+        return draw(root, feature, *args, **kwargs)
+
+    monkeypatch.setattr(engine, "render_project", checking)
+    assert run("done", "T001")[0] == 0
+    assert found == ["held"]
 
 
 def test_the_lock_is_free_again_afterwards(run, current, project, engine):
