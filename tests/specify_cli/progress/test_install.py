@@ -253,24 +253,43 @@ EVENT_VARIANTS = [
 ]
 
 
-@pytest.mark.parametrize("script", EVENT_VARIANTS)
-def test_a_core_command_still_works_as_an_event_handler(tmp_path, script, capsys):
-    """The dispatcher anchors only the first path of a header, so the wrapper has to find the rest."""
-    project = tmp_path / "project"
-    init(project, "claude", script)
-    capsys.readouterr()
+def ready_spec(project: Path) -> Path:
     feature = project / "specs" / "001-login"
     feature.mkdir(parents=True)
     (feature / "spec.md").write_text("# Feature Specification: Login\n", encoding="utf-8")
     (feature / "plan.md").write_text("# Implementation Plan: Login\n", encoding="utf-8")
     (feature / "tasks.md").write_text("# Tasks: Login\n\n- [ ] T001 Build\n", encoding="utf-8")
     (project / ".specify" / "feature.json").write_text(json.dumps({"feature_directory": "specs/001-login"}), encoding="utf-8")
+    return feature
+
+
+# The dispatcher passes the first path as Windows writes it, backslashes included, and anchors
+# nothing after it. Only a run on Windows exercises the backslashes.
+@pytest.mark.parametrize("script", EVENT_VARIANTS)
+def test_a_core_command_still_works_as_an_event_handler(tmp_path, script, capsys):
+    project = tmp_path / "project"
+    init(project, "claude", script)
+    feature = ready_spec(project)
+    capsys.readouterr()
     code = resolve_and_run_event_command("speckit.analyze", "session_start", "{}", project)
     captured = capsys.readouterr()
     assert code == 0, captured.err
     assert "FEATURE_DIR" in captured.out
     event = json.loads((feature / "progress.jsonl").read_text(encoding="utf-8"))
     assert (event["step"], event["status"]) == ("analyze", "in_progress")
+
+
+@pytest.mark.parametrize("script", EVENT_VARIANTS)
+def test_the_progress_command_works_as_an_event_handler(tmp_path, script, capsys):
+    project = tmp_path / "project"
+    init(project, "claude", script)
+    ready_spec(project)
+    capsys.readouterr()
+    code = resolve_and_run_event_command("speckit.progress", "session_start", "{}", project)
+    captured = capsys.readouterr()
+    assert code == 0, captured.err
+    assert "Tasks: 0 of 1 done" in captured.out
+    assert (project / ".specify" / "progress" / "001-login.html").is_file()
 
 
 def test_nothing_is_drawn_or_recorded_by_installing(tmp_path):
