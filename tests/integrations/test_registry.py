@@ -294,7 +294,9 @@ class TestMultiInstallSafeContracts:
             )
             files = manifest.get("files", {})
             assert isinstance(files, dict), f"{key} manifest files must be an object"
-            manifests[key] = set(files.keys())
+            # The event dispatcher is declared shared, and is deleted only with its last user.
+            modes = manifest.get("ownership_modes", {})
+            manifests[key] = {path for path in files if modes.get(path) != "shared"}
 
         for first, second in _multi_install_safe_pairs():
             overlap = manifests[first] & manifests[second]

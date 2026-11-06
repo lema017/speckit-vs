@@ -84,6 +84,13 @@ CANONICAL_EVENTS = frozenset({
     "stop",
 })
 
+# The progress view, on by default wherever a harness has native events. The
+# name carries the integration's key: a hook has no other way to know which
+# harness runs it, and five integrations share one commands folder.
+PROGRESS_HOOK_PREFIX = "speckit.progress-hook."
+PROGRESS_HOOK_EVENTS = ("session_start", "post_tool_use", "stop")
+PROGRESS_HOOK_TIMEOUT = 10
+
 # -- Events Dispatcher template ---------------------------------------------
 
 _EVENTS_DISPATCHER_TEMPLATE = '''#!/usr/bin/env python3
@@ -99,13 +106,42 @@ init whose environment is discarded after `specify init` finishes (R1). In
 both cases it resolves the event's command template and runs its script
 directly, without requiring a persistent `specify` executable on PATH.
 """
+import sys
+
+_PROGRESS_HOOK_PREFIX = "speckit.progress-hook."
+_progress_output = None
+
+
+def _run_progress_hook(harness, event):
+    """The progress hook runs after every tool call, so it comes before every other import and
+    needs no second process. It reads its message and returns one line for the model, or nothing.
+    A problem with the page never reaches the harness."""
+    import os
+
+    try:
+        raw = b"" if sys.stdin.isatty() else sys.stdin.buffer.read(1024 * 1024 + 1)
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(root, ".specify", "scripts", "progress", "hook.py")
+        with open(path, encoding="utf-8") as stream:
+            source = stream.read()
+        scope = {"__name__": "speckit_progress_hook", "__file__": path}
+        exec(compile(source, path, "exec"), scope)
+        return scope["run"](harness, event, raw, root)
+    except Exception:
+        return ""
+
+
+if __name__ == "__main__" and len(sys.argv) >= 3 and sys.argv[1].startswith(_PROGRESS_HOOK_PREFIX):
+    _progress_output = _run_progress_hook(sys.argv[1][len(_PROGRESS_HOOK_PREFIX):], sys.argv[2])
+    if not _progress_output:
+        sys.exit(0)
+
 import json
 import os
 import re
 import shlex
 import shutil
 import subprocess
-import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 
@@ -400,6 +436,9 @@ def main():
     # hookEventName field (required by Qwen's hooks spec; included by
     # Gemini/Tabnine/Devin which derive from the same protocol).
     native_event = sys.argv[5] if len(sys.argv) >= 6 else ""
+    if _progress_output is not None:
+        _emit(_progress_output, envelope, native_event)
+        sys.exit(0)
     # Cap piped stdin at 1 MiB to prevent a DoS (mirrors the same guard on the
     # `specify event run` CLI command). Read from the binary buffer so the cap
     # counts encoded bytes, not decoded characters.
@@ -931,6 +970,28 @@ def _validate_resolved_event(event_name: str, handlers: list[dict[str, Any]]) ->
                 )
 
 
+def progress_hook_defaults(integration_key: str) -> ResolvedEvents:
+    """The handlers that keep the progress page current, for a harness that has native events.
+
+    Only the events that harness has: Vibe has no session start, OpenCode no stop. Only for the
+    integrations in this repository: an installed adapter's events can mean anything, and code
+    that runs by itself should not assume otherwise. Its page still follows each command.
+    """
+    from ..integrations import BUILTIN_INTEGRATION_KEYS, INTEGRATION_REGISTRY
+
+    if integration_key not in BUILTIN_INTEGRATION_KEYS:
+        return {}
+    integration = INTEGRATION_REGISTRY.get(integration_key)
+    natives = getattr(integration, "CANONICAL_TO_NATIVE", None) or {}
+    if not getattr(integration, "events_config_file", None):
+        return {}
+    return {
+        event: [{"command": PROGRESS_HOOK_PREFIX + integration_key, "timeout": PROGRESS_HOOK_TIMEOUT}]
+        for event in PROGRESS_HOOK_EVENTS
+        if event in natives
+    }
+
+
 def resolve_events(
     integration_key: str,
     integration_config: dict[str, Any] | None,
@@ -944,8 +1005,8 @@ def resolve_events(
 
     1. CLI gate ``--events false`` → empty map (caller still removes prior
        native hooks; see ``install_integration_events``).
-    2. Built-in defaults from ``integration_config["events"]`` (single-config
-       per event, wrapped as one-element lists).
+    2. Built-in defaults: the progress hook, then ``integration_config["events"]``
+       (single-config per event, wrapped as one-element lists).
     3. Extension-declared ``events:`` — appended per extension so multiple
        extensions can declare the same event (#2).
     4. User YAML override (``.specify/integration-events.yml``) — replaces the
@@ -959,7 +1020,7 @@ def resolve_events(
         if events_flag in ("false", "0", "no", "off"):
             return {}
 
-    events: ResolvedEvents = {}
+    events: ResolvedEvents = progress_hook_defaults(integration_key)
 
     # Layer 2: built-in defaults from integration config
     if integration_config and isinstance(integration_config.get("events"), dict):
@@ -1672,6 +1733,20 @@ def _remove_native_event_hooks(
     # is either gone or contains only user content, so this integration must
     # no longer claim it for teardown purposes.
     manifest.remove(config_file)
+    _remove_emptied_folders(config_path, project_root)
+
+
+def _remove_emptied_folders(path: Path, project_root: Path) -> None:
+    """A folder that only held this file, such as .github/hooks, must not outlive it."""
+    if path.exists():
+        return
+    for parent in path.parents:
+        if parent == project_root:
+            return
+        try:
+            parent.rmdir()
+        except OSError:
+            return
 
 
 def _other_event_integrations_reference_dispatcher(
@@ -1780,6 +1855,7 @@ def remove_integration_events(
                 _ensure_safe_destination(plugin_path)
                 _unlink_file(plugin_path, missing_ok=True)
             manifest.remove(plugin_rel)
+            _remove_emptied_folders(plugin_path, project_root)
 
 
 def events_stale_exclusions(integration_key: str) -> set[str]:

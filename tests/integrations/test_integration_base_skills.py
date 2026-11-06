@@ -16,6 +16,8 @@ from specify_cli.integrations import INTEGRATION_REGISTRY, get_integration
 from specify_cli.integrations.base import SkillsIntegration
 from specify_cli.integrations.manifest import IntegrationManifest
 
+from .conftest import native_event_files
+
 
 class SkillsIntegrationTests:
     """Mixin — set class-level constants and inherit these tests.
@@ -500,6 +502,7 @@ class SkillsIntegrationTests:
                 ".specify/scripts/bash/progress.sh",
                 ".specify/scripts/bash/run-step.sh",
                 ".specify/scripts/progress/engine.py",
+                ".specify/scripts/progress/hook.py",
                 ".specify/scripts/progress/index.html",
                 ".specify/scripts/progress/page.html",
             ]
@@ -514,6 +517,7 @@ class SkillsIntegrationTests:
                 ".specify/scripts/powershell/progress.ps1",
                 ".specify/scripts/powershell/run-step.ps1",
                 ".specify/scripts/progress/engine.py",
+                ".specify/scripts/progress/hook.py",
                 ".specify/scripts/progress/index.html",
                 ".specify/scripts/progress/page.html",
             ]
@@ -530,6 +534,7 @@ class SkillsIntegrationTests:
             ".specify/workflows/speckit/workflow.yml",
             ".specify/workflows/workflow-registry.json",
         ]
+        files += native_event_files(self.KEY)
         return sorted(files)
 
     def test_complete_file_inventory_sh(self, tmp_path):
