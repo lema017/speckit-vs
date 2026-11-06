@@ -73,7 +73,8 @@ class Project:
         directory.mkdir(parents=True)
         for file_name, text in (("spec.md", spec), ("plan.md", plan), ("tasks.md", tasks)):
             if text is not None:
-                (directory / file_name).write_text(text, encoding="utf-8")
+                # The same bytes on every system: some tests compare them, and CRLF has its own test.
+                (directory / file_name).write_text(text, encoding="utf-8", newline="\n")
         if events is not None:
             self.log(directory, events)
         return directory
