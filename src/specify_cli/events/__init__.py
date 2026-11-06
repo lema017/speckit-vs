@@ -1738,8 +1738,6 @@ def _remove_native_event_hooks(
 
 def _remove_emptied_folders(path: Path, project_root: Path) -> None:
     """A folder that only held this file, such as .github/hooks, must not outlive it."""
-    if path.exists():
-        return
     for parent in path.parents:
         if parent == project_root:
             return

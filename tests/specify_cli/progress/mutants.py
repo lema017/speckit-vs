@@ -421,13 +421,13 @@ HOOK_MUTANTS = [
 
 # The command line and the dispatcher, in a copy of src: one exact replacement in that file.
 SRC_MUTANTS = [
-    ("defaults-ignore-opt-out", "src/specify_cli/events/__init__.py", "    events = progress_hook_defaults(integration_key)\n", "    events = progress_hook_defaults(integration_key) or progress_hook_defaults(\"claude\")\n"),
+    ("defaults-ignore-opt-out", "src/specify_cli/events/__init__.py", "            return {}\n\n    events: ResolvedEvents = progress_hook_defaults(integration_key)\n", "            return progress_hook_defaults(integration_key)\n\n    events: ResolvedEvents = progress_hook_defaults(integration_key)\n"),
     ("defaults-off", "src/specify_cli/events/__init__.py", "        for event in PROGRESS_HOOK_EVENTS\n        if event in natives\n", "        for event in ()\n"),
     ("defaults-on-events-it-lacks", "src/specify_cli/events/__init__.py", "        for event in PROGRESS_HOOK_EVENTS\n        if event in natives\n", "        for event in PROGRESS_HOOK_EVENTS\n"),
     ("defaults-without-a-config-file", "src/specify_cli/events/__init__.py", 'if not getattr(integration, "events_config_file", None):\n        return {}\n', ""),
     ("defaults-for-any-adapter", "src/specify_cli/events/__init__.py", "    if integration_key not in BUILTIN_INTEGRATION_KEYS:\n        return {}\n", ""),
     ("removal-leaves-empty-folders", "src/specify_cli/events/__init__.py", "    for parent in path.parents:\n        if parent == project_root:\n            return\n", "    return\n    for parent in path.parents:\n        if parent == project_root:\n            return\n"),
-    ("removal-empties-a-folder-it-kept", "src/specify_cli/events/__init__.py", "    if path.exists():\n        return\n    for parent in path.parents:", "    for parent in path.parents:"),
+    ("removal-empties-a-folder-it-kept", "src/specify_cli/events/__init__.py", "        try:\n            parent.rmdir()\n        except OSError:\n            return\n", "        shutil.rmtree(parent, ignore_errors=True)\n"),
     ("dispatcher-goes-the-long-way", "src/specify_cli/events/__init__.py", 'if __name__ == "__main__" and len(sys.argv) >= 3 and sys.argv[1].startswith(_PROGRESS_HOOK_PREFIX):', "if False:"),
     ("dispatcher-lets-problems-out", "src/specify_cli/events/__init__.py", '        return scope["run"](harness, event, raw, root)\n    except Exception:\n        return ""\n', '        return scope["run"](harness, event, raw, root)\n    except KeyError:\n        return ""\n'),
     ("dispatcher-prints-nothing", "src/specify_cli/events/__init__.py", "    if not _progress_output:\n        sys.exit(0)\n", "    sys.exit(0)\n"),
@@ -509,8 +509,9 @@ def run_src_mutant(name, relative, old, new, workspace):
         "%s/test_command_doctor.py" % TESTS,
         "%s/test_command_watch.py" % TESTS,
         "%s/test_install.py" % TESTS,
+        "tests/specify_cli/events/test_events.py",
         "-k",
-        "hook or doctor or watch or event or dispatcher or quick or message or harness or line",
+        "hook or doctor or watch or event or dispatcher or quick or message or harness or line or folder",
         "-n",
         "6",
     ]

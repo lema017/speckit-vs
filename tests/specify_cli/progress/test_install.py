@@ -15,7 +15,7 @@ import yaml
 from typer.testing import CliRunner
 
 from specify_cli import app
-from specify_cli.events import resolve_and_run_event_command
+from specify_cli.events import progress_hook_defaults, resolve_and_run_event_command
 from specify_cli.integrations import INTEGRATION_REGISTRY
 
 REPO = Path(__file__).resolve().parents[3]
@@ -52,7 +52,7 @@ def _private_home(tmp_path, monkeypatch):
     monkeypatch.setenv("USERPROFILE", str(home))
 
 
-def init(project: Path, key: str, script: str, options: list[str] | None = None) -> None:
+def init(project: Path, key: str, script: str, options: list[str] | None = None):
     project.mkdir(exist_ok=True)
     previous = os.getcwd()
     os.chdir(project)
@@ -69,6 +69,7 @@ def init(project: Path, key: str, script: str, options: list[str] | None = None)
     finally:
         os.chdir(previous)
     assert result.exit_code == 0, result.output
+    return result
 
 
 def installed_commands(project: Path, key: str) -> list[Path]:
@@ -387,11 +388,10 @@ def test_every_harness_with_events_gets_the_hook_on_each_event_it_has(tmp_path, 
 
 
 @pytest.mark.parametrize(("key", "absent"), [("vibe", "session_start"), ("opencode", "stop")])
-def test_an_event_a_harness_does_not_have_is_left_out_without_a_warning(tmp_path, key, absent, capsys):
-    project = tmp_path / "project"
-    init(project, key, "sh")
+def test_an_event_a_harness_does_not_have_is_left_out_without_a_warning(tmp_path, key, absent):
     assert absent not in INTEGRATION_REGISTRY[key].CANONICAL_TO_NATIVE
-    assert "does not support" not in capsys.readouterr().err
+    assert absent not in progress_hook_defaults(key)
+    assert "does not support" not in init(tmp_path / "project", key, "sh").output
 
 
 @pytest.mark.parametrize("key", [key for key in KEYS if key not in EVENT_KEYS and key != "none"])

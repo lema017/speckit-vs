@@ -7,6 +7,7 @@ import os
 import platform
 import shlex
 from pathlib import Path, PurePath
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -22,7 +23,7 @@ from specify_cli.events import (
     validate_events,
     resolve_and_run_event_command,
 )
-from specify_cli.integrations import get_integration
+from specify_cli.integrations import INTEGRATION_REGISTRY, get_integration
 from specify_cli.integrations.manifest import IntegrationManifest
 from specify_cli.integrations.claude import ClaudeIntegration
 from specify_cli.integrations.cursor_agent import CursorAgentIntegration
@@ -164,6 +165,12 @@ class TestResolveEvents:
         assert sorted(result) == ["post_tool_use", "session_start", "stop"]
 
     def test_no_events_for_an_integration_this_repository_does_not_know(self, tmp_path):
+        assert resolve_events("sample-agent", None, tmp_path, None) == {}
+
+    def test_no_events_for_an_installed_adapter_that_has_native_events(self, tmp_path, monkeypatch):
+        """Registered and able to take hooks, but its events can mean anything."""
+        adapter = SimpleNamespace(CANONICAL_TO_NATIVE={"stop": "Stop"}, events_config_file=".sample/hooks.json")
+        monkeypatch.setitem(INTEGRATION_REGISTRY, "sample-agent", adapter)
         assert resolve_events("sample-agent", None, tmp_path, None) == {}
 
 

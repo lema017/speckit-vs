@@ -11,6 +11,8 @@ from specify_cli import app
 from specify_cli.progress import command_watch
 from tests.conftest import strip_ansi
 
+from .conftest import task_event
+
 runner = CliRunner()
 
 
@@ -65,10 +67,20 @@ def test_with_the_lock_taken_it_looks_again_next_time(in_project, engine):
     directory = in_project.feature()
     in_project.set_current(directory)
     with engine.spec_lock(in_project.root, directory):
+        started = time.monotonic()
         assert engine.watch_round(in_project.root, None, None) == (None, None)
+        assert time.monotonic() - started < engine.LOCK_TIMEOUT_SECONDS / 3
     last, line = engine.watch_round(in_project.root, None, None)
     assert "001-login" in line
     assert engine.watch_round(in_project.root, None, last) == (last, None)
+
+
+def test_a_new_report_in_the_log_counts_as_a_change(in_project, engine):
+    directory = in_project.feature()
+    in_project.set_current(directory)
+    last, _ = engine.watch_round(in_project.root, None, None)
+    in_project.log(directory, [task_event("T002", "in_progress")])
+    assert "001-login" in engine.watch_round(in_project.root, None, last)[1]
 
 
 def test_a_write_problem_is_shown_and_it_keeps_watching(in_project, engine, monkeypatch):

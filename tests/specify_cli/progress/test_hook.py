@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -139,6 +140,22 @@ def test_when_nothing_changed_the_engine_is_not_even_loaded(hook, engine, projec
     assert hook.run("claude", event, b'{"tool_input": {"command": "ls"}}', str(project.root)) == ""
 
 
+def test_only_a_tool_call_counts_as_a_report_being_made(hook, engine, project, current, monkeypatch):
+    engine.render_project(project.root, current)
+    for each in ("tasks.md", "spec.md", "plan.md"):
+        age(current / each, 10)
+    forbid_engine(hook, monkeypatch)
+    assert hook.run("claude", "stop", message("progress.sh done T002"), str(project.root)) == ""
+
+
+def test_a_session_start_speaks_even_with_the_page_current(hook, engine, project, current):
+    engine.render_project(project.root, current)
+    for each in ("tasks.md", "spec.md", "plan.md"):
+        age(current / each, 10)
+    line = hook.run("claude", "session_start", b"{}", str(project.root))
+    assert line.startswith("Spec Kit progress for 001-login: 1 of 4 tasks done.")
+
+
 def test_a_project_with_no_spec_never_loads_it(hook, project, monkeypatch):
     forbid_engine(hook, monkeypatch)
     assert hook.run("claude", "post_tool_use", b"{}", str(project.root)) == ""
@@ -245,6 +262,12 @@ def test_only_a_tool_call_is_looked_at(engine, project, current):
     assert not (current / "progress.jsonl").exists()
 
 
+@pytest.mark.parametrize("field", ["agent_id", "agentId"])
+def test_either_spelling_of_the_agent_is_read(engine, field):
+    raw = json.dumps({"session_id": "abc", field: "subagent-7", "tool_input": {"command": "ls"}}).encode()
+    assert engine.read_harness_message(raw)[2] == "subagent-7"
+
+
 def test_a_bad_harness_name_is_left_out(engine):
     actor = engine.make_seen_event("T001", "done", "BAD NAME!", None, None)["actor"]
     assert actor == {"source": "observed"}
@@ -267,7 +290,9 @@ def test_without_a_current_spec_it_does_nothing(engine, project):
 
 def test_with_the_lock_taken_it_leaves_the_drawing_to_whoever_holds_it(engine, project, current):
     with engine.spec_lock(project.root, current):
+        started = time.monotonic()
         assert engine.run_hook(project.root, "claude", "stop", b"{}") == ""
+        assert time.monotonic() - started < engine.LOCK_TIMEOUT_SECONDS / 3, "it runs inside a tool call: no waiting"
     assert not page_of(project).exists()
 
 
@@ -285,6 +310,14 @@ def test_a_session_starts_with_one_line_and_the_way_to_the_page(engine, project,
     assert line.count("\n") == 1
     assert line.startswith("Spec Kit progress for 001-login: 1 of 4 tasks done. Page: file://")
     assert line.rstrip().endswith("/.specify/progress/001-login.html")
+
+
+def test_the_name_of_a_spec_reaches_the_model_without_reordering_characters(engine, project):
+    directory = project.feature(name="001-\u202eevil")
+    project.set_current(directory)
+    line = engine.run_hook(project.root, "claude", "session_start", b"{}")
+    assert "evil" in line
+    assert "\u202e" not in line
 
 
 def test_a_note_never_reaches_the_model(engine, project, current):
