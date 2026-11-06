@@ -152,7 +152,7 @@ Read from each harness's published hook reference on 2026-11-06. Sample messages
 
 | Integration | Session field | Agent field | Evidence |
 | --- | --- | --- | --- |
-| `claude` | `session_id` | `agent_id`, inside a subagent | Documentation |
+| `claude` | `session_id` | `agent_id`, inside a subagent | Documentation, and one live session |
 | `codex` | `session_id`, the parent's for a subagent | None | Documentation |
 | `copilot` | `sessionId` or `session_id` | None | Documentation; arguments may arrive as text |
 | `cursor-agent` | `conversation_id` | None | Documentation |
@@ -163,8 +163,13 @@ Read from each harness's published hook reference on 2026-11-06. Sample messages
 | `tabnine` | `session_id` | None | Documentation; the shell argument's name is inferred |
 | `vibe` | `session_id` | None | Documentation |
 
-None of these has been captured from a live session. A harness that sends something else leaves its
-reports `configured` or `declared`, and the page says which. That is the failure mode on purpose.
+Only Claude Code's has been captured from a live session: version 2.1.303 on 2026-11-06, with Sonnet 5.5
+on a 4-task spec, $0.16. It sent these fields as documented, including `agent_id` for the subagent that
+reported a task. All 7 reports got their session, the model repeated the session-start line word for word,
+and each hook exited 0 with nothing on stderr.
+
+The other nine rest on their documentation. A harness that sends something else leaves its reports
+`configured` or `declared`, and the page says which. That is the failure mode on purpose.
 
 ## MCP
 
