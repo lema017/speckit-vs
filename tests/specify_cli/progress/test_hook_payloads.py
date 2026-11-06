@@ -19,15 +19,22 @@ RESULT = "SECRET-OUTPUT"
 
 def claude():
     # https://code.claude.com/docs/en/hooks: agent_id only inside a subagent.
+    # These fields are the ones a live session of Claude Code 2.1.303 sent, on 2026-11-06.
     return {
         "session_id": "abc123def456",
         "transcript_path": "/tmp/x.jsonl",
         "cwd": "/project",
+        "prompt_id": "prompt-1",
+        "permission_mode": "acceptEdits",
+        "effort": "high",
         "hook_event_name": "PostToolUse",
         "agent_id": "subagent-7",
+        "agent_type": "general-purpose",
         "tool_name": "Bash",
         "tool_input": {"command": COMMAND},
         "tool_response": {"stdout": RESULT},
+        "tool_use_id": "toolu-1",
+        "duration_ms": 12,
     }
 
 
