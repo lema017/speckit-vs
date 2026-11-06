@@ -13,8 +13,10 @@
 #   browser on|off             Open pages by themselves, or not
 
 # Shell built-ins only up to here: this must still warn when PATH holds nothing useful.
-case "${BASH_SOURCE[0]}" in
-    */*) script_dir="${BASH_SOURCE[0]%/*}" ;;
+# The event dispatcher on Windows hands Git Bash this path with backslashes.
+source_path="${BASH_SOURCE[0]//\\//}"
+case "$source_path" in
+    */*) script_dir="${source_path%/*}" ;;
     *) script_dir="." ;;
 esac
 script_dir="$(CDPATH='' cd -- "$script_dir" && pwd)"

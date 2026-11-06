@@ -17,8 +17,10 @@ harness="$2"
 script="$3"
 shift 3
 
-case "${BASH_SOURCE[0]}" in
-    */*) script_dir="${BASH_SOURCE[0]%/*}" ;;
+# The event dispatcher on Windows hands Git Bash this path with backslashes.
+source_path="${BASH_SOURCE[0]//\\//}"
+case "$source_path" in
+    */*) script_dir="${source_path%/*}" ;;
     *) script_dir="." ;;
 esac
 
