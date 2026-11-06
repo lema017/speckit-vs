@@ -13,9 +13,9 @@ handoffs:
     prompt: Clarify specification requirements exhaustively
     send: true
 scripts:
-  sh: scripts/bash/resolve-template.sh spec-template --json
-  ps: scripts/powershell/resolve-template.ps1 spec-template -Json
-  py: scripts/python/resolve_template.py spec-template --json
+  sh: scripts/bash/run-step.sh specify __AGENT__ scripts/bash/resolve-template.sh spec-template --json
+  ps: scripts/powershell/run-step.ps1 specify __AGENT__ scripts/powershell/resolve-template.ps1 spec-template -Json
+  py: scripts/python/run_step.py specify __AGENT__ scripts/python/resolve_template.py spec-template --json
 ---
 
 ## User Input
@@ -244,6 +244,8 @@ Given that feature description, do this:
 ## Mandatory Post-Execution Hooks
 
 **You MUST complete this section before reporting completion to the user.**
+
+First run `{PROGRESS} step specify done` once to record this step. End your report to the user with its output. If it fails, say so in one line and carry on: progress never blocks this command.
 
 Check if `.specify/extensions.yml` exists in the project root.
 - If it does not exist, or no hooks are registered under `hooks.after_specify`, skip to the Completion Report.

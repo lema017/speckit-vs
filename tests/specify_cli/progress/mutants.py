@@ -147,12 +147,152 @@ MUTANTS = [
     # Reading without writing.
     ("status-writes", "    targets = [feature] if feature is not None else discover_features(root)\n    rows = []\n", "    targets = [feature] if feature is not None else discover_features(root)\n    ensure_output_dir(root)\n    rows = []\n"),
     ("status-ignores-the-chosen-spec", "targets = [feature] if feature is not None else discover_features(root)", "targets = discover_features(root)"),
+    # Recording a step.
+    ("constitution-written-to-a-spec", 'if name == "constitution":\n        return False\n', ""),
+    ("new-spec-written-to-the-old-one", 'return not (name == "specify" and status == "in_progress")', "return True"),
+    ("finished-specify-not-recorded", 'return not (name == "specify" and status == "in_progress")', 'return name != "specify"'),
+    ("any-harness-accepted", "if isinstance(harness, str) and _HARNESS_NAME.match(harness):", "if harness:"),
+    ("harness-pattern-too-loose", '_HARNESS_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]{0,40}$")', '_HARNESS_NAME = re.compile(r"^.{1,60}$")'),
+    ("harness-claims-to-be-observed", '"source": "configured"', '"source": "observed"'),
+    ("long-note-not-cut", 'event["note"] = text[:MAX_NOTE_CHARS]', 'event["note"] = text'),
+    ("blank-note-kept", 'text = note.strip() if isinstance(note, str) else ""', 'text = note if isinstance(note, str) else ""'),
+    ("non-text-note-crashes", 'text = note.strip() if isinstance(note, str) else ""', 'text = note.strip() if note else ""'),
+    ("no-union-merge", "    _ensure_union_merge(directory)\n    data =", "    data ="),
+    ("attributes-link-followed", '    path = directory / ATTRIBUTES_NAME\n    if path.is_symlink():\n        return\n', "    path = directory / ATTRIBUTES_NAME\n"),
+    ("attributes-replaced", 'write_atomic(path, existing + ("" if existing.endswith("\\n") else "\\n") + line)', "write_atomic(path, line)"),
+    ("attributes-run-together", '("" if existing.endswith("\\n") else "\\n")', '""'),
+    ("attributes-added-twice", "elif LOG_NAME not in existing:", "else:"),
+    ("cut-line-swallows-the-next", 'if _ends_mid_line(path):\n        data = b"\\n" + data\n', ""),
+    ("log-link-followed", 'path = directory / LOG_NAME\n    if path.is_symlink():\n        raise ProgressError("%s is a symbolic link. Refusing to write through it." % path)\n', "path = directory / LOG_NAME\n"),
+    ("log-non-file-accepted", 'if path.exists() and not path.is_file():\n        raise ProgressError("%s is not a file." % path)\n    _ensure', "_ensure"),
+    ("log-overwritten", "os.O_WRONLY | os.O_APPEND | os.O_CREAT", "os.O_WRONLY | os.O_TRUNC | os.O_CREAT"),
+    ("bad-characters-stop-the-log", '+ "\\n").encode("utf-8", "replace")', '+ "\\n").encode("utf-8")'),
+    ("non-ascii-escaped-in-the-log", 'json.dumps(event, ensure_ascii=False, separators=(",", ":"))', 'json.dumps(event, separators=(",", ":"))'),
+    # The fact a step that only started shows.
+    ("started-step-keeps-old-fact", '            step["fact"] = "started"\n', ""),
+    # Opening the page.
+    ("opens-every-time", "os.O_WRONLY | os.O_CREAT | os.O_EXCL", "os.O_WRONLY | os.O_CREAT"),
+    ("opens-over-ssh-and-ci", "if browser_is_off(root, env) or not can_open_browser(env):", "if browser_is_off(root, env):"),
+    ("off-switch-ignored", "if browser_is_off(root, env) or not can_open_browser(env):", "if not can_open_browser(env):"),
+    ("env-switch-ignored", 'if env.get(BROWSER_OFF_ENV, "").strip().lower() not in ("", "0", "false"):\n        return True\n', ""),
+    ("env-switch-any-value", 'if env.get(BROWSER_OFF_ENV, "").strip().lower() not in ("", "0", "false"):', "if BROWSER_OFF_ENV in env:"),
+    ("project-switch-ignored", "return (root / OUTPUT_DIR / BROWSER_OFF_FILE).exists()", "return False"),
+    ("cannot-turn-back-on", "    if enabled:\n        if marker.exists():\n            marker.unlink()\n    else:\n", "    if not enabled:\n"),
+    ("turning-on-twice-fails", "        if marker.exists():\n            marker.unlink()\n", "        marker.unlink()\n"),
+    ("mark-problem-raises", "    except OSError:\n        return False\n    try:\n        (opener", "    except ValueError:\n        return False\n    try:\n        (opener"),
+    ("browser-problem-raises", "as_uri())\n    except (OSError, ValueError):\n", "as_uri())\n    except ValueError:\n"),
+    ("project-steps-open-the-page", 'if belongs and feature is not None and drawn and drawn["pages"]:', 'if feature is not None and drawn and drawn["pages"]:'),
+    ("no-spec-opens-the-first-page", 'if belongs and feature is not None and drawn and drawn["pages"]:', 'if belongs and drawn and drawn["pages"]:'),
+    ("browser-blocks-the-command", '''subprocess.Popen(
+        [sys.executable, "-I", "-c", "import sys, webbrowser; webbrowser.open(sys.argv[1])", link],''', '''subprocess.run(
+        [sys.executable, "-I", "-c", "import sys, webbrowser, time; time.sleep(9); webbrowser.open(sys.argv[1])", link],'''),
+    # The report.
+    ("control-characters-reach-the-terminal", 'return _UNSAFE_TEXT.sub(" ", str(value))[:limit]', "return str(value)[:limit]"),
+    ("long-text-not-cut", 'return _UNSAFE_TEXT.sub(" ", str(value))[:limit]', 'return _UNSAFE_TEXT.sub(" ", str(value))'),
+    ("title-not-cleaned", 'lines = ["%s (%s)" % (plain_text(row["title"]), plain_text(row["id"]))]', 'lines = ["%s (%s)" % (row["title"], plain_text(row["id"]))]'),
+    ("phase-not-cleaned", '"  %s: %d of %d" % (plain_text(phase["name"]), phase["done"], phase["total"])', '"  %s: %d of %d" % (phase["name"], phase["done"], phase["total"])'),
+    ("task-text-not-cleaned", 'flag, who, plain_text(task["text"])))', 'flag, who, task["text"]))'),
+    ("who-not-cleaned", '''who = " (%s)" % plain_text(task["who"]) if task["who"] else ""''', '''who = " (%s)" % task["who"] if task["who"] else ""'''),
+    ("agent-not-cleaned", 'lines.append("  %s: %d done%s" % (plain_text(agent["label"]), agent["done"], active))', 'lines.append("  %s: %d done%s" % (agent["label"], agent["done"], active))'),
+    ("report-has-no-link", '    if link:\n        lines.append("Page: " + link)\n', ""),
+    ("report-hides-attention", '    if row["attention"]:\n        lines.append("Needs attention: %d, see the page" % len(row["attention"]))\n', ""),
+    ("short-report-is-long", "_report(root, feature, drawn, problems, detail=False)", "_report(root, feature, drawn, problems, detail=True)"),
+    ("full-report-is-short", "_report(root, feature, drawn, problems, detail=True)", "_report(root, feature, drawn, problems, detail=False)"),
+    ("quiet-is-not-quiet", "    if not quiet:\n        _report(", "    if True:\n        _report("),
+    ("abandoned-not-flagged", 'flag = ", possibly abandoned" if task["id"] in row["abandoned"] else ""', 'flag = ""'),
+    ("output-encoding-errors-raise", 'stream.write(text.encode(encoding, "replace").decode(encoding) + "\\n")', 'stream.write(text + "\\n")'),
+    ("no-specs-says-nothing", '    if not rows:\n        _say("No specs yet.")\n', ""),
+    ("list-of-specs-has-no-link", '    if not rows:\n        _say("No specs yet.")\n    if link:\n        _say("Page: " + link)\n', '    if not rows:\n        _say("No specs yet.")\n'),
+    ("link-always-to-the-list", 'page = drawn["pages"][0]["path"] if feature is not None and drawn["pages"] else drawn["index"]', 'page = drawn["index"]'),
+    # Nothing may stop the command.
+    ("log-problem-stops-the-step", '''            append_event(feature, make_step_event(name, status, harness, note))
+        except (ProgressError, OSError) as exc:
+            problems.append(str(exc))''', '''            append_event(feature, make_step_event(name, status, harness, note))
+        except ValueError as exc:
+            problems.append(str(exc))'''),
+    ("draw-problem-stops-the-step", '''        return render_project(root, feature)
+    except (ProgressError, OSError) as exc:
+        problems.append(str(exc))
+        return None''', '''        return render_project(root, feature)
+    except ValueError as exc:
+        problems.append(str(exc))
+        return None'''),
+    ("unknown-spec-stops-the-step", '''        return find_feature(root, reference) if reference else current_feature_dir(root)
+    except ProgressError as exc:''', '''        return find_feature(root, reference) if reference else current_feature_dir(root)
+    except ValueError as exc:'''),
+    ("problems-not-reported", '''    if not quiet:
+        _report(root, feature, drawn, problems, detail=False)
+    for problem in problems:
+        _say("progress: %s" % plain_text(problem, MAX_NOTE_CHARS), sys.stderr)
+''', '''    if not quiet:
+        _report(root, feature, drawn, problems, detail=False)
+'''),
+    ("surprise-fails-the-command", '''    except Exception as exc:
+        _say("progress: unexpected %s: %s" % (type(exc).__name__, plain_text(exc, MAX_NOTE_CHARS)), sys.stderr)
+        return 0
+''', '''    except ValueError as exc:
+        return 0
+'''),
+    # The command line.
+    ("empty-note-accepted", 'if args.command == "step" and args.status == "note" and not (args.note or "").strip():\n        parser.error("a note needs --note")\n', ""),
+    ("options-can-be-abbreviated", 'step = commands.add_parser("step", parents=[shared], allow_abbrev=False,', 'step = commands.add_parser("step", parents=[shared],'),
+    ("harness-first-is-lost", 'shared.add_argument("--harness", default=argparse.SUPPRESS, help=argparse.SUPPRESS)', 'shared.add_argument("--harness", help=argparse.SUPPRESS)'),
+    ("root-first-is-lost", 'shared.add_argument("--root", default=argparse.SUPPRESS, help=argparse.SUPPRESS)', 'shared.add_argument("--root", default=".", help=argparse.SUPPRESS)'),
+    ("clarify-deep-refused", 'step.add_argument("name", choices=STEP_NAMES + tuple(STEP_ALIASES))', 'step.add_argument("name", choices=STEP_NAMES)'),
+    ("any-step-name-accepted", 'step.add_argument("name", choices=STEP_NAMES + tuple(STEP_ALIASES))', 'step.add_argument("name")'),
+    ("any-step-status-accepted", 'step.add_argument("status", choices=sorted(STEP_STATUSES))', 'step.add_argument("status")'),
+]
+
+# The wrappers, in a temporary copy of the scripts and templates. A survivor here means a model
+# could see something change, or a page problem could reach the command.
+WRAPPER_MUTANTS = [
+    ("bash-exit-code-lost", "scripts/bash/run-step.sh", 'exit "$status"', "exit 0"),
+    ("bash-engine-output-leaks", "scripts/bash/run-step.sh", "--quiet </dev/null >/dev/null 2>&1", "--quiet </dev/null"),
+    ("bash-engine-stderr-leaks", "scripts/bash/run-step.sh", "--quiet </dev/null >/dev/null 2>&1", "--quiet </dev/null >/dev/null"),
+    ("bash-records-failures", "scripts/bash/run-step.sh", 'if [ "$status" -eq 0 ]; then', "if true; then"),
+    ("bash-records-nothing", "scripts/bash/run-step.sh", 'if [ "$status" -eq 0 ]; then', "if false; then"),
+    ("bash-arguments-resplit", "scripts/bash/run-step.sh", '"$BASH" "$script" "$@"', '"$BASH" "$script" $*'),
+    ("bash-engine-eats-stdin", "scripts/bash/run-step.sh", '"$BASH" "$script" "$@"', '"$BASH" "$script" "$@" </dev/null'),
+    ("bash-harness-dropped", "scripts/bash/run-step.sh", '--harness "$harness" ', ""),
+    ("bash-no-argument-check", "scripts/bash/run-step.sh", 'if [ "$#" -lt 3 ]; then', "if false; then"),
+    ("bash-script-not-anchored", "scripts/bash/run-step.sh", 'if [ -f "$script_dir/../../$script" ]; then', "if false; then"),
+    ("bash-own-scripts-folder-wins", "scripts/bash/run-step.sh", 'if [ -f "$script_dir/../../$script" ]; then', 'if [ ! -f "$script" ] && [ -f "$script_dir/../../$script" ]; then'),
+    ("python-own-scripts-folder-wins", "scripts/python/run_step.py", "return str(anchored) if anchored.is_file() else script", "return str(anchored) if anchored.is_file() and not Path(script).is_file() else script"),
+    ("bash-page-failure-fails", "scripts/bash/progress.sh", 'is missing. Run: specify integration upgrade" >&2\n    exit 0', 'is missing. Run: specify integration upgrade" >&2\n    exit 1'),
+    ("bash-no-python-fails", "scripts/bash/progress.sh", 'no specify command here." >&2\nexit 0', 'no specify command here." >&2\nexit 1'),
+    ("bash-no-fallback-to-specify", "scripts/bash/progress.sh", 'if command -v specify >/dev/null 2>&1; then', "if false; then"),
+    ("bash-old-python-accepted", "scripts/bash/progress.sh", "sys.exit(0 if sys.version_info >= (3, 9) else 1)", "sys.exit(0)"),
+    ("bash-engine-not-isolated", "scripts/bash/progress.sh", 'exec $candidate -I "$engine"', 'exec $candidate "$engine"'),
+    ("bash-needs-external-tools", "scripts/bash/progress.sh", 'script_dir="$(CDPATH=\'\' cd -- "$script_dir" && pwd)"', 'script_dir="$(CDPATH=\'\' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"'),
+    ("bash-root-is-the-current-folder", "scripts/bash/progress.sh", '--root "$project_root" "$@"\n    fi', '--root "." "$@"\n    fi'),
+    ("python-exit-code-lost", "scripts/python/run_step.py", "return 128 - status if status < 0 else status", "return 0"),
+    ("python-records-failures", "scripts/python/run_step.py", "    if status == 0:\n        update_progress", "    if True:\n        update_progress"),
+    ("python-records-nothing", "scripts/python/run_step.py", "    if status == 0:\n        update_progress", "    if False:\n        update_progress"),
+    ("python-engine-output-leaks", "scripts/python/run_step.py", "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL", "stderr=subprocess.DEVNULL"),
+    ("python-engine-stderr-leaks", "scripts/python/run_step.py", "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL", "stdout=subprocess.DEVNULL"),
+    ("python-harness-dropped", "scripts/python/run_step.py", 'command += ["--harness", harness, "step"', 'command += ["step"'),
+    ("python-arguments-dropped", "scripts/python/run_step.py", "[sys.executable, locate(script), *rest]", "[sys.executable, locate(script)]"),
+    ("python-no-argument-check", "scripts/python/run_step.py", "if len(argv) < 3:", "if False:"),
+    ("python-script-not-anchored", "scripts/python/run_step.py", "locate(script), *rest", "script, *rest"),
+    ("python-missing-engine-fails", "scripts/python/progress.py", 'specify integration upgrade", file=sys.stderr)\n        return 0', 'specify integration upgrade", file=sys.stderr)\n        return 1'),
+    ("python-engine-not-isolated", "scripts/python/progress.py", '[sys.executable, "-I", str(engine)', "[sys.executable, str(engine)"),
+    ("python-root-wrong", "scripts/python/progress.py", "str(here.parents[2])", 'str(".")'),
 ]
 
 
-def run_tests(engine):
-    env = dict(os.environ, SPECKIT_PROGRESS_ENGINE_UNDER_TEST=str(engine), PYTHONDONTWRITEBYTECODE="1")
-    command = [sys.executable, "-m", "pytest", TESTS, "-x", "-q", "--no-header", "-p", "no:cacheprovider"]
+# These two run the repository's own files, so a changed copy of the engine would not reach them.
+ENGINE_TESTS = ["--ignore=%s/test_install.py" % TESTS, "--ignore=%s/test_wrappers.py" % TESTS]
+
+
+def run_tests(engine, sources=None):
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+    if sources is None:
+        env["SPECKIT_PROGRESS_ENGINE_UNDER_TEST"] = str(engine)
+        command = [sys.executable, "-m", "pytest", TESTS, *ENGINE_TESTS]
+    else:
+        env["SPECKIT_PROGRESS_SOURCES_UNDER_TEST"] = str(sources)
+        command = [sys.executable, "-m", "pytest", "%s/test_wrappers.py" % TESTS, "-n", "6"]
+    command += ["-x", "-q", "--no-header", "-p", "no:cacheprovider"]
     try:
         done = subprocess.run(command, cwd=str(ROOT), env=env, capture_output=True, text=True, timeout=TIME_LIMIT_SECONDS, check=False)
     except subprocess.TimeoutExpired:
@@ -176,8 +316,29 @@ def run_mutant(name, old, new, workspace):
     return "killed", detail
 
 
+def run_wrapper_mutant(name, relative, old, new, workspace):
+    folder = workspace / name
+    for part in ("scripts", "templates"):
+        shutil.copytree(ROOT / part, folder / part, ignore=shutil.ignore_patterns("__pycache__"))
+    target = folder / relative
+    text = target.read_text(encoding="utf-8")
+    if text.count(old) < 1:
+        return "no-match", "the text to replace is not in %s" % relative
+    target.write_text(text.replace(old, new, 1), encoding="utf-8")
+    code, detail = run_tests(None, sources=folder)
+    shutil.rmtree(folder, ignore_errors=True)
+    if code == 0:
+        return "SURVIVED", ""
+    return "killed", detail
+
+
 def main():
     wanted = set(sys.argv[1:])
+    known = {entry[0] for entry in MUTANTS} | {entry[0] for entry in WRAPPER_MUTANTS}
+    if wanted - known:
+        # Running nothing would otherwise report that nothing survived.
+        print("no such mutant: %s" % ", ".join(sorted(wanted - known)), flush=True)
+        return 2
     survivors = 0
     with tempfile.TemporaryDirectory(prefix="progress-mutants-") as directory:
         workspace = Path(directory)
@@ -191,6 +352,13 @@ def main():
             if wanted and name not in wanted:
                 continue
             status, detail = run_mutant(name, old, new, workspace)
+            if status != "killed":
+                survivors += 1
+            print("%-38s %-8s %s" % (name, status, detail), flush=True)
+        for name, relative, old, new in WRAPPER_MUTANTS:
+            if wanted and name not in wanted:
+                continue
+            status, detail = run_wrapper_mutant(name, relative, old, new, workspace)
             if status != "killed":
                 survivors += 1
             print("%-38s %-8s %s" % (name, status, detail), flush=True)

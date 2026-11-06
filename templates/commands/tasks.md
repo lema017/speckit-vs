@@ -10,9 +10,9 @@ handoffs:
     prompt: Start the implementation in phases
     send: true
 scripts:
-  sh: scripts/bash/setup-tasks.sh --json
-  ps: scripts/powershell/setup-tasks.ps1 -Json
-  py: scripts/python/setup_tasks.py --json
+  sh: scripts/bash/run-step.sh tasks __AGENT__ scripts/bash/setup-tasks.sh --json
+  ps: scripts/powershell/run-step.ps1 tasks __AGENT__ scripts/powershell/setup-tasks.ps1 -Json
+  py: scripts/python/run_step.py tasks __AGENT__ scripts/python/setup_tasks.py --json
 ---
 
 ## User Input
@@ -95,6 +95,8 @@ You **MUST** consider the user input before proceeding (if not empty).
 ## Mandatory Post-Execution Hooks
 
 **You MUST complete this section before reporting completion to the user.**
+
+First run `{PROGRESS} step tasks done` once to record this step. End your report to the user with its output. If it fails, say so in one line and carry on: progress never blocks this command.
 
 Check if `.specify/extensions.yml` exists in the project root.
 - If it does not exist, or no hooks are registered under `hooks.after_tasks`, skip to the Completion Report.

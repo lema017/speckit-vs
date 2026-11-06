@@ -54,9 +54,20 @@ _CORE_COMMAND_TEMPLATE_ORDER = (
     "checklist",
     "specify",
     "tasks",
+    "progress",
 )
 _CORE_COMMAND_TEMPLATE_RANK = {
     command: index for index, command in enumerate(_CORE_COMMAND_TEMPLATE_ORDER)
+}
+
+
+# What ``{PROGRESS}`` becomes, by script variant. Written from the project root so an
+# extension's or a preset's command reaches the core scripts too: a bare ``scripts/`` would
+# be rewritten to point inside the extension.
+_PROGRESS_COMMANDS = {
+    "sh": ".specify/scripts/bash/progress.sh --harness __AGENT__",
+    "ps": ".specify/scripts/powershell/progress.ps1 --harness __AGENT__",
+    "py": ".specify/scripts/python/progress.py --harness __AGENT__",
 }
 
 
@@ -854,6 +865,15 @@ class IntegrationBase(ABC):
         return f"{interpreter} {script_command}"
 
     @staticmethod
+    def progress_command(script_type: object, project_root: Path | None = None) -> str:
+        """Return what ``{PROGRESS}`` becomes for the project's script variant."""
+        variant = IntegrationBase.select_script_variant(script_type, _PROGRESS_COMMANDS)
+        command = _PROGRESS_COMMANDS[variant]
+        if variant == "py":
+            return IntegrationBase.build_python_invocation(command, project_root)
+        return command
+
+    @staticmethod
     def select_script_variant(
         requested: object, script_commands: dict[str, str]
     ) -> str:
@@ -916,7 +936,8 @@ class IntegrationBase(ABC):
         Performs the same transformations as the release script:
         1. Select ``scripts.<script_type>`` from YAML frontmatter, falling
            back to a runnable platform shell or Python variant when unavailable
-        2. Replace ``{SCRIPT}`` with the extracted script command
+        2. Replace ``{SCRIPT}`` with the extracted script command, and
+           ``{PROGRESS}`` with the command that reports progress
         3. Strip ``scripts:`` section from frontmatter
         4. Replace ``{ARGS}`` and ``$ARGUMENTS`` with *arg_placeholder*
         5. Replace ``__AGENT__`` with *agent_name*
@@ -965,6 +986,11 @@ class IntegrationBase(ABC):
                     script_command, project_root
                 )
             content = content.replace("{SCRIPT}", script_command)
+        if "{PROGRESS}" in content:
+            content = content.replace(
+                "{PROGRESS}",
+                IntegrationBase.progress_command(script_type, project_root),
+            )
 
         # 3. Strip scripts: section from frontmatter
         lines = content.splitlines(keepends=True)

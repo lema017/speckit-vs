@@ -100,9 +100,12 @@ class TestListArtifactsContract:
         catalog = ArtifactCatalog(spec_kit_project)
         scripts = [row for row in catalog.list_artifacts() if row.kind == "script"]
 
+        # The real scripts stay listed although each header now starts with the wrapper.
         assert {row.name for row in scripts} == {
             "check-prerequisites",
+            "progress",
             "resolve-template",
+            "run-step",
             "setup-plan",
             "setup-tasks",
         }

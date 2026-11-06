@@ -529,6 +529,14 @@ class CommandRegistrar:
             script_command = script_command.replace("{ARGS}", "$ARGUMENTS")
             body = body.replace("{SCRIPT}", script_command)
 
+        if "{PROGRESS}" in body:
+            from specify_cli.integrations.base import IntegrationBase
+
+            body = body.replace(
+                "{PROGRESS}",
+                IntegrationBase.progress_command(init_opts.get("script"), project_root),
+            )
+
         body = body.replace("{ARGS}", "$ARGUMENTS").replace("__AGENT__", agent_name)
 
         return CommandRegistrar.rewrite_project_relative_paths(

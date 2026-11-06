@@ -12,6 +12,10 @@ import yaml
 
 from specify_cli.presets import PresetRegistry
 
+# Commands under test can draw a progress page, and the first one for a spec opens a browser.
+# Set here so that every process any test starts inherits it, and nothing opens on a dev machine.
+os.environ["SPECKIT_PROGRESS_NO_BROWSER"] = "1"
+
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 

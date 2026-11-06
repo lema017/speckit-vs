@@ -5,9 +5,9 @@ handoffs:
     agent: speckit.specify
     prompt: Implement the feature specification based on the updated constitution. I want to build...
 scripts:
-  sh: scripts/bash/resolve-template.sh constitution-template --json
-  ps: scripts/powershell/resolve-template.ps1 constitution-template -Json
-  py: scripts/python/resolve_template.py constitution-template --json
+  sh: scripts/bash/run-step.sh constitution __AGENT__ scripts/bash/resolve-template.sh constitution-template --json
+  ps: scripts/powershell/run-step.ps1 constitution __AGENT__ scripts/powershell/resolve-template.ps1 constitution-template -Json
+  py: scripts/python/run_step.py constitution __AGENT__ scripts/python/resolve_template.py constitution-template --json
 ---
 
 ## User Input
@@ -146,6 +146,8 @@ If critical info missing (e.g., ratification date truly unknown), insert `TODO(<
 Write only `.specify/memory/constitution.md`; do not create or modify template source files.
 
 ## Post-Execution Checks
+
+First run `{PROGRESS} step constitution done` once to record this step. End your report to the user with its output. If it fails, say so in one line and carry on: progress never blocks this command.
 
 **Check for extension hooks (after constitution update)**:
 Check if `.specify/extensions.yml` exists in the project root.

@@ -9,9 +9,9 @@ handoffs:
     agent: speckit.checklist
     prompt: Create a checklist for the following domain...
 scripts:
-  sh: scripts/bash/setup-plan.sh --json
-  ps: scripts/powershell/setup-plan.ps1 -Json
-  py: scripts/python/setup_plan.py --json
+  sh: scripts/bash/run-step.sh plan __AGENT__ scripts/bash/setup-plan.sh --json
+  ps: scripts/powershell/run-step.ps1 plan __AGENT__ scripts/powershell/setup-plan.ps1 -Json
+  py: scripts/python/run_step.py plan __AGENT__ scripts/python/setup_plan.py --json
 ---
 
 ## User Input
@@ -74,6 +74,8 @@ You **MUST** consider the user input before proceeding (if not empty).
 ## Mandatory Post-Execution Hooks
 
 **You MUST complete this section before reporting completion to the user.**
+
+First run `{PROGRESS} step plan done` once to record this step. End your report to the user with its output. If it fails, say so in one line and carry on: progress never blocks this command.
 
 Check if `.specify/extensions.yml` exists in the project root.
 - If it does not exist, or no hooks are registered under `hooks.after_plan`, skip to the Completion Report.
