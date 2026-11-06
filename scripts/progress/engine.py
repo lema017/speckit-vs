@@ -916,9 +916,11 @@ def _remove_orphan_pages(out_dir, keep):
         if path.name in keep or path.is_symlink():
             continue
         try:
+            # Closed first: Windows refuses to remove a file that is still open.
             with path.open("rb") as stream:
-                if marker in stream.read(1024):
-                    path.unlink()
+                ours = marker in stream.read(1024)
+            if ours:
+                path.unlink()
         except OSError:
             pass
 
