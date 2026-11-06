@@ -2,6 +2,7 @@
 
 # Runs the progress engine with whichever Python is here. The engine is one file, the same on every
 # platform. Without a Python the command that called this still goes on: this warns and exits 0.
+# Only a task command exits 1 then, because the model has to mark that task's box by hand.
 #
 # Usage: ./progress.ps1 [--harness NAME] COMMAND [OPTIONS]
 #
@@ -11,15 +12,24 @@
 #   render                     Draw the pages
 #   status                     Read the progress, as JSON
 #   browser on|off             Open pages by themselves, or not
+#   start T011                 Say a task has started
+#   done T011 [--note TEXT] [--files A,B] [--then T012]
+#                              Check a task's box and record it
+#   block|fail|skip T011 --reason TEXT
+#                              Say what stopped a task
+#   note T011 TEXT             Add a note to a task
 #
 # No param block on purpose: every argument stays in $args and reaches the engine as written.
 
 $engine = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../progress/engine.py'))
 $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
 
+$subcommand = if ($args.Count -ge 1 -and $args[0] -eq '--harness') { $args[2] } else { $args[0] }
+$withoutEngine = if (@('start', 'done', 'block', 'fail', 'skip', 'note') -contains $subcommand) { 1 } else { 0 }
+
 if (-not (Test-Path -LiteralPath $engine -PathType Leaf)) {
     [Console]::Error.WriteLine("progress: the page was not updated: $engine is missing. Run: specify integration upgrade")
-    exit 0
+    exit $withoutEngine
 }
 
 # Before PowerShell 7.3 a double quote inside an argument does not survive the trip to a native
@@ -36,7 +46,8 @@ function ConvertTo-NativeArgument {
     return $escaped
 }
 
-$forwarded = @($args | ForEach-Object { ConvertTo-NativeArgument ([string]$_) })
+# PowerShell reads a,b as a list before this script sees it. The engine expects the comma back.
+$forwarded = @($args | ForEach-Object { ConvertTo-NativeArgument (@($_) -join ',') })
 $rootArgument = ConvertTo-NativeArgument $projectRoot
 $engineArgument = ConvertTo-NativeArgument $engine
 
@@ -65,4 +76,4 @@ if (Get-Command specify -CommandType Application -ErrorAction SilentlyContinue) 
 }
 
 [Console]::Error.WriteLine('progress: the page was not updated: no Python 3.9 or newer and no specify command here.')
-exit 0
+exit $withoutEngine

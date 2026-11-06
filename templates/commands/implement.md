@@ -166,7 +166,22 @@ You **MUST** consider the user input before proceeding (if not empty).
    - For parallel tasks [P], continue with successful tasks, report failed ones
    - Provide clear error messages with context for debugging
    - Suggest next steps if implementation cannot proceed
-   - **IMPORTANT** For completed tasks, make sure to mark the task off as [X] in the tasks file.
+   - **IMPORTANT** For completed tasks, make sure to mark the task off as [X] in the tasks file. The progress script below does it for you, under a lock, so parallel agents cannot overwrite each other.
+   - **Record each task with the progress script.** Close one task and open the next in the same call, so a task costs about one call:
+
+     ```text
+     {PROGRESS} start T011
+     {PROGRESS} done T011 --note "Reused the status route" --files src/api/a.py,src/api/b.py --then T012
+     {PROGRESS} block T012 --reason "Waiting for the T011 response shape"
+     {PROGRESS} fail T009 --reason "A test still renews the session on /health"
+     {PROGRESS} skip T010 --reason "The plan dropped this endpoint"
+     {PROGRESS} note T011 "Kept the old route for the mobile client"
+     ```
+
+     - Use `start` only for the first task and after a pause. Leave out `--then` at the end of a phase you will not continue, or when the next task is not decided yet.
+     - Keep a note to one line, on what someone reading later would want to know. Skip it when the task says it all. Notes are saved with the project, so never put a secret in one.
+     - **If a call fails,** read its message. For an unknown id, use one it lists. Otherwise mark the box by hand and carry on: progress never stops the work.
+     - **When you delegate a task to a subagent,** give it these same instructions with the exact command, and have it add `--agent <a short name for it>` to each call.
 
 9. Completion validation:
    - Verify all required tasks are completed

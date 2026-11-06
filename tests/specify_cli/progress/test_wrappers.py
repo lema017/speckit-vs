@@ -538,3 +538,90 @@ def test_a_python_too_old_for_the_engine_is_passed_over_in_bash(root, tmp_path):
     result = run_tool(("sh", ["bash"]), [".specify/scripts/bash/progress.sh", "show"], root, env=env)
     assert result.returncode == 0, result.stderr
     assert b"the old python ran" not in result.stdout
+
+
+# -- The calls a model makes during /speckit.implement -----------------------------------------
+
+
+@pytest.mark.parametrize("variant", VARIANTS, ids=_variant_id)
+def test_done_marks_the_box_and_every_word_arrives_as_written(root, variant):
+    build(root, variant[0], "ready")
+    note = 'Found "two" issues in C:\\temp\\ and $HOME'
+    result = run_tool(
+        variant,
+        [
+            *progress_tokens(variant[0]), "--harness", "claude", "done", "T002",
+            "--note", note, "--files", "src/a b.py,src/c.py", "--agent", "backend 1",
+        ],
+        root,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.decode().strip() == "T002 done. 2 of 2 tasks done."
+    assert "- [X] T002" in (root / "specs" / "001-login" / "tasks.md").read_text(encoding="utf-8")
+    event = read_log(root)[0]
+    assert event["note"] == note
+    assert event["files"] == ["src/a b.py", "src/c.py"]
+    assert event["actor"] == {"harness": "claude", "agent": "backend 1", "source": "declared"}
+
+
+@pytest.mark.parametrize("variant", VARIANTS, ids=_variant_id)
+def test_a_task_call_that_fails_says_so_through_the_wrapper(root, variant):
+    build(root, variant[0], "ready")
+    before = (root / "specs" / "001-login" / "tasks.md").read_bytes()
+    result = run_tool(variant, [*progress_tokens(variant[0]), "--harness", "claude", "done", "T099"], root)
+    assert result.returncode == 1
+    assert "T001 T002" in result.stderr.decode()
+    assert (root / "specs" / "001-login" / "tasks.md").read_bytes() == before
+    assert read_log(root) == []
+
+
+@pytest.mark.parametrize("arguments", [["--harness", "claude", "done", "T002"], ["start", "T002"], ["note", "T002", "x"]])
+@pytest.mark.parametrize("variant", VARIANTS, ids=_variant_id)
+def test_a_task_call_without_the_engine_fails_so_the_box_gets_marked_by_hand(root, variant, arguments):
+    build(root, variant[0], "ready")
+    shutil.rmtree(root / ".specify" / "scripts" / "progress")
+    result = run_tool(variant, [*progress_tokens(variant[0]), *arguments], root)
+    assert result.returncode == 1
+    assert "the page was not updated" in result.stderr.decode()
+
+
+@pytest.mark.parametrize("arguments", [["--harness", "claude", "show"], ["step", "plan", "note", "--note", "done"]])
+@pytest.mark.parametrize("variant", VARIANTS, ids=_variant_id)
+def test_any_other_call_without_the_engine_still_exits_zero(root, variant, arguments):
+    build(root, variant[0], "ready")
+    shutil.rmtree(root / ".specify" / "scripts" / "progress")
+    assert run_tool(variant, [*progress_tokens(variant[0]), *arguments], root).returncode == 0
+
+
+@pytest.mark.skipif(os.name == "nt" or not _HAS_BASH, reason="builds a PATH out of POSIX tools")
+@pytest.mark.parametrize(
+    ("arguments", "expected"),
+    [(["--harness", "claude", "done", "T002"], 1), (["block", "T002", "--reason", "x"], 1), (["--harness", "claude", "show"], 0)],
+)
+def test_no_python_at_all_fails_a_task_call_in_bash_and_only_a_task_call(root, tmp_path, arguments, expected):
+    tools = tmp_path / "tools-without-python"
+    tools.mkdir()
+    for folder in ("/usr/bin", "/bin"):
+        for tool in Path(folder).iterdir():
+            name = tool.name
+            if name.startswith(("python", "py")) or name == "specify" or (tools / name).exists():
+                continue
+            (tools / name).symlink_to(tool)
+    env = clean_env()
+    env["PATH"] = str(tools)
+    build(root, "sh", "ready")
+    result = run_tool(("sh", ["bash"]), [*progress_tokens("sh"), *arguments], root, env=env)
+    assert result.returncode == expected
+    assert b"no Python" in result.stderr
+
+
+@pytest.mark.parametrize("shell", _SHELLS)
+@pytest.mark.parametrize("mode", ["-File", "-Command"])
+def test_powershell_keeps_a_comma_list_of_files_in_one_piece(root, shell, mode):
+    """In -Command, PowerShell has already turned a,b into a list when the script receives it."""
+    build(root, "ps", "ready")
+    tokens = [progress_tokens("ps")[0], "--harness", "claude", "done", "T002", "--files", "src/a.py,src/b.py"]
+    command = [shell, "-NoProfile", "-ExecutionPolicy", "Bypass", mode] + (tokens if mode == "-File" else [" ".join(tokens)])
+    result = subprocess.run(command, cwd=root, capture_output=True, env=clean_env(), check=False, timeout=120)
+    assert result.returncode == 0, result.stderr
+    assert read_log(root)[0]["files"] == ["src/a.py", "src/b.py"]

@@ -12,16 +12,26 @@ untrusted: pages carry it as escaped JSON and paint it only as text.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import errno
 import hashlib
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote
+
+try:
+    import fcntl
+except ImportError:  # Windows.
+    fcntl = None
+    import msvcrt
 
 SCHEMA_VERSION = 1
 GENERATOR = "speckit-progress"
@@ -46,10 +56,20 @@ MAX_FILES_PER_EVENT = 50
 MAX_FILE_NAME_CHARS = 400
 ACTIVITY_LIMIT = 200
 ABANDONED_AFTER_SECONDS = 4 * 3600
+LOCK_PREFIX = ".lock-"
+LOCK_TIMEOUT_SECONDS = 15
+LOCK_POLL_SECONDS = 0.02
+MAX_IDS_SHOWN = 100
+MAX_HOOK_BYTES = 1024 * 1024
+SESSION_CHARS = 8
+REPLACE_ATTEMPTS = 40 if os.name == "nt" else 1  # Windows refuses while anyone holds the file open.
+REPLACE_WAIT_SECONDS = 0.05
 
 TASK_STATUSES = frozenset({"in_progress", "done", "blocked", "failed", "skipped", "note"})
 OPEN_STATUSES = frozenset({"in_progress", "blocked", "failed", "skipped"})
 STEP_STATUSES = frozenset({"in_progress", "done", "failed", "skipped", "note"})
+TASK_COMMANDS = {"start": "in_progress", "done": "done", "block": "blocked", "fail": "failed", "skip": "skipped", "note": "note"}
+TASK_REPORTS = {"in_progress": "started", "done": "done", "blocked": "blocked", "failed": "failed", "skipped": "skipped", "note": "note saved"}
 ACTOR_SOURCES = frozenset({"observed", "configured", "declared"})
 STEP_ALIASES = {"clarify-deep": "clarify"}
 STEP_NAMES = ("constitution", "specify", "clarify", "plan", "checklist", "tasks", "analyze", "implement", "converge")
@@ -73,12 +93,15 @@ _BRACKETED_ID = re.compile(r"^T\d+$")
 _HEADING = re.compile(r"^(#{1,6})[ \t]+(.+)$")
 _GOAL = re.compile(r"^\*\*(?:Goal|Purpose):?\*\*:?\s*(.+)$")
 _LINE_BREAK = re.compile(r"\r\n?|\n")
+_LINE_BREAK_BYTES = re.compile(rb"\r\n?|\n")
 _FENCE = re.compile(r"^\s*(```+|~~~+)")
 _QUESTION = re.compile(r"^\s*[-*+]\s+(?:\*\*)?Q:")
 _REQUIREMENT = re.compile(r"\*\*(FR-\d+)\*\*")
 _STEP_NAME = re.compile(r"^[a-z][a-z0-9.-]{0,40}$")
 _TASK_NAME = re.compile(r"^T\d+$")
 _SAFE_FILE = re.compile(r"[^A-Za-z0-9._-]+")
+_PROGRESS_CALL = re.compile(r"(?:^|[\s;&|(])(start|done|block|fail|skip|note)\s+(T\d+)\b")
+_THEN_OPTION = re.compile(r"--then\s+(T\d+)\b")
 _PHASE_HEADING = re.compile(r"^Phase\b", re.IGNORECASE)
 MAX_TAGS_PER_TASK = 20
 
@@ -304,7 +327,7 @@ def clean_event(raw):
     kind = raw.get("kind")
     status = raw.get("status")
     event = {"kind": kind, "status": status}
-    if kind == "task":
+    if kind in ("task", "seen"):
         name = raw.get("task")
         if status not in TASK_STATUSES or not isinstance(name, str) or not _TASK_NAME.match(name):
             return None
@@ -336,6 +359,33 @@ def clean_event(raw):
     return event
 
 
+def apply_seen(events):
+    """What a harness saw attaches to the report it saw being made, and is not an event of its own:
+    the model says which task it was, the harness says who ran the call. A call that failed wrote
+    no report, so what was seen of it attaches to nothing."""
+    reports = {}
+    kept = []
+    for event in events:
+        if event["kind"] != "seen":
+            if event["kind"] == "task":
+                reports.setdefault((event["task"], event["status"]), []).append(event)
+            kept.append(event)
+            continue
+        seen = event.get("actor")
+        waiting = [e for e in reports.get((event["task"], event["status"]), ()) if (e.get("actor") or {}).get("source") != "observed"]
+        if not seen or not waiting:
+            continue
+        report = waiting[-1]
+        declared = (report.get("actor") or {}).get("agent")
+        report["actor"] = {
+            "harness": seen.get("harness") or (report.get("actor") or {}).get("harness"),
+            "agent": declared or seen.get("agent"),
+            "session": seen.get("session"),
+            "source": "observed" if seen.get("agent") or not declared else "declared",
+        }
+    return kept
+
+
 def read_events(path):
     """Return (events, lines that could not be used, truncated)."""
     text, truncated = read_limited(path, MAX_LOG_BYTES)
@@ -357,7 +407,7 @@ def read_events(path):
             bad += 1
         else:
             events.append(event)
-    return events, bad, truncated
+    return apply_seen(events), bad, truncated
 
 
 # -- Crossing tasks.md with the log -----------------------------------------------------------
@@ -862,23 +912,38 @@ def _stamp(moment):
     return moment.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def write_atomic(path, text):
-    """Write through a temporary file, so a reader never sees half a page."""
+def _replace(temporary, path):
+    for attempt in range(REPLACE_ATTEMPTS):
+        try:
+            os.replace(temporary, str(path))
+            return
+        except PermissionError:
+            if attempt == REPLACE_ATTEMPTS - 1:
+                raise
+            time.sleep(REPLACE_WAIT_SECONDS)
+
+
+def write_atomic_bytes(path, data, mode=0o644):
+    """Write through a temporary file, so a reader never sees half a file."""
     handle, temporary = tempfile.mkstemp(dir=str(path.parent), prefix=".tmp-" + GENERATOR + "-")
     try:
         with os.fdopen(handle, "wb") as stream:
-            stream.write(text.encode("utf-8"))
+            stream.write(data)
         try:
-            os.chmod(temporary, 0o644)
+            os.chmod(temporary, mode)
         except OSError:
             pass
-        os.replace(temporary, str(path))
+        _replace(temporary, path)
     except BaseException:
         try:
             os.unlink(temporary)
         except OSError:
             pass
         raise
+
+
+def write_atomic(path, text):
+    write_atomic_bytes(path, text.encode("utf-8"))
 
 
 def page_file_names(features):
@@ -983,14 +1048,32 @@ def step_belongs_to_spec(name, status):
     return not (name == "specify" and status == "in_progress")
 
 
-def make_step_event(name, status, harness=None, note=None, now=None):
-    event = {"v": SCHEMA_VERSION, "ts": _stamp(now or datetime.now(timezone.utc)), "kind": "step", "step": name, "status": status}
+def make_actor(harness=None, agent=None):
+    """Who is writing, as far as this process knows. A name the model gave counts as declared."""
+    actor = {}
+    if isinstance(harness, str) and _HARNESS_NAME.match(harness):
+        actor["harness"] = harness
+    name = plain_text(agent.strip()) if isinstance(agent, str) else ""
+    if name:
+        actor["agent"] = name
+    if not actor:
+        return None
+    actor["source"] = "declared" if name else "configured"
+    return actor
+
+
+def _with_note_and_actor(event, note, actor):
     text = note.strip() if isinstance(note, str) else ""
     if text:
         event["note"] = text[:MAX_NOTE_CHARS]
-    if isinstance(harness, str) and _HARNESS_NAME.match(harness):
-        event["actor"] = {"harness": harness, "source": "configured"}
+    if actor:
+        event["actor"] = actor
     return event
+
+
+def make_step_event(name, status, harness=None, note=None, now=None):
+    event = {"v": SCHEMA_VERSION, "ts": _stamp(now or datetime.now(timezone.utc)), "kind": "step", "step": name, "status": status}
+    return _with_note_and_actor(event, note, make_actor(harness))
 
 
 def _ensure_union_merge(directory):
@@ -1034,6 +1117,287 @@ def append_event(directory, event):
         os.write(handle, data)
     finally:
         os.close(handle)
+
+
+# -- Recording a task -------------------------------------------------------------------------
+
+
+def clean_file_names(values):
+    """--files takes a list, a comma-separated list, or both."""
+    names = []
+    for value in values or ():
+        for name in value.split(","):
+            name = plain_text(name.strip(), MAX_FILE_NAME_CHARS)
+            if name and name not in names:
+                names.append(name)
+    return names[:MAX_FILES_PER_EVENT]
+
+
+def make_task_event(name, status, text, harness=None, agent=None, note=None, files=None, now=None):
+    event = {"v": SCHEMA_VERSION, "ts": _stamp(now or datetime.now(timezone.utc)), "kind": "task", "task": name, "status": status}
+    if files:
+        event["files"] = files
+    event["text_sha"] = task_text_sha(text)
+    return _with_note_and_actor(event, note, make_actor(harness, agent))
+
+
+def _try_lock(handle):
+    try:
+        if fcntl is not None:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        else:
+            msvcrt.locking(handle, msvcrt.LK_NBLCK, 1)
+    except OSError as exc:
+        if exc.errno in (errno.EWOULDBLOCK, errno.EAGAIN, errno.EACCES, errno.EDEADLK):
+            return False
+        raise
+    return True
+
+
+def _unlock(handle):
+    if fcntl is not None:
+        fcntl.flock(handle, fcntl.LOCK_UN)
+    else:
+        msvcrt.locking(handle, msvcrt.LK_UNLCK, 1)
+
+
+@contextlib.contextmanager
+def spec_lock(root, feature, timeout=None):
+    """Only one writer per spec at a time. The system drops the lock when a process ends, however
+    it ends, so a crash never leaves a spec locked."""
+    name = hashlib.sha256(str(feature.resolve()).encode("utf-8", "replace")).hexdigest()[:16]
+    path = ensure_output_dir(root) / (LOCK_PREFIX + name)
+    if path.is_symlink():
+        raise ProgressError("%s is a symbolic link. Refusing to write through it." % path)
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+    handle = os.open(str(path), flags, 0o644)
+    try:
+        limit = LOCK_TIMEOUT_SECONDS if timeout is None else timeout
+        deadline = time.monotonic() + limit
+        while not _try_lock(handle):
+            if time.monotonic() >= deadline:
+                raise ProgressError("Another agent held %s for %d seconds." % (feature.name, limit))
+            time.sleep(LOCK_POLL_SECONDS)
+        try:
+            yield
+        finally:
+            _unlock(handle)
+    finally:
+        os.close(handle)
+
+
+def read_task_file(feature):
+    """Return the exact bytes of tasks.md, for a change that must leave every other byte alone."""
+    path = feature / "tasks.md"
+    if path.is_symlink():
+        raise ProgressError("%s is a symbolic link. Refusing to write through it." % path)
+    if not path.is_file():
+        raise ProgressError("%s does not exist yet." % path)
+    with path.open("rb") as stream:
+        raw = stream.read(MAX_TASKS_BYTES + 1)
+    if len(raw) > MAX_TASKS_BYTES:
+        raise ProgressError("%s is over %d bytes." % (path, MAX_TASKS_BYTES))
+    return raw
+
+
+def find_task(parsed, name):
+    """The one task with this id. Refuses a missing or repeated id, and writes nothing."""
+    found = [task for phase in parsed["phases"] for task in phase["tasks"] if task["id"] == name]
+    if len(found) > 1:
+        lines = ", ".join(str(task["line"]) for task in found)
+        raise ProgressError("%s appears %d times in tasks.md, on lines %s." % (name, len(found), lines))
+    if found:
+        return found[0]
+    ids = [task["id"] for phase in parsed["phases"] for task in phase["tasks"]]
+    listed = " ".join(ids[:MAX_IDS_SHOWN]) + (" and %d more" % (len(ids) - MAX_IDS_SHOWN) if len(ids) > MAX_IDS_SHOWN else "")
+    raise ProgressError("%s is not in tasks.md. Valid ids: %s" % (plain_text(name, 40), listed or "none"))
+
+
+def check_box(raw, number):
+    """Return tasks.md with the box on this line checked. Every other byte stays: its line endings,
+    its byte order mark, and anything that is not valid UTF-8."""
+    start = 3 if raw.startswith(b"\xef\xbb\xbf") else 0
+    for _ in range(number - 1):
+        start = _LINE_BREAK_BYTES.search(raw, start).end()
+    match = _LINE_BREAK_BYTES.search(raw, start)
+    end = match.start() if match else len(raw)
+    box = _CHECKBOX.match(raw[start:end].decode("utf-8", "replace"))
+    position = start + len(box.string[:box.start(1)].encode("utf-8"))
+    return raw[:position] + b"X" + raw[position + 1:]
+
+
+def _mark_done(feature, raw, task):
+    path = feature / "tasks.md"
+    if not os.access(str(path), os.W_OK):
+        raise ProgressError("%s is read-only." % path)
+    write_atomic_bytes(path, check_box(raw, task["line"]), stat.S_IMODE(path.stat().st_mode))
+
+
+def run_task_command(root, command, name, harness=None, agent=None, note=None, files=None, then=None, reference=None):
+    """Record what happened to a task. Unlike a step, a failure here is reported as one, because
+    the model has to know the box is still empty and mark it by hand."""
+    feature = find_feature(root, reference) if reference else current_feature_dir(root)
+    if feature is None:
+        raise ProgressError("There is no current spec.")
+    status = TASK_COMMANDS[command]
+    problems = []
+    with spec_lock(root, feature):
+        raw = read_task_file(feature)
+        parsed = parse_tasks(raw.decode("utf-8-sig", "replace"))
+        task = find_task(parsed, name)
+        following = find_task(parsed, then) if then else None
+        if status == "done" and not task["checked"]:
+            _mark_done(feature, raw, task)
+        try:
+            append_event(feature, make_task_event(name, status, task["text"], harness, agent, note, clean_file_names(files)))
+            if following:
+                append_event(feature, make_task_event(then, "in_progress", following["text"], harness, agent))
+        except (ProgressError, OSError) as exc:
+            if status != "done":
+                raise
+            problems.append(str(exc))  # The box is what counts, and the box is marked.
+        drawn = _draw(root, feature, problems)
+    if drawn and drawn["pages"]:
+        open_once(root, drawn["pages"][0]["path"])
+    report = "%s %s." % (name, TASK_REPORTS[status])
+    if following:
+        report += " %s %s." % (then, TASK_REPORTS["in_progress"])
+    if drawn and drawn["pages"]:
+        totals = drawn["pages"][0]["totals"]
+        report += " %d of %d tasks done." % (totals["done"], totals["total"])
+    _say(report)
+    if status in ("in_progress", "blocked", "failed", "skipped") and task["checked"]:
+        _say("%s is still checked in tasks.md, so it counts as done until you empty its box." % name)
+    for problem in problems:
+        _say("progress: %s" % plain_text(problem, MAX_NOTE_CHARS), sys.stderr)
+    return 0
+
+
+# -- What a harness runs by itself ------------------------------------------------------------
+
+
+def _first_text(*values):
+    for value in values:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def read_harness_message(raw):
+    """Return (shell command, session, agent) from a hook's message, whichever harness sent it.
+
+    Each harness names these differently. See tests/specify_cli/progress/test_hook_payloads.py for
+    what each one sends. Only these three are read: the rest can hold anything, and none of it is
+    ever stored."""
+    try:
+        data = json.loads(raw.decode("utf-8", "replace"))
+    except ValueError:
+        return None, None, None
+    if not isinstance(data, dict):
+        return None, None, None
+    wrapped = data.get("input") if isinstance(data.get("input"), dict) else {}  # OpenCode.
+    result = data.get("output") if isinstance(data.get("output"), dict) else {}
+    arguments = data.get("tool_input", data.get("toolArgs", wrapped.get("args", result.get("args"))))
+    if isinstance(arguments, str):  # Copilot may send them as text.
+        try:
+            arguments = json.loads(arguments)
+        except ValueError:
+            arguments = {"command": arguments}
+    command = _first_text(arguments.get("command")) if isinstance(arguments, dict) else None
+    session = _first_text(data.get("session_id"), data.get("sessionId"), data.get("conversation_id"), wrapped.get("sessionID"))
+    agent = _first_text(data.get("agent_id"), data.get("agentId"))
+    return command, session, agent
+
+
+def calls_in(command):
+    """The task reports a shell command made, in order: [(task, status)]. --then reports two.
+
+    Models often batch them, with the script in a variable or a function, so this looks for the
+    words and not for the script's name. Something that only looks like a report attaches to
+    nothing, or to a report of that very status: see apply_seen."""
+    if not command or "progress." not in command:
+        return []
+    found = list(_PROGRESS_CALL.finditer(command))
+    calls = []
+    for index, match in enumerate(found):
+        calls.append((match.group(2), TASK_COMMANDS[match.group(1)]))
+        end = found[index + 1].start() if index + 1 < len(found) else len(command)
+        following = _THEN_OPTION.search(command, match.end(), end) if match.group(1) == "done" else None
+        if following:
+            calls.append((following.group(1), "in_progress"))
+    return calls
+
+
+def make_seen_event(name, status, harness, session, agent, now=None):
+    actor = {"source": "observed"}
+    if isinstance(harness, str) and _HARNESS_NAME.match(harness):
+        actor["harness"] = harness
+    if session:
+        actor["session"] = plain_text(session, SESSION_CHARS)
+    if agent:
+        actor["agent"] = plain_text(agent)
+    return {"v": SCHEMA_VERSION, "ts": _stamp(now or datetime.now(timezone.utc)), "kind": "seen", "task": name, "status": status, "actor": actor}
+
+
+def run_hook(root, harness, event, raw, now=None):
+    """Note who made a report, redraw the page, and at the start of a session say where it stands.
+    Returns the line for the model's context. It never holds a note: those can say anything."""
+    root = Path(root)
+    feature = current_feature_dir(root)
+    if feature is None:
+        return ""
+    if event == "post_tool_use" and len(raw) <= MAX_HOOK_BYTES:
+        command, session, agent = read_harness_message(raw)
+        for name, status in calls_in(command):
+            append_event(feature, make_seen_event(name, status, harness, session, agent, now))
+    drawn = None
+    try:
+        with spec_lock(root, feature, timeout=0):
+            drawn = render_project(root, feature, now)
+    except ProgressError:
+        pass  # Whoever holds the lock is about to draw it, or the next tool call will.
+    if event != "session_start" or not drawn or not drawn["pages"]:
+        return ""
+    page = drawn["pages"][0]
+    if not page["totals"]["total"]:
+        return ""
+    return "Spec Kit progress for %s: %d of %d tasks done. Page: %s\n" % (
+        plain_text(page["id"]),
+        page["totals"]["done"],
+        page["totals"]["total"],
+        Path(page["path"]).resolve().as_uri(),
+    )
+
+
+# -- Watching from another terminal -----------------------------------------------------------
+
+
+def _source_dates(feature):
+    dates = {}
+    for name in ("tasks.md", LOG_NAME, "spec.md", "plan.md"):
+        try:
+            dates[name] = (feature / name).stat().st_mtime_ns
+        except OSError:
+            pass
+    return dates
+
+
+def watch_round(root, reference, last):
+    """One look. Return (what was seen, the line to show if the page was redrawn)."""
+    feature = find_feature(root, reference) if reference else current_feature_dir(root)
+    if feature is None:
+        return None, None
+    seen = (str(feature), _source_dates(feature))
+    if seen == last:
+        return last, None
+    try:
+        with spec_lock(root, feature, timeout=0):
+            drawn = render_project(root, feature)
+    except ProgressError:
+        return last, None  # Busy. The next look finds the change still there.
+    page = drawn["pages"][0]
+    totals = page["totals"]
+    return seen, "%s: %d of %d tasks done" % (plain_text(page["id"]), totals["done"], totals["total"])
 
 
 # -- Showing it to the person -----------------------------------------------------------------
@@ -1266,6 +1630,23 @@ def _parser():
     step.add_argument("--quiet", action="store_true", help="Print nothing")
     browser = commands.add_parser("browser", parents=[shared], allow_abbrev=False, help="Open pages by themselves, or not.")
     browser.add_argument("state", choices=("on", "off"))
+
+    task = argparse.ArgumentParser(add_help=False, allow_abbrev=False, parents=[shared])
+    task.add_argument("--agent", help="Who is doing this, when it is not the main agent")
+    start = commands.add_parser("start", parents=[task], allow_abbrev=False, help="Say a task has started.")
+    start.add_argument("task")
+    done = commands.add_parser("done", parents=[task], allow_abbrev=False, help="Check a task's box and record it.")
+    done.add_argument("task")
+    done.add_argument("--note", help="One line on what changed and why")
+    done.add_argument("--files", action="extend", nargs="+", help="The files it touched, separated by commas or spaces")
+    done.add_argument("--then", help="The task that starts now")
+    for name, verb in (("block", "is blocked"), ("fail", "failed"), ("skip", "is skipped")):
+        closing = commands.add_parser(name, parents=[task], allow_abbrev=False, help="Say a task %s." % verb)
+        closing.add_argument("task")
+        closing.add_argument("--reason", required=True, help="Why, in one line")
+    remark = commands.add_parser("note", parents=[task], allow_abbrev=False, help="Add a note to a task.")
+    remark.add_argument("task")
+    remark.add_argument("text", nargs="+")
     return parser
 
 
@@ -1286,12 +1667,47 @@ def _run_machine_command(args, root):
     return 0
 
 
+def _run_task_command(args, root):
+    note = args.note if args.command == "done" else None
+    if args.command in ("block", "fail", "skip"):
+        note = args.reason
+    elif args.command == "note":
+        note = " ".join(args.text)
+    try:
+        return run_task_command(
+            root,
+            args.command,
+            args.task,
+            args.harness,
+            args.agent,
+            note,
+            args.files if args.command == "done" else None,
+            args.then if args.command == "done" else None,
+            args.feature,
+        )
+    except (ProgressError, OSError) as exc:
+        problem = str(exc)
+    except Exception as exc:
+        problem = "unexpected %s: %s" % (type(exc).__name__, exc)
+    _say("progress: %s" % plain_text(problem, MAX_NOTE_CHARS), sys.stderr)
+    _say("progress: nothing was recorded for %s." % plain_text(args.task, 40), sys.stderr)
+    return 1
+
+
 def main(argv=None):
     parser = _parser()
     args = parser.parse_args(argv)
     root = Path(args.root)
     if args.command == "step" and args.status == "note" and not (args.note or "").strip():
         parser.error("a note needs --note")
+    if args.command in TASK_COMMANDS:
+        if args.command in ("block", "fail", "skip") and not args.reason.strip():
+            parser.error("%s needs a --reason" % args.command)
+        if args.command == "note" and not " ".join(args.text).strip():
+            parser.error("a note needs some text")
+        if args.command == "done" and args.then == args.task:
+            parser.error("--then has to name another task")
+        return _run_task_command(args, root)
     if args.command not in ("step", "show"):
         return _run_machine_command(args, root)
     try:
