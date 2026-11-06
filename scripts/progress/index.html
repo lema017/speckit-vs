@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="generator" content="speckit-progress">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>Spec Kit progress</title>
+<style>
+:root{color-scheme:light dark;--bg:#f6f7f8;--panel:#fff;--ink:#14181d;--soft:#5b6570;--line:#dfe3e7;--done:#1a7f4b;--track:#e7eaee;--blocked:#a85f00}
+@media (prefers-color-scheme:dark){:root{--bg:#101316;--panel:#191d21;--ink:#e9edf0;--soft:#a3adb6;--line:#2c3238;--done:#3fbf7f;--track:#2c3238;--blocked:#e0a040}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:760px;margin:0 auto;padding:28px 16px}
+h1{font-size:22px;margin:0 0 4px}
+p{margin:0 0 20px;color:var(--soft)}
+a.spec{display:block;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:10px;color:inherit;text-decoration:none}
+a.spec:hover{border-color:var(--soft)}
+a.spec:focus-visible{outline:2px solid var(--done);outline-offset:2px}
+.top{display:flex;justify-content:space-between;gap:12px;align-items:baseline;flex-wrap:wrap}
+.left{min-width:0;overflow-wrap:anywhere}
+.name{font-weight:600}
+.id{color:var(--soft);font-size:13px}
+.count{font-variant-numeric:tabular-nums;color:var(--soft);font-size:13px;white-space:nowrap}
+.flag{color:var(--blocked);font-weight:600;margin-left:8px}
+.bar{height:6px;background:var(--track);border-radius:3px;overflow:hidden;margin-top:10px}
+.bar i{display:block;height:100%;background:var(--done)}
+.current{font-size:12px;border:1px solid var(--line);border-radius:999px;padding:0 8px;margin-left:8px;color:var(--soft);white-space:nowrap}
+.empty{color:var(--soft)}
+</style>
+</head>
+<body>
+<main>
+<h1>Spec Kit progress</h1>
+<p>Every spec in this project.</p>
+<div id="list"></div>
+</main>
+<script type="application/json" id="data">/*DATA*/null</script>
+<script>
+(function () {
+  "use strict";
+  var D = JSON.parse(document.getElementById("data").textContent);
+  var list = document.getElementById("list");
+  function el(tag, cls, text) { var n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; }
+  D.specs.forEach(function (row) {
+    var a = el("a", "spec"), T = row.totals;
+    a.href = encodeURIComponent(row.file);
+    var top = el("div", "top"), left = el("div", "left");
+    left.appendChild(el("span", "name", row.title));
+    if (row.current) left.appendChild(el("span", "current", "current"));
+    left.appendChild(el("div", "id", row.id));
+    var count = el("div", "count", T.total ? T.done + " of " + T.total + (T.total === 1 ? " task" : " tasks") : "no tasks yet");
+    if (row.attention) count.appendChild(el("span", "flag", row.attention + " to check"));
+    top.appendChild(left); top.appendChild(count); a.appendChild(top);
+    var bar = el("div", "bar"), fill = el("i");
+    fill.style.width = (T.total ? Math.round(100 * T.done / T.total) : 0) + "%";
+    bar.appendChild(fill); a.appendChild(bar);
+    list.appendChild(a);
+  });
+  if (!D.specs.length) list.appendChild(el("div", "empty", "No specs yet."));
+  setInterval(function () { if (document.visibilityState === "visible") location.reload(); }, 15000);
+})();
+</script>
+</body>
+</html>
