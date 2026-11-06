@@ -67,6 +67,9 @@ try {
 
 if ($status -eq 0) {
     try {
+        # progress.ps1 warns through [Console]::Error, which a redirection does not reach. The real
+        # script has finished and this process exits next, so nothing else needs that stream.
+        [Console]::SetError([System.IO.TextWriter]::Null)
         & (Join-Path $PSScriptRoot 'progress.ps1') --harness $harnessName step $stepName in_progress --quiet *> $null
     } catch {
         # The page can wait. The command's work cannot.

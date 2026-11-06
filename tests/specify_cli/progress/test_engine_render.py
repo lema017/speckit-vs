@@ -142,6 +142,33 @@ def test_a_spec_that_is_gone_loses_its_page_but_foreign_pages_stay(engine, proje
     assert (out / "001-login.html").exists()
 
 
+def test_a_page_is_closed_before_it_is_removed(engine, project, monkeypatch):
+    """Windows refuses to remove an open file, which would keep the page of a deleted spec forever."""
+    project.feature("001-login")
+    gone = project.feature("002-logout")
+    engine.render_project(project.root)
+    for path in gone.iterdir():
+        path.unlink()
+    gone.rmdir()
+    opened = []
+    real_open = Path.open
+    real_unlink = Path.unlink
+
+    def tracking_open(self, *args, **kwargs):
+        stream = real_open(self, *args, **kwargs)
+        opened.append((self, stream))
+        return stream
+
+    def tracking_unlink(self, *args, **kwargs):
+        assert not any(path == self and not stream.closed for path, stream in opened), "%s is still open" % self
+        return real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", tracking_open)
+    monkeypatch.setattr(Path, "unlink", tracking_unlink)
+    engine.render_project(project.root)
+    assert not (project.root / ".specify" / "progress" / "002-logout.html").exists()
+
+
 def test_drawing_one_spec_does_not_remove_pages(engine, project):
     first = project.feature("001-login")
     gone = project.feature("002-logout")

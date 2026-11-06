@@ -127,7 +127,7 @@ MUTANTS = [
     ("linked-specify-accepted", "if not specify.is_dir() or specify.is_symlink():", "if not specify.is_dir():"),
     ("write-follows-links", "os.replace(temporary, str(path))", 'open(str(path), "wb").write(open(temporary, "rb").read())'),
     ("temporary-file-left", "        try:\n            os.unlink(temporary)\n        except OSError:\n            pass\n        raise", "        raise"),
-    ("foreign-pages-removed", "if marker in stream.read(1024):", "if True:"),
+    ("foreign-pages-removed", "ours = marker in stream.read(1024)", "ours = True"),
     ("orphan-pages-stay", "        _remove_orphan_pages(out_dir, set(names.values()) | {INDEX_TEMPLATE})\n", "        pass\n"),
     ("one-spec-removes-pages", "    if feature is None:\n        _remove_orphan_pages", "    if True:\n        _remove_orphan_pages"),
     ("spec-can-take-the-index-name", "used = {INDEX_TEMPLATE.lower()}", "used = set()"),
@@ -147,6 +147,7 @@ MUTANTS = [
     # Reading without writing.
     ("status-writes", "    targets = [feature] if feature is not None else discover_features(root)\n    rows = []\n", "    targets = [feature] if feature is not None else discover_features(root)\n    ensure_output_dir(root)\n    rows = []\n"),
     ("status-ignores-the-chosen-spec", "targets = [feature] if feature is not None else discover_features(root)", "targets = discover_features(root)"),
+    ("page-removed-while-open", "                ours = marker in stream.read(1024)\n            if ours:\n                path.unlink()\n", "                if marker in stream.read(1024):\n                    path.unlink()\n"),
     # Recording a step.
     ("constitution-written-to-a-spec", 'if name == "constitution":\n        return False\n', ""),
     ("new-spec-written-to-the-old-one", 'return not (name == "specify" and status == "in_progress")', "return True"),
