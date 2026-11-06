@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
+import subprocess
 import tomllib
 from pathlib import Path
 
@@ -299,6 +301,39 @@ def test_nothing_is_drawn_or_recorded_by_installing(tmp_path):
     assert not list(project.rglob("progress.jsonl"))
 
 
+PROTOCOL_TASKS = "# Tasks\n\n## Phase 1\n\n" + "".join("- [ ] T%03d Task %d\n" % (n, n) for n in range(1, 13))
+
+
+@pytest.mark.skipif(os.name == "nt", reason="runs the POSIX line from the rendered command")
+def test_the_lines_in_the_rendered_implement_command_really_run(tmp_path):
+    """Word for word what the model reads, from an installed project."""
+    project = tmp_path / "project"
+    init(project, "claude", "sh")
+    directory = project / "specs" / "001-login"
+    directory.mkdir(parents=True)
+    (directory / "tasks.md").write_text(PROTOCOL_TASKS, encoding="utf-8")
+    (project / ".specify" / "feature.json").write_text(json.dumps({"feature_directory": "specs/001-login"}), encoding="utf-8")
+    text = (project / ".claude" / "skills" / "speckit-implement" / "SKILL.md").read_text(encoding="utf-8")
+    lines = re.findall(r"^\s*(\.specify/scripts/bash/progress\.sh --harness claude (?:start|done|block|fail|skip|note) .+)$", text, re.MULTILINE)
+    assert len(lines) == 6
+    env = dict(os.environ, SPECKIT_PROGRESS_NO_BROWSER="1")
+    for line in lines:
+        result = subprocess.run(["bash", "-c", line], cwd=project, env=env, capture_output=True, text=True, check=False, timeout=60)
+        assert result.returncode == 0, (line, result.stderr)
+    log = [json.loads(row) for row in (directory / "progress.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [(e["task"], e["status"]) for e in log] == [
+        ("T011", "in_progress"),
+        ("T011", "done"),
+        ("T012", "in_progress"),
+        ("T012", "blocked"),
+        ("T009", "failed"),
+        ("T010", "skipped"),
+        ("T011", "note"),
+    ]
+    assert all(e["actor"]["harness"] == "claude" for e in log)
+    assert "- [X] T011" in (directory / "tasks.md").read_text(encoding="utf-8")
+
+
 @pytest.mark.skipif(os.name == "nt", reason="execute bits are a POSIX concern")
 def test_the_bash_wrappers_can_be_executed(tmp_path):
     project = tmp_path / "project"
@@ -321,3 +356,156 @@ def test_init_mentions_the_progress_command(tmp_path):
     finally:
         os.chdir(previous)
     assert "speckit-progress" in result.output
+
+
+# -- Native events: on by default where a harness has them ---------------------------------------
+
+EVENT_KEYS = sorted(key for key, integration in INTEGRATION_REGISTRY.items() if integration.supports_events())
+HOOK_FILES = {key: INTEGRATION_REGISTRY[key].events_config_file for key in EVENT_KEYS}
+HOOK_FILES["opencode"] = ".opencode/plugin/speckit-events.ts"
+
+
+def hook_text(project: Path, key: str) -> str:
+    return (project / HOOK_FILES[key]).read_text(encoding="utf-8")
+
+
+def test_the_ten_harnesses_with_events_are_all_here():
+    assert EVENT_KEYS == ["claude", "codex", "copilot", "cursor-agent", "devin", "gemini", "opencode", "qwen", "tabnine", "vibe"]
+
+
+@pytest.mark.parametrize("key", EVENT_KEYS)
+def test_every_harness_with_events_gets_the_hook_on_each_event_it_has(tmp_path, key):
+    project = tmp_path / "project"
+    init(project, key, "sh")
+    text = hook_text(project, key)
+    natives = INTEGRATION_REGISTRY[key].CANONICAL_TO_NATIVE
+    assert ("speckit.progress-hook." + key) in text
+    for event in ("session_start", "post_tool_use", "stop"):
+        if event in natives:
+            assert natives[event] in text, event
+    assert (project / ".specify" / "events.py").is_file()
+
+
+@pytest.mark.parametrize(("key", "absent"), [("vibe", "session_start"), ("opencode", "stop")])
+def test_an_event_a_harness_does_not_have_is_left_out_without_a_warning(tmp_path, key, absent, capsys):
+    project = tmp_path / "project"
+    init(project, key, "sh")
+    assert absent not in INTEGRATION_REGISTRY[key].CANONICAL_TO_NATIVE
+    assert "does not support" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("key", [key for key in KEYS if key not in EVENT_KEYS and key != "none"])
+def test_a_harness_without_events_gets_no_hook_and_no_dispatcher(tmp_path, key):
+    project = tmp_path / "project"
+    init(project, key, "sh")
+    assert not (project / ".specify" / "events.py").exists()
+
+
+@pytest.mark.parametrize("key", EVENT_KEYS)
+def test_events_can_be_turned_off(tmp_path, key):
+    project = tmp_path / "project"
+    init(project, key, "sh", ["--integration-options=--events false"])
+    path = project / HOOK_FILES[key]
+    assert not path.exists() or "speckit.progress-hook" not in path.read_text(encoding="utf-8")
+    assert not (project / ".specify" / "events.py").exists()
+
+
+def test_a_file_of_your_own_replaces_them(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".specify").mkdir()
+    (project / ".specify" / "integration-events.yml").write_text("integrations:\n  claude:\n    events: {}\n", encoding="utf-8")
+    init(project, "claude", "sh")
+    path = project / ".claude" / "settings.json"
+    assert not path.exists() or "speckit.progress-hook" not in path.read_text(encoding="utf-8")
+
+
+def test_settings_you_already_have_are_kept(tmp_path):
+    project = tmp_path / "project"
+    (project / ".claude").mkdir(parents=True)
+    (project / ".claude" / "settings.json").write_text(json.dumps({"permissions": {"allow": ["Bash(ls)"]}}), encoding="utf-8")
+    init(project, "claude", "sh")
+    settings = json.loads((project / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    assert settings["permissions"] == {"allow": ["Bash(ls)"]}
+    assert "PostToolUse" in settings["hooks"]
+
+
+@pytest.mark.parametrize("key", EVENT_KEYS)
+def test_removing_the_integration_removes_the_hook(tmp_path, monkeypatch, key):
+    project = tmp_path / "project"
+    init(project, key, "sh")
+    monkeypatch.chdir(project)
+    result = runner.invoke(app, ["integration", "uninstall", key, "--force"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    path = project / HOOK_FILES[key]
+    assert not path.exists() or "speckit.progress-hook" not in path.read_text(encoding="utf-8")
+    assert not (project / ".specify" / "events.py").exists()
+
+
+def test_a_project_from_before_this_feature_gets_the_hook_with_an_upgrade(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    init(project, "claude", "sh", ["--integration-options=--events false"])
+    monkeypatch.chdir(project)
+    result = runner.invoke(app, ["integration", "upgrade", "claude", "--force"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+
+
+@pytest.mark.skipif(os.name == "nt", reason="runs the POSIX command from the config")
+def test_the_command_in_the_config_really_draws_the_page(tmp_path):
+    """The line Claude Code would run, with the shell expanding its variable."""
+    project = tmp_path / "project"
+    init(project, "claude", "sh")
+    directory = project / "specs" / "001-login"
+    directory.mkdir(parents=True)
+    (directory / "tasks.md").write_text("## P\n\n- [ ] T001 One\n", encoding="utf-8")
+    (project / ".specify" / "feature.json").write_text(json.dumps({"feature_directory": "specs/001-login"}), encoding="utf-8")
+    settings = json.loads((project / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    command = settings["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(project), SPECKIT_PROGRESS_NO_BROWSER="1")
+    result = subprocess.run(["bash", "-c", command], input="{}", cwd=project, env=env, capture_output=True, text=True, check=False, timeout=60)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.startswith("Spec Kit progress for 001-login: 0 of 1 tasks done.")
+    assert (project / ".specify" / "progress" / "001-login.html").is_file()
+
+
+def test_two_harnesses_share_the_dispatcher_until_the_last_one_leaves(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    init(project, "claude", "sh")
+    monkeypatch.chdir(project)
+    result = runner.invoke(app, ["integration", "install", "codex", "--script", "sh"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    dispatcher = project / ".specify" / "events.py"
+    assert "speckit.progress-hook.codex" in (project / ".codex" / "config.toml").read_text(encoding="utf-8")
+    assert "speckit.progress-hook.claude" in (project / ".claude" / "settings.json").read_text(encoding="utf-8")
+
+    result = runner.invoke(app, ["integration", "uninstall", "claude"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    assert dispatcher.is_file()
+    assert "speckit.progress-hook.codex" in (project / ".codex" / "config.toml").read_text(encoding="utf-8")
+
+    result = runner.invoke(app, ["integration", "uninstall", "codex"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    assert not dispatcher.exists()
+
+
+@pytest.mark.parametrize("key", EVENT_KEYS)
+def test_removing_the_integration_leaves_no_empty_folder(tmp_path, monkeypatch, key):
+    project = tmp_path / "project"
+    init(project, key, "sh")
+    monkeypatch.chdir(project)
+    result = runner.invoke(app, ["integration", "uninstall", key, "--force"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    outside = [path for path in project.iterdir() if path.name != ".specify"]
+    assert [str(path.relative_to(project)) for path in outside] == []
+
+
+def test_a_folder_that_holds_something_else_stays_when_the_hook_goes(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    init(project, "copilot", "sh")
+    mine = project / ".github" / "hooks" / "mine.json"
+    mine.write_text("{}", encoding="utf-8")
+    monkeypatch.chdir(project)
+    result = runner.invoke(app, ["integration", "uninstall", "copilot", "--force"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    assert mine.is_file()
+    assert not (project / ".github" / "hooks" / "speckit.json").exists()

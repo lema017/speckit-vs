@@ -234,6 +234,110 @@ MUTANTS = [
 ''', '''    except ValueError as exc:
         return 0
 '''),
+    # The task protocol.
+    ("task-failure-exits-zero", '    _say("progress: nothing was recorded for %s." % plain_text(args.task, 40), sys.stderr)\n    return 1\n', '    _say("progress: nothing was recorded for %s." % plain_text(args.task, 40), sys.stderr)\n    return 0\n'),
+    ("task-surprise-escapes", '    except Exception as exc:\n        problem = "unexpected', '    except ZeroDivisionError as exc:\n        problem = "unexpected'),
+    ("no-lock-at-all", "    with spec_lock(root, feature):\n        raw = read_task_file(feature)", "    if True:\n        raw = read_task_file(feature)"),
+    ("lock-never-waits", "        while not _try_lock(handle):\n", "        while False:\n"),
+    ("lock-gives-up-at-once", "            if time.monotonic() >= deadline:\n", "            if True:\n"),
+    ("lock-never-gives-up", "            if time.monotonic() >= deadline:\n", "            if False:\n"),
+    ("lock-shared-by-all-specs", 'name = hashlib.sha256(str(feature.resolve()).encode("utf-8", "replace")).hexdigest()[:16]', 'name = "all"'),
+    ("lock-through-a-link", '    path = ensure_output_dir(root) / (LOCK_PREFIX + name)\n    if path.is_symlink():\n        raise ProgressError("%s is a symbolic link. Refusing to write through it." % path)\n    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)', '    path = ensure_output_dir(root) / (LOCK_PREFIX + name)\n    flags = os.O_RDWR | os.O_CREAT'),
+    ("lock-errors-look-busy", "        if exc.errno in (errno.EWOULDBLOCK, errno.EAGAIN, errno.EACCES, errno.EDEADLK):\n", "        if True:\n"),
+    ("page-drawn-outside-the-lock", "            problems.append(str(exc))  # The box is what counts, and the box is marked.\n        drawn = _draw(root, feature, problems)\n", "            problems.append(str(exc))  # The box is what counts, and the box is marked.\n    drawn = _draw(root, feature, problems)\n"),
+    ("linked-task-list-followed", '    path = feature / "tasks.md"\n    if path.is_symlink():\n        raise ProgressError("%s is a symbolic link. Refusing to write through it." % path)\n    if not path.is_file():', '    path = feature / "tasks.md"\n    if not path.is_file():'),
+    ("oversized-task-list-accepted", "    if len(raw) > MAX_TASKS_BYTES:\n        raise ProgressError", "    if False:\n        raise ProgressError"),
+    ("read-only-list-replaced", 'if not os.access(str(path), os.W_OK):', "if False:"),
+    ("list-permissions-reset", 'write_atomic_bytes(path, check_box(raw, task["line"]), stat.S_IMODE(path.stat().st_mode))', 'write_atomic_bytes(path, check_box(raw, task["line"]))'),
+    ("repeated-id-picks-the-first", "    if len(found) > 1:\n        lines =", "    if False:\n        lines ="),
+    ("unknown-id-lists-nothing", 'Valid ids: %s" % (plain_text(name, 40), listed or "none"))', 'Valid ids: %s" % (plain_text(name, 40), "none"))'),
+    ("list-of-ids-unlimited", 'ids[:MAX_IDS_SHOWN]', "ids"),
+    ("then-checked-after-the-box", '        task = find_task(parsed, name)\n        following = find_task(parsed, then) if then else None\n        if status == "done" and not task["checked"]:\n            _mark_done(feature, raw, task)\n', '        task = find_task(parsed, name)\n        if status == "done" and not task["checked"]:\n            _mark_done(feature, raw, task)\n        following = find_task(parsed, then) if then else None\n'),
+    ("then-ignored", "            if following:\n                append_event(", "            if False:\n                append_event("),
+    ("then-loses-the-agent", 'make_task_event(then, "in_progress", following["text"], harness, agent)', 'make_task_event(then, "in_progress", following["text"], harness)'),
+    ("then-carries-the-note", 'make_task_event(then, "in_progress", following["text"], harness, agent)', 'make_task_event(then, "in_progress", following["text"], harness, agent, note)'),
+    ("start-checks-the-box", 'if status == "done" and not task["checked"]:\n            _mark_done', 'if status in ("done", "in_progress") and not task["checked"]:\n            _mark_done'),
+    ("done-leaves-the-box", 'if status == "done" and not task["checked"]:\n            _mark_done', 'if False:\n            _mark_done'),
+    ("checked-box-rewritten", 'if status == "done" and not task["checked"]:\n            _mark_done', 'if status == "done":\n            _mark_done'),
+    ("lost-log-fails-a-marked-box", '            if status != "done":\n                raise\n', "            raise\n"),
+    ("lost-log-passes-for-a-start", '            if status != "done":\n                raise\n', ""),
+    ("page-failure-fails-the-call", "        drawn = _draw(root, feature, problems)\n    if drawn and drawn[\"pages\"]:\n        open_once", "        drawn = render_project(root, feature)\n    if drawn and drawn[\"pages\"]:\n        open_once"),
+    ("task-call-never-opens-the-page", '    if drawn and drawn["pages"]:\n        open_once(root, drawn["pages"][0]["path"])\n    report =', "    report ="),
+    ("report-has-no-totals", 'report += " %d of %d tasks done." % (totals["done"], totals["total"])', "pass"),
+    ("checked-task-reopened-in-silence", '    if status in ("in_progress", "blocked", "failed", "skipped") and task["checked"]:\n', "    if False:\n"),
+    ("page-problems-swallowed", """    _say(report)
+    if status in ("in_progress", "blocked", "failed", "skipped") and task["checked"]:
+        _say("%s is still checked in tasks.md, so it counts as done until you empty its box." % name)
+    for problem in problems:
+        _say("progress: %s" % plain_text(problem, MAX_NOTE_CHARS), sys.stderr)
+""", """    _say(report)
+    if status in ("in_progress", "blocked", "failed", "skipped") and task["checked"]:
+        _say("%s is still checked in tasks.md, so it counts as done until you empty its box." % name)
+"""),
+    ("no-current-spec-crashes", '    if feature is None:\n        raise ProgressError("There is no current spec.")\n    status = TASK_COMMANDS', "    status = TASK_COMMANDS"),
+    ("feature-option-ignored", 'feature = find_feature(root, reference) if reference else current_feature_dir(root)\n    if feature is None:\n        raise ProgressError("There is no current spec.")', 'feature = current_feature_dir(root)\n    if feature is None:\n        raise ProgressError("There is no current spec.")'),
+    ("box-changed-in-the-wrong-file-bytes", 'start = 3 if raw.startswith(b"\\xef\\xbb\\xbf") else 0', "start = 0"),
+    ("box-offset-counts-characters", 'position = start + len(box.string[:box.start(1)].encode("utf-8"))', "position = start + box.start(1)"),
+    ("box-lines-split-on-lf-only", '_LINE_BREAK_BYTES = re.compile(rb"\\r\\n?|\\n")', '_LINE_BREAK_BYTES = re.compile(rb"\\n")'),
+    ("box-lowercase", 'return raw[:position] + b"X" + raw[position + 1:]', 'return raw[:position] + b"x" + raw[position + 1:]'),
+    ("task-text-not-fingerprinted", 'event["text_sha"] = task_text_sha(text)', "pass"),
+    ("task-files-dropped", '    if files:\n        event["files"] = files\n    event["text_sha"]', '    event["text_sha"]'),
+    ("agent-counts-as-configured", 'actor["source"] = "declared" if name else "configured"', 'actor["source"] = "configured"'),
+    ("agent-keeps-control-characters", 'name = plain_text(agent.strip()) if isinstance(agent, str) else ""', 'name = agent.strip() if isinstance(agent, str) else ""'),
+    ("agent-dropped", '    if name:\n        actor["agent"] = name\n', ""),
+    ("files-keep-control-characters", "name = plain_text(name.strip(), MAX_FILE_NAME_CHARS)", "name = name.strip()[:MAX_FILE_NAME_CHARS]"),
+    ("files-repeat", "if name and name not in names:", "if name:"),
+    ("files-unlimited", "return names[:MAX_FILES_PER_EVENT]\n\n\ndef make_task_event", "return names\n\n\ndef make_task_event"),
+    ("empty-reason-accepted", 'if args.command in ("block", "fail", "skip") and not args.reason.strip():', "if False:"),
+    ("empty-note-text-accepted", 'if args.command == "note" and not " ".join(args.text).strip():', "if False:"),
+    ("then-same-task-accepted", 'if args.command == "done" and args.then == args.task:', "if False:"),
+    ("reason-not-recorded", '    if args.command in ("block", "fail", "skip"):\n        note = args.reason\n', ""),
+    ("note-words-lost", 'note = " ".join(args.text)', "note = args.text[0]"),
+    ("one-file-option-only", 'done.add_argument("--files", action="extend", nargs="+",', 'done.add_argument("--files", action="append",'),
+    # What a harness saw, and the hook.
+    ("seen-is-an-event", '        if not seen or not waiting:\n            continue\n', '        if not seen or not waiting:\n            kept.append(event)\n            continue\n'),
+    ("seen-attaches-to-the-first", "report = waiting[-1]", "report = waiting[0]"),
+    ("seen-overwrites-seen", 'if (e.get("actor") or {}).get("source") != "observed"', 'if True'),
+    ("seen-any-status", 'reports.get((event["task"], event["status"]), ())', '[e for pair, group in reports.items() if pair[0] == event["task"] for e in group]'),
+    ("seen-any-task", 'reports.get((event["task"], event["status"]), ())', '[e for pair, group in reports.items() if pair[1] == event["status"] for e in group]'),
+    ("seen-loses-the-setup-harness", 'seen.get("harness") or (report.get("actor") or {}).get("harness")', 'seen.get("harness")'),
+    ("seen-beaten-by-the-setup-harness", 'seen.get("harness") or (report.get("actor") or {}).get("harness")', '(report.get("actor") or {}).get("harness") or seen.get("harness")'),
+    ("seen-beats-a-declared-name", 'declared or seen.get("agent")', 'seen.get("agent") or declared'),
+    ("seen-loses-the-session", '"session": seen.get("session"),', '"session": None,'),
+    ("seen-confirms-any-name", '"observed" if seen.get("agent") or not declared else "declared"', '"observed"'),
+    ("seen-confirms-nothing", '"observed" if seen.get("agent") or not declared else "declared"', '"declared"'),
+    ("message-ignores-copilot", 'data.get("tool_input", data.get("toolArgs", wrapped.get("args", result.get("args"))))', 'data.get("tool_input", wrapped.get("args", result.get("args")))'),
+    ("message-ignores-opencode-input", 'wrapped.get("args", result.get("args"))', 'result.get("args")'),
+    ("message-text-args-unread", "if isinstance(arguments, str):  # Copilot may send them as text.", "if False:"),
+    ("message-bad-text-raises", '        except ValueError:\n            arguments = {"command": arguments}\n', '        except KeyError:\n            arguments = {"command": arguments}\n'),
+    ("message-camel-session-lost", 'data.get("sessionId"), ', ""),
+    ("message-cursor-session-lost", 'data.get("conversation_id"), ', ""),
+    ("message-opencode-session-lost", ', wrapped.get("sessionID"))', ")"),
+    ("message-camel-agent-lost", 'data.get("agent_id"), data.get("agentId"))', 'data.get("agent_id"))'),
+    ("message-snake-agent-lost", 'data.get("agent_id"), data.get("agentId"))', 'data.get("agentId"))'),
+    ("message-bad-json-raises", '    except ValueError:\n        return None, None, None\n    if not isinstance(data, dict):', '    except KeyError:\n        return None, None, None\n    if not isinstance(data, dict):'),
+    ("message-not-a-dict-raises", "    if not isinstance(data, dict):\n        return None, None, None\n", ""),
+    ("calls-any-command", 'if not command or "progress." not in command:', "if not command:"),
+    ("calls-then-ignored", "if following:", "if False:"),
+    ("calls-then-on-any-word", 'if match.group(1) == "done" else None', ""),
+    ("calls-then-past-the-next-call", "end = found[index + 1].start() if index + 1 < len(found) else len(command)", "end = len(command)"),
+    ("seen-any-harness-name", 'if isinstance(harness, str) and _HARNESS_NAME.match(harness):', "if isinstance(harness, str):"),
+    ("seen-session-whole", "plain_text(session, SESSION_CHARS)", "plain_text(session)"),
+    ("seen-control-chars-kept", 'actor["agent"] = plain_text(agent)', 'actor["agent"] = agent'),
+    ("hook-reads-any-size", 'if event == "post_tool_use" and len(raw) <= MAX_HOOK_BYTES:', 'if event == "post_tool_use":'),
+    ("hook-looks-at-any-event", 'if event == "post_tool_use" and len(raw) <= MAX_HOOK_BYTES:', "if len(raw) <= MAX_HOOK_BYTES:"),
+    ("hook-waits-for-the-lock", "with spec_lock(root, feature, timeout=0):\n            drawn = render_project(root, feature, now)", "with spec_lock(root, feature):\n            drawn = render_project(root, feature, now)"),
+    ("hook-lock-busy-raises", "    except ProgressError:\n        pass  # Whoever holds the lock", "    except KeyError:\n        pass  # Whoever holds the lock"),
+    ("hook-speaks-every-time", 'if event != "session_start" or not drawn or not drawn["pages"]:', 'if not drawn or not drawn["pages"]:'),
+    ("hook-speaks-with-no-tasks", '    if not page["totals"]["total"]:\n        return ""\n    return "Spec Kit progress', '    return "Spec Kit progress'),
+    ("hook-line-unsafe-name", 'plain_text(page["id"]),\n        page["totals"]["done"]', 'page["id"],\n        page["totals"]["done"]'),
+    ("watch-redraws-every-look", "    if seen == last:\n        return last, None\n", ""),
+    ("watch-waits-for-the-lock", "with spec_lock(root, feature, timeout=0):\n            drawn = render_project(root, feature)", "with spec_lock(root, feature):\n            drawn = render_project(root, feature)"),
+    ("watch-forgets-it-was-busy", "        return last, None  # Busy.", "        return seen, None  # Busy."),
+    ("watch-ignores-the-log", 'for name in ("tasks.md", LOG_NAME, "spec.md", "plan.md"):', 'for name in ("tasks.md", "spec.md", "plan.md"):'),
+    # Replacing a file.
+    ("no-second-try", "            if attempt == REPLACE_ATTEMPTS - 1:\n                raise\n", "            raise\n"),
+    ("tries-forever", "            if attempt == REPLACE_ATTEMPTS - 1:\n                raise\n", ""),
     # The command line.
     ("empty-note-accepted", 'if args.command == "step" and args.status == "note" and not (args.note or "").strip():\n        parser.error("a note needs --note")\n', ""),
     ("options-can-be-abbreviated", 'step = commands.add_parser("step", parents=[shared], allow_abbrev=False,', 'step = commands.add_parser("step", parents=[shared],'),
@@ -259,8 +363,11 @@ WRAPPER_MUTANTS = [
     ("bash-script-not-anchored", "scripts/bash/run-step.sh", 'if [ -f "$script_dir/../../$script" ]; then', "if false; then"),
     ("bash-own-scripts-folder-wins", "scripts/bash/run-step.sh", 'if [ -f "$script_dir/../../$script" ]; then', 'if [ ! -f "$script" ] && [ -f "$script_dir/../../$script" ]; then'),
     ("python-own-scripts-folder-wins", "scripts/python/run_step.py", "return str(anchored) if anchored.is_file() else script", "return str(anchored) if anchored.is_file() and not Path(script).is_file() else script"),
-    ("bash-page-failure-fails", "scripts/bash/progress.sh", 'is missing. Run: specify integration upgrade" >&2\n    exit 0', 'is missing. Run: specify integration upgrade" >&2\n    exit 1'),
-    ("bash-no-python-fails", "scripts/bash/progress.sh", 'no specify command here." >&2\nexit 0', 'no specify command here." >&2\nexit 1'),
+    ("bash-page-failure-fails", "scripts/bash/progress.sh", 'upgrade" >&2\n    exit "$without_engine"', 'upgrade" >&2\n    exit 1'),
+    ("bash-no-python-fails", "scripts/bash/progress.sh", 'no specify command here." >&2\nexit "$without_engine"', 'no specify command here." >&2\nexit 1'),
+    ("bash-task-call-passes-without-engine", "scripts/bash/progress.sh", "start|done|block|fail|skip|note) without_engine=1 ;;", "start|done|block|fail|skip|note) without_engine=0 ;;"),
+    ("bash-task-name-read-from-the-wrong-place", "scripts/bash/progress.sh", 'then subcommand="${3:-}"; else', 'then subcommand="${1:-}"; else'),
+    ("bash-task-name-needs-the-harness", "scripts/bash/progress.sh", 'else subcommand="${1:-}"; fi', 'else subcommand=""; fi'),
     ("bash-no-fallback-to-specify", "scripts/bash/progress.sh", 'if command -v specify >/dev/null 2>&1; then', "if false; then"),
     ("bash-old-python-accepted", "scripts/bash/progress.sh", "sys.exit(0 if sys.version_info >= (3, 9) else 1)", "sys.exit(0)"),
     ("bash-engine-not-isolated", "scripts/bash/progress.sh", 'exec $candidate -I "$engine"', 'exec $candidate "$engine"'),
@@ -275,13 +382,65 @@ WRAPPER_MUTANTS = [
     ("python-arguments-dropped", "scripts/python/run_step.py", "[sys.executable, locate(script), *rest]", "[sys.executable, locate(script)]"),
     ("python-no-argument-check", "scripts/python/run_step.py", "if len(argv) < 3:", "if False:"),
     ("python-script-not-anchored", "scripts/python/run_step.py", "locate(script), *rest", "script, *rest"),
-    ("python-missing-engine-fails", "scripts/python/progress.py", 'specify integration upgrade", file=sys.stderr)\n        return 0', 'specify integration upgrade", file=sys.stderr)\n        return 1'),
+    ("python-missing-engine-fails", "scripts/python/progress.py", 'specify integration upgrade", file=sys.stderr)\n        return without_engine(argv)', 'specify integration upgrade", file=sys.stderr)\n        return 1'),
+    ("python-task-call-passes-without-engine", "scripts/python/progress.py", "return 1 if set(subcommand) & TASK_COMMANDS else 0", "return 0"),
+    ("python-task-name-read-from-the-wrong-place", "scripts/python/progress.py", 'argv[2:3] if argv[:1] == ["--harness"]', 'argv[:1] if argv[:1] == ["--harness"]'),
     ("python-engine-not-isolated", "scripts/python/progress.py", '[sys.executable, "-I", str(engine)', "[sys.executable, str(engine)"),
     ("python-root-wrong", "scripts/python/progress.py", "str(here.parents[2])", 'str(".")'),
 ]
 
 
 # These two run the repository's own files, so a changed copy of the engine would not reach them.
+# What a harness runs by itself: one exact replacement in hook.py.
+HOOK_MUTANTS = [
+    ("hook-old-python-runs", "if sys.version_info < (3, 9):", "if False:"),
+    ("hook-reads-any-event-as-a-call", 'mentions_a_call = event == "post_tool_use" and _CALL_MARK in raw', "mentions_a_call = _CALL_MARK in raw"),
+    ("hook-misses-a-call", 'mentions_a_call = event == "post_tool_use" and _CALL_MARK in raw', "mentions_a_call = False"),
+    ("hook-always-loads-engine", 'if event != "session_start" and not mentions_a_call and not is_stale(root):', "if False:"),
+    ("hook-session-start-skipped", 'if event != "session_start" and not mentions_a_call and not is_stale(root):', "if not mentions_a_call and not is_stale(root):"),
+    ("hook-never-draws", "and not is_stale(root):", "and True:"),
+    ("hook-writes-bytecode", "    sys.dont_write_bytecode = True  # Bytecode next to the engine would show up in the project's Git.\n", ""),
+    ("hook-same-date-is-current", ".st_mtime_ns >= drawn:", ".st_mtime_ns > drawn:"),
+    ("hook-no-page-is-current", "    except OSError:\n        return True\n    for name in _SOURCES:", "    except OSError:\n        return False\n    for name in _SOURCES:"),
+    ("hook-forgets-the-log", '_SOURCES = ("tasks.md", "progress.jsonl", "spec.md", "plan.md")', '_SOURCES = ("tasks.md", "spec.md", "plan.md")'),
+    ("hook-forgets-the-plan", '_SOURCES = ("tasks.md", "progress.jsonl", "spec.md", "plan.md")', '_SOURCES = ("tasks.md", "progress.jsonl", "spec.md")'),
+    ("hook-forgets-the-spec", '_SOURCES = ("tasks.md", "progress.jsonl", "spec.md", "plan.md")', '_SOURCES = ("tasks.md", "progress.jsonl", "plan.md")'),
+    ("hook-forgets-the-tasks", '_SOURCES = ("tasks.md", "progress.jsonl", "spec.md", "plan.md")', '_SOURCES = ("progress.jsonl", "spec.md", "plan.md")'),
+    ("hook-ignores-the-environment", 'raw = os.environ.get("SPECIFY_FEATURE_DIRECTORY", "")', 'raw = ""'),
+    ("hook-ignores-the-older-name", 'if not raw and os.environ.get("SPECIFY_FEATURE"):', "if False:"),
+    ("hook-trusts-a-missing-folder", "return path if os.path.isdir(path) else None", "return path"),
+    ("hook-relative-to-nothing", "path = raw if os.path.isabs(raw) else os.path.join(root, raw)", "path = raw"),
+    ("hook-bad-json-raises", "            except ValueError:\n                stored = None\n", "            except KeyError:\n                stored = None\n"),
+    ("hook-any-value-is-a-folder", 'raw = value if isinstance(value, str) else ""', "raw = value or \"\""),
+    ("hook-page-keeps-odd-chars", "safe = (char.isascii() and char.isalnum()) or char in _SAFE_NAME_CHARS", "safe = True"),
+    ("hook-page-keeps-unicode", "safe = (char.isascii() and char.isalnum()) or char in _SAFE_NAME_CHARS", "safe = char.isalnum() or char in _SAFE_NAME_CHARS"),
+    ("hook-page-repeats-underscores", 'elif not name.endswith("_"):', "else:"),
+    ("hook-page-keeps-its-edges", '(name.strip("._") or "spec")', '(name or "spec")'),
+    ("hook-page-has-no-fallback", '(name.strip("._") or "spec")', 'name.strip("._")'),
+]
+
+# The command line and the dispatcher, in a copy of src: one exact replacement in that file.
+SRC_MUTANTS = [
+    ("defaults-ignore-opt-out", "src/specify_cli/events/__init__.py", "    events = progress_hook_defaults(integration_key)\n", "    events = progress_hook_defaults(integration_key) or progress_hook_defaults(\"claude\")\n"),
+    ("defaults-off", "src/specify_cli/events/__init__.py", "        for event in PROGRESS_HOOK_EVENTS\n        if event in natives\n", "        for event in ()\n"),
+    ("defaults-on-events-it-lacks", "src/specify_cli/events/__init__.py", "        for event in PROGRESS_HOOK_EVENTS\n        if event in natives\n", "        for event in PROGRESS_HOOK_EVENTS\n"),
+    ("defaults-without-a-config-file", "src/specify_cli/events/__init__.py", 'if not getattr(integration, "events_config_file", None):\n        return {}\n', ""),
+    ("defaults-for-any-adapter", "src/specify_cli/events/__init__.py", "    if integration_key not in BUILTIN_INTEGRATION_KEYS:\n        return {}\n", ""),
+    ("removal-leaves-empty-folders", "src/specify_cli/events/__init__.py", "    for parent in path.parents:\n        if parent == project_root:\n            return\n", "    return\n    for parent in path.parents:\n        if parent == project_root:\n            return\n"),
+    ("removal-empties-a-folder-it-kept", "src/specify_cli/events/__init__.py", "    if path.exists():\n        return\n    for parent in path.parents:", "    for parent in path.parents:"),
+    ("dispatcher-goes-the-long-way", "src/specify_cli/events/__init__.py", 'if __name__ == "__main__" and len(sys.argv) >= 3 and sys.argv[1].startswith(_PROGRESS_HOOK_PREFIX):', "if False:"),
+    ("dispatcher-lets-problems-out", "src/specify_cli/events/__init__.py", '        return scope["run"](harness, event, raw, root)\n    except Exception:\n        return ""\n', '        return scope["run"](harness, event, raw, root)\n    except KeyError:\n        return ""\n'),
+    ("dispatcher-prints-nothing", "src/specify_cli/events/__init__.py", "    if not _progress_output:\n        sys.exit(0)\n", "    sys.exit(0)\n"),
+    ("dispatcher-goes-on-with-nothing", "src/specify_cli/events/__init__.py", "    if not _progress_output:\n        sys.exit(0)\n", ""),
+    ("doctor-counts-speckit", "src/specify_cli/progress/_doctor.py", "return sorted(key for key in keys if key != SHARED_MANIFEST)", "return sorted(keys)"),
+    ("doctor-fail-still-passes", "src/specify_cli/progress/command_doctor.py", "raise typer.Exit(1)", "raise typer.Exit(0)"),
+    ("doctor-no-engine-is-fine", "src/specify_cli/progress/_doctor.py", 'ENGINE_FILES = ("engine.py", "hook.py", "page.html", "index.html")', 'ENGINE_FILES = ("engine.py",)'),
+    ("doctor-any-implement-is-fine", "src/specify_cli/progress/_doctor.py", "if not has_protocol:", "if False:"),
+    ("doctor-codex-needs-nothing", "src/specify_cli/progress/_doctor.py", 'elif key == "codex":', "elif False:"),
+    ("doctor-events-always-on", "src/specify_cli/progress/_doctor.py", "elif not _events_installed(root, integration, key):", "elif False:"),
+    ("watch-redraws-always", "src/specify_cli/progress/command_watch.py", "if line:", "if True:"),
+]
+
 ENGINE_TESTS = ["--ignore=%s/test_install.py" % TESTS, "--ignore=%s/test_wrappers.py" % TESTS]
 
 
@@ -289,11 +448,13 @@ def run_tests(engine, sources=None):
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
     if sources is None:
         env["SPECKIT_PROGRESS_ENGINE_UNDER_TEST"] = str(engine)
-        command = [sys.executable, "-m", "pytest", TESTS, *ENGINE_TESTS]
-    else:
-        env["SPECKIT_PROGRESS_SOURCES_UNDER_TEST"] = str(sources)
-        command = [sys.executable, "-m", "pytest", "%s/test_wrappers.py" % TESTS, "-n", "6"]
-    command += ["-x", "-q", "--no-header", "-p", "no:cacheprovider"]
+        return run_pytest([TESTS, *ENGINE_TESTS, "-n", "6"], env)
+    env["SPECKIT_PROGRESS_SOURCES_UNDER_TEST"] = str(sources)
+    return run_pytest(["%s/test_wrappers.py" % TESTS, "-n", "6"], env)
+
+
+def run_pytest(arguments, env):
+    command = [sys.executable, "-m", "pytest", *arguments, "-x", "-q", "--no-header", "-p", "no:cacheprovider"]
     try:
         done = subprocess.run(command, cwd=str(ROOT), env=env, capture_output=True, text=True, timeout=TIME_LIMIT_SECONDS, check=False)
     except subprocess.TimeoutExpired:
@@ -311,6 +472,49 @@ def run_mutant(name, old, new, workspace):
         return "no-match", "the text to replace is not in the engine"
     engine.write_text(text.replace(old, new, 1), encoding="utf-8")
     code, detail = run_tests(engine)
+    shutil.rmtree(folder, ignore_errors=True)
+    if code == 0:
+        return "SURVIVED", ""
+    return "killed", detail
+
+
+def run_hook_mutant(name, old, new, workspace):
+    folder = workspace / name
+    shutil.copytree(SOURCE, folder, ignore=shutil.ignore_patterns("__pycache__"))
+    target = folder / "hook.py"
+    text = target.read_text(encoding="utf-8")
+    if text.count(old) < 1:
+        return "no-match", "the text to replace is not in the hook"
+    target.write_text(text.replace(old, new, 1), encoding="utf-8")
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", SPECKIT_PROGRESS_ENGINE_UNDER_TEST=str(folder / "engine.py"))
+    code, detail = run_pytest(["%s/test_hook.py" % TESTS, "-n", "4"], env)
+    shutil.rmtree(folder, ignore_errors=True)
+    if code == 0:
+        return "SURVIVED", ""
+    return "killed", detail
+
+
+def run_src_mutant(name, relative, old, new, workspace):
+    folder = workspace / name
+    for part in ("src", "scripts", "templates"):
+        shutil.copytree(ROOT / part, folder / part, ignore=shutil.ignore_patterns("__pycache__"))
+    target = folder / relative
+    text = target.read_text(encoding="utf-8")
+    if text.count(old) < 1:
+        return "no-match", "the text to replace is not in %s" % relative
+    target.write_text(text.replace(old, new, 1), encoding="utf-8")
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", PYTHONPATH=str(folder / "src"))
+    tests = [
+        "%s/test_hook.py" % TESTS,
+        "%s/test_command_doctor.py" % TESTS,
+        "%s/test_command_watch.py" % TESTS,
+        "%s/test_install.py" % TESTS,
+        "-k",
+        "hook or doctor or watch or event or dispatcher or quick or message or harness or line",
+        "-n",
+        "6",
+    ]
+    code, detail = run_pytest(tests, env)
     shutil.rmtree(folder, ignore_errors=True)
     if code == 0:
         return "SURVIVED", ""
@@ -335,7 +539,7 @@ def run_wrapper_mutant(name, relative, old, new, workspace):
 
 def main():
     wanted = set(sys.argv[1:])
-    known = {entry[0] for entry in MUTANTS} | {entry[0] for entry in WRAPPER_MUTANTS}
+    known = {entry[0] for group in (MUTANTS, WRAPPER_MUTANTS, HOOK_MUTANTS, SRC_MUTANTS) for entry in group}
     if wanted - known:
         # Running nothing would otherwise report that nothing survived.
         print("no such mutant: %s" % ", ".join(sorted(wanted - known)), flush=True)
@@ -360,6 +564,20 @@ def main():
             if wanted and name not in wanted:
                 continue
             status, detail = run_wrapper_mutant(name, relative, old, new, workspace)
+            if status != "killed":
+                survivors += 1
+            print("%-38s %-8s %s" % (name, status, detail), flush=True)
+        for name, old, new in HOOK_MUTANTS:
+            if wanted and name not in wanted:
+                continue
+            status, detail = run_hook_mutant(name, old, new, workspace)
+            if status != "killed":
+                survivors += 1
+            print("%-38s %-8s %s" % (name, status, detail), flush=True)
+        for name, relative, old, new in SRC_MUTANTS:
+            if wanted and name not in wanted:
+                continue
+            status, detail = run_src_mutant(name, relative, old, new, workspace)
             if status != "killed":
                 survivors += 1
             print("%-38s %-8s %s" % (name, status, detail), flush=True)

@@ -17,6 +17,8 @@ from specify_cli.integrations import INTEGRATION_REGISTRY, get_integration
 from specify_cli.integrations.base import TomlIntegration
 from specify_cli.integrations.manifest import IntegrationManifest
 
+from .conftest import native_event_files
+
 
 class TomlIntegrationTests:
     """Mixin — set class-level constants and inherit these tests.
@@ -516,8 +518,9 @@ class TomlIntegrationTests:
             ]:
                 files.append(f".specify/scripts/powershell/{name}")
 
-        for name in ["engine.py", "index.html", "page.html"]:
+        for name in ["engine.py", "hook.py", "index.html", "page.html"]:
             files.append(f".specify/scripts/progress/{name}")
+        files += native_event_files(self.KEY)
 
         for name in [
             "checklist-template.md",

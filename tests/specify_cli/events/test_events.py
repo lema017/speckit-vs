@@ -14,6 +14,7 @@ import pytest
 from specify_cli.events import (
     CANONICAL_EVENTS,
     EVENTS_DISPATCHER_REL,
+    PROGRESS_HOOK_PREFIX,
     collect_extension_events,
     install_integration_events,
     remove_integration_events,
@@ -27,6 +28,16 @@ from specify_cli.integrations.claude import ClaudeIntegration
 from specify_cli.integrations.cursor_agent import CursorAgentIntegration
 from specify_cli.integrations.opencode import OpencodeIntegration
 from specify_cli.integrations.copilot import CopilotIntegration
+
+
+def beyond_progress(resolved):
+    """What resolve_events gave besides the progress hook, which it gives every built-in integration."""
+    others = {}
+    for event, handlers in resolved.items():
+        kept = [handler for handler in handlers if not handler.get("command", "").startswith(PROGRESS_HOOK_PREFIX)]
+        if kept:
+            others[event] = kept
+    return others
 
 
 # -- resolve_events --------------------------------------------------------
@@ -52,7 +63,7 @@ class TestResolveEvents:
             tmp_path,
             None,
         )
-        assert result == {"post_tool_use": [{"command": "speckit.tdd.validate"}]}
+        assert beyond_progress(result) == {"post_tool_use": [{"command": "speckit.tdd.validate"}]}
 
     def test_layer3_extension_events_appended(self, tmp_path):
         """Extension-declared events are resolved and appended."""
@@ -72,7 +83,7 @@ class TestResolveEvents:
         )
         assert "post_tool_use" in result
         assert "session_start" in result
-        assert result["session_start"] == [{"command": "speckit.my-ext.boot"}]
+        assert beyond_progress(result)["session_start"] == [{"command": "speckit.my-ext.boot"}]
 
     def test_layer3_multiple_extensions_same_event_accumulate(self, tmp_path):
         """Two extensions declaring the same event both run (#2)."""
@@ -84,7 +95,7 @@ class TestResolveEvents:
                 encoding="utf-8",
             )
         result = resolve_events("claude", None, tmp_path, None)
-        assert result["session_start"] == [
+        assert beyond_progress(result)["session_start"] == [
             {"command": "speckit.my-ext.boot"},
             {"command": "speckit.other.boot"},
         ]
@@ -142,14 +153,18 @@ class TestResolveEvents:
             None,
         )
 
-        assert result == {
+        assert beyond_progress(result) == {
             "post_tool_use": [{"command": "speckit.tdd.validate"}]
         }
 
-    def test_no_config_no_events(self, tmp_path):
+    def test_no_config_only_the_progress_hook(self, tmp_path):
         """Safe fallback with empty config/options."""
         result = resolve_events("claude", None, tmp_path, None)
-        assert result == {}
+        assert beyond_progress(result) == {}
+        assert sorted(result) == ["post_tool_use", "session_start", "stop"]
+
+    def test_no_events_for_an_integration_this_repository_does_not_know(self, tmp_path):
+        assert resolve_events("sample-agent", None, tmp_path, None) == {}
 
 
 # -- collect_extension_events -----------------------------------------------
@@ -200,7 +215,7 @@ class TestCollectExtensionEvents:
         manifest.files = {}
         install_integration_events(ClaudeIntegration(), tmp_path, manifest, resolved)
 
-        assert resolved == {"pre_tool_use": [valid]}
+        assert beyond_progress(resolved) == {"pre_tool_use": [valid]}
         config = json.loads((tmp_path / ".claude" / "settings.json").read_text(encoding="utf-8"))
         hooks = config["hooks"]["PreToolUse"][0]["hooks"]
         assert len(hooks) == 1
@@ -3046,7 +3061,7 @@ class TestOverridePreserveLayers:
             None,
         )
 
-        assert result == {
+        assert beyond_progress(result) == {
             "post_tool_use": [{"command": "speckit.tdd.validate"}],
             "session_start": [{"command": "speckit.my-ext.boot"}],
         }
@@ -3075,7 +3090,7 @@ class TestOverridePreserveLayers:
         )
         # Built-in default survived (override was abandoned on the invalid entry).
         assert "post_tool_use" in result
-        assert result["post_tool_use"] == [{"command": "speckit.tdd.validate"}]
+        assert beyond_progress(result)["post_tool_use"] == [{"command": "speckit.tdd.validate"}]
 
     def test_explicit_empty_override_disables(self, tmp_path):
         """A fully-valid explicit `events: {}` override still disables."""

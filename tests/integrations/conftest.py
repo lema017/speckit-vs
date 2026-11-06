@@ -2,7 +2,19 @@
 
 import pytest
 
+from specify_cli.integrations import get_integration
 from specify_cli.integrations.base import MarkdownIntegration
+
+
+def native_event_files(key: str) -> list[str]:
+    """What an integration with native events adds for its default progress hook."""
+    integration = get_integration(key)
+    if integration is None or not integration.supports_events():
+        return []
+    files = [".specify/events.py", integration.events_config_file]
+    if key == "opencode":
+        files.append(".opencode/plugin/speckit-events.ts")
+    return files
 
 
 @pytest.fixture(autouse=True)
