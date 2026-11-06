@@ -15,6 +15,7 @@ and specification maintenance.
 | Decide how completed specifications should live | [Choose a persistence model](spec-persistence.md) |
 | Keep feature artifacts aligned after delivery | [Maintain specifications after delivery](evolving-specs.md) |
 | Find what behaviour is in force, which change set it and what covers it | [Keep a catalog of current behaviour](capabilities.md) |
+| Follow every task of a spec and what each agent did | [See how far a spec has come](progress.md) |
 | Adapt practices to your team's needs | [Adapt Spec Kit to your process](customization.md) |
 
 ## See also

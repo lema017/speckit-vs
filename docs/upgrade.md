@@ -220,6 +220,20 @@ Restart your IDE to refresh the command list.
 
 ---
 
+## Behavior change: a progress page for every spec
+
+Since version 1.5.0, this fork draws a [progress page](how-to/progress.md) for every spec. `specify integration upgrade <key>` adds it to an existing project. What changes there:
+
+- **Commands:** each core command header starts through `.specify/scripts/<variant>/run-step`, which runs the real script and records the step. Its output and exit code pass through untouched, and nothing on the progress side can fail a command.
+- **`/speckit.implement`:** it reports each task through the progress script, which checks the box, instead of editing `tasks.md` by hand.
+- **Hooks:** in the 10 integrations with native events, the integration's settings gain three handlers, or fewer where a harness lacks an event. To leave them out, use `--integration-options="--events false"`. A `.specify/integration-events.yml` of your own replaces them, as it replaces any default. Codex needs your approval in `/hooks`.
+- **New files in your repository:** `specs/<id>/progress.jsonl` and `specs/<id>/.gitattributes`, which you are meant to commit. The pages stay out of Git. Notes go into that log, so read it before pushing.
+- **Your browser:** a page opens the first time a spec's page is drawn, except over SSH or in CI. Turn this off with `specify progress browser off`.
+
+Tasks already checked appear as done, with no record of who did them. Nothing is invented to fill that history. If a preset replaced `/speckit.implement`, the page still follows `tasks.md`, but has no reports from it; `specify progress doctor` tells you.
+
+---
+
 ## Behavior change: `/constitution` no longer propagates into templates
 
 The `/constitution` command ([#3790](https://github.com/github/spec-kit/pull/3790)) is scoped to

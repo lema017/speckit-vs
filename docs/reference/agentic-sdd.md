@@ -34,6 +34,7 @@ skills by default.
 | `/speckit.clarify-deep` | `speckit-clarify-deep` | Resolve ambiguity exhaustively along a decision tree before planning (optional quality gate) |
 | `/speckit.analyze` | `speckit-analyze` | Check artifact consistency after tasks and before implementation (optional quality gate) |
 | `/speckit.checklist` | `speckit-checklist` | Generate requirements-quality checklists (optional quality gate) |
+| `/speckit.progress` | `speckit-progress` | Report how far the current spec has come, and draw its page |
 
 ## `/speckit.constitution`
 
@@ -158,6 +159,18 @@ For a large feature, work in stages to avoid overwhelming the agent's context â€
 ```
 
 Verify each stage works before moving to the next.
+
+In this fork, it reports each task through the progress script, which checks the box and records who did it. See [See how far a spec has come](../how-to/progress.md#what-agents-do).
+
+## `/speckit.progress`
+
+Redraws the page of the current spec and reports its totals, steps, active tasks and agents, with the link to the page. It changes nothing else, and the report never includes notes, which can say anything.
+
+```text
+/speckit.progress
+```
+
+Every other core command already ends its report with a shorter form of this. See [See how far a spec has come](../how-to/progress.md).
 
 ## `/speckit.converge`
 

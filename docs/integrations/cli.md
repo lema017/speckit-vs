@@ -422,7 +422,9 @@ Event-capable integrations accept `--events true|false` through the setup
 come from integration defaults, installed extensions, and
 `.specify/integration-events.yml`. Enabling events does not create handlers
 where none are configured, and an integration emits only the native events
-it supports.
+it supports. In this fork, every event-capable integration that ships with Spec
+Kit has one default handler, `speckit.progress-hook.<key>`, which keeps the
+[progress page](../how-to/progress.md) current.
 
 To configure project overrides, create `.specify/integration-events.yml`.
 Replace `<key>` with your integration key and the example command with an
@@ -444,8 +446,9 @@ and `timeout` is an optional positive integer in seconds.
 
 Integration defaults and extension handlers accumulate. A valid project override
 **replaces the entire event map for that integration**, not just the events
-listed in the override. Set `events: {}` under the integration key to disable
-all its handlers. If the override cannot be read or parsed, or an event fails
+listed in the override, so one that should keep the progress page current must
+list `speckit.progress-hook.<key>` itself. Set `events: {}` under the integration
+key to disable all its handlers. If the override cannot be read or parsed, or an event fails
 validation, Spec Kit warns and retains the defaults and extension handlers.
 `--events false` takes precedence over all these sources.
 
