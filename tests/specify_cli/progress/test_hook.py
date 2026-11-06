@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -65,11 +66,12 @@ def test_the_quick_look_names_a_page_as_the_engine_does(hook, engine, tmp_path, 
 
 
 def test_the_quick_look_agrees_on_the_current_spec(hook, engine, project, current, monkeypatch):
-    assert hook.current_spec(str(project.root)) == str(project.root / "specs" / "001-login")
+    # As paths, because on Windows the stored name keeps its forward slash, and the system takes both.
+    assert Path(hook.current_spec(str(project.root))) == project.root / "specs" / "001-login"
     assert engine.current_feature_dir(project.root) == current
     other = project.feature(name="002-other")
     monkeypatch.setenv("SPECIFY_FEATURE_DIRECTORY", "specs/002-other")
-    assert hook.current_spec(str(project.root)) == str(other)
+    assert Path(hook.current_spec(str(project.root))) == other
     assert engine.current_feature_dir(project.root) == other
 
 
