@@ -17,10 +17,12 @@ def register(app: typer.Typer) -> None:
     """Attach ``specify progress`` and its commands to the root CLI."""
     from . import (  # noqa: F401
         command_browser,
+        command_doctor,
         command_engine,
         command_open,
         command_render,
         command_status,
+        command_watch,
     )
 
     app.add_typer(progress_app, name="progress")
