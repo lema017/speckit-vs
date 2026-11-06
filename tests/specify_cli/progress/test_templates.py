@@ -48,8 +48,9 @@ def test_the_first_script_goes_through_the_wrapper(name, variant):
 @pytest.mark.parametrize("name", sorted(STEPS))
 def test_each_command_reports_progress_once_before_its_hooks_run(name):
     text = read(name)
-    assert text.count("{PROGRESS}") == 1
-    position = text.index("{PROGRESS}")
+    reports = re.findall(r"\{PROGRESS\} (?:show|step)\b", text)
+    assert len(reports) == 1
+    position = text.index(reports[0])
     assert position > text.index("hooks.before_") if "hooks.before_" in text else True
     assert position < text.index("hooks.after_"), "hooks may commit, and the log belongs in that commit"
 
@@ -162,3 +163,36 @@ def test_a_project_with_no_recorded_variant_gets_the_platforms(tmp_path, monkeyp
     monkeypatch.setattr("specify_cli.integrations.base.platform.system", lambda: "Linux")
     body = CommandRegistrar.resolve_skill_placeholders("claude", {}, "{PROGRESS} show", tmp_path)
     assert body == ".specify/scripts/bash/progress.sh --harness claude show"
+
+
+# -- What /speckit.implement tells the model to call -------------------------------------------
+
+
+@pytest.mark.parametrize("command", ["start", "done", "block", "fail", "skip", "note"])
+def test_implement_shows_every_task_call(command):
+    assert "{PROGRESS} %s T" % command in read("implement")
+
+
+def test_implement_shows_the_call_that_keeps_it_cheap():
+    assert re.search(r"\{PROGRESS\} done T\d+ .*--then T\d+", read("implement"))
+
+
+def test_implement_says_what_to_do_when_a_call_fails():
+    text = read("implement")
+    assert "mark the box by hand" in text
+    assert "progress never stops the work" in text
+
+
+def test_implement_passes_the_protocol_on_to_subagents():
+    text = read("implement")
+    assert "delegate a task to a subagent" in text
+    assert "--agent" in text
+
+
+def test_implement_warns_about_secrets_in_notes():
+    assert "never put a secret" in read("implement")
+
+
+def test_implement_still_says_a_finished_task_ends_up_checked():
+    """A preset or a person who removes the script still gets the rule of the original command."""
+    assert "mark the task off as [X]" in read("implement")
