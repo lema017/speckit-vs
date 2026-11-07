@@ -1411,12 +1411,17 @@ class TestExtensionSkillRegistration:
                 "speckit.early-ext.world",
             ]
         }
-        assert metadata["registered_skills"] == []
+        # The registrar's files are then replaced by the extension skills, as
+        # an upgrade would (TestExtensionSkillsMatchOnEveryPath).
+        assert metadata["registered_skills"] == [
+            "speckit-early-ext-hello",
+            "speckit-early-ext-world",
+        ]
 
         skill_file = skills_dir / "speckit-early-ext-hello" / "SKILL.md"
         assert skill_file.exists()
         content = skill_file.read_text(encoding="utf-8")
-        assert "source: early-ext:commands/hello.md" in content
+        assert "source: extension:early-ext" in content
 
     def test_hermes_global_skills_dir_used_when_marker_is_recovered(
         self, project_dir, temp_dir, monkeypatch
@@ -1441,7 +1446,10 @@ class TestExtensionSkillRegistration:
                 "speckit.early-ext.world",
             ]
         }
-        assert metadata["registered_skills"] == []
+        assert metadata["registered_skills"] == [
+            "speckit-early-ext-hello",
+            "speckit-early-ext-world",
+        ]
 
         global_skills_dir = home / ".hermes" / "skills"
         assert (
@@ -2875,7 +2883,10 @@ class TestExtensionSkillRegistration:
                 "speckit.early-ext.world",
             ]
         }
-        assert metadata["registered_skills"] == []
+        assert metadata["registered_skills"] == [
+            "speckit-early-ext-hello",
+            "speckit-early-ext-world",
+        ]
 
     def test_missing_shared_skills_dir_uses_normalized_guard_for_later_agents(
         self, project_dir, temp_dir, monkeypatch
@@ -2919,7 +2930,10 @@ class TestExtensionSkillRegistration:
                 "speckit.early-ext.world",
             ]
         }
-        assert metadata["registered_skills"] == []
+        assert metadata["registered_skills"] == [
+            "speckit-early-ext-hello",
+            "speckit-early-ext-world",
+        ]
 
     def test_missing_shared_skills_dir_write_oserror_does_not_register_other_agents(
         self, project_dir, temp_dir, monkeypatch
@@ -3162,6 +3176,153 @@ class TestRegisterExtensionSkillsForceFlag:
         assert "speckit-test-ext-hello" in written
         assert skill_file.exists()
         assert "Run this to say hello." in skill_file.read_text(encoding="utf-8")
+
+
+class TestExtensionSkillsMatchOnEveryPath:
+    """Install, ``use``/``switch`` and ``upgrade`` must write the same extension skills.
+
+    For an agent whose command output is itself a ``SKILL.md``, the command
+    registrar writes each extension skill first, and ``_register_extension_skills``
+    then renders it again. Install and ``use``/``switch`` kept the registrar's file
+    (``source: <ext>:commands/<file>``, no agent flags), while ``upgrade``
+    (``force=True``) replaced it (``source: extension:<ext>``, plus flags such as
+    Claude's ``user-invocable``), so the first upgrade of a new project rewrote
+    every extension skill.
+    """
+
+    @staticmethod
+    def _skills_project(project_dir: Path, agent: str) -> Path:
+        from specify_cli.agents import CommandRegistrar
+
+        _create_init_options(project_dir, ai=agent, ai_skills=True)
+        skills_dir = project_dir / CommandRegistrar().AGENT_CONFIGS[agent]["dir"]
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        return skills_dir
+
+    @staticmethod
+    def _snapshot(skills_dir: Path) -> dict:
+        return {
+            path.relative_to(skills_dir).as_posix(): path.read_bytes()
+            for path in sorted(skills_dir.rglob("SKILL.md"))
+        }
+
+    @pytest.mark.parametrize("agent", ["claude", "codex", "kimi"])
+    @pytest.mark.parametrize("force", [True, False], ids=["upgrade", "use-or-switch"])
+    def test_a_refresh_rewrites_nothing_the_install_wrote(
+        self, project_dir, temp_dir, agent, force
+    ):
+        skills_dir = self._skills_project(project_dir, agent)
+        ext_dir = _create_extension_dir(temp_dir)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=True)
+        installed = self._snapshot(skills_dir)
+        registered = manager.registry.get("test-ext")["registered_skills"]
+        assert sorted(installed) == [
+            "speckit-test-ext-hello/SKILL.md",
+            "speckit-test-ext-world/SKILL.md",
+        ]
+
+        ExtensionManager(project_dir).register_enabled_extensions_for_agent(
+            agent, force=force
+        )
+
+        assert self._snapshot(skills_dir) == installed
+        refreshed = ExtensionManager(project_dir).registry.get("test-ext")
+        assert refreshed["registered_skills"] == registered
+
+    def test_install_writes_the_extension_skill_not_the_registrar_one(
+        self, project_dir, temp_dir
+    ):
+        skills_dir = self._skills_project(project_dir, "claude")
+        ext_dir = _create_extension_dir(temp_dir)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=True)
+
+        content = (skills_dir / "speckit-test-ext-hello" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        frontmatter = yaml.safe_load(content.split("---")[1])
+        assert frontmatter["metadata"]["source"] == "extension:test-ext"
+        assert frontmatter["user-invocable"] is True
+        assert frontmatter["disable-model-invocation"] is False
+        assert "# Test Ext Hello Skill" in content
+        metadata = manager.registry.get("test-ext")
+        assert metadata["registered_commands"] == {
+            "claude": ["speckit.test-ext.hello", "speckit.test-ext.world"]
+        }
+        assert metadata["registered_skills"] == [
+            "speckit-test-ext-hello",
+            "speckit-test-ext-world",
+        ]
+
+    def test_only_the_files_the_registrar_just_wrote_are_replaced(
+        self, project_dir, temp_dir
+    ):
+        skills_dir = self._skills_project(project_dir, "claude")
+        ext_dir = _create_extension_dir(temp_dir)
+        for name in ("hello", "world"):
+            skill_file = skills_dir / f"speckit-test-ext-{name}" / "SKILL.md"
+            skill_file.parent.mkdir(parents=True)
+            skill_file.write_text("user content", encoding="utf-8")
+
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        written = manager._register_extension_skills(
+            manifest,
+            ext_dir,
+            rendered_commands={"claude": ["speckit.test-ext.world"]},
+        )
+
+        assert written == ["speckit-test-ext-world"]
+        assert (skills_dir / "speckit-test-ext-hello" / "SKILL.md").read_text(
+            encoding="utf-8"
+        ) == "user content"
+        assert "Run this to greet the world." in (
+            skills_dir / "speckit-test-ext-world" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+
+    def test_commands_rendered_for_another_agent_replace_nothing(
+        self, project_dir, temp_dir
+    ):
+        skills_dir = self._skills_project(project_dir, "claude")
+        ext_dir = _create_extension_dir(temp_dir)
+        skill_file = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        skill_file.parent.mkdir(parents=True)
+        skill_file.write_text("user content", encoding="utf-8")
+
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        written = manager._register_extension_skills(
+            manifest,
+            ext_dir,
+            rendered_commands={"codex": ["speckit.test-ext.hello"]},
+        )
+
+        assert "speckit-test-ext-hello" not in written
+        assert skill_file.read_text(encoding="utf-8") == "user content"
+
+    def test_commands_of_a_command_backed_agent_replace_no_skill(
+        self, project_dir, temp_dir
+    ):
+        """Copilot's registrar writes ``.agent.md`` files, never the skill itself."""
+        skills_dir = project_dir / ".github" / "skills"
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        skill_file = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        skill_file.parent.mkdir(parents=True)
+        skill_file.write_text("user content", encoding="utf-8")
+        ext_dir = _create_extension_dir(temp_dir)
+
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        assert manager._get_skills_dir() == skills_dir
+        written = manager._register_extension_skills(
+            manifest,
+            ext_dir,
+            rendered_commands={"copilot": ["speckit.test-ext.hello"]},
+        )
+
+        assert "speckit-test-ext-hello" not in written
+        assert skill_file.read_text(encoding="utf-8") == "user content"
 
 
 # ===== Extension Skill Unregistration Tests =====
