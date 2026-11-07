@@ -2,6 +2,16 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.5.2] - 2026-11-07
+
+### Changed
+
+- test(progress): skip a tool already linked, even when its link is broken
+- fix(extensions): write the same skills on init and upgrade
+- docs: let an agent find specify without editing the shell profile
+- docs: install this fork from its URL alone, and give it its own logo
+- chore: begin 1.5.2.dev0 development
+
 ## [1.5.1] - 2026-11-07
 
 ### Changed
