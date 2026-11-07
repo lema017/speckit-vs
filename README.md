@@ -56,7 +56,8 @@ Check that you installed this fork and not the original:
 uv tool list --show-version-specifiers
 ```
 
-It should list `specify-cli v1.5.1 [required: git+https://github.com/lema017/speckit-vs.git@v1.5.1]`.
+Its `specify-cli` line should show `v1.5.1` and this repository's URL with the tag,
+`git+https://github.com/lema017/speckit-vs.git@v1.5.1`.
 
 Create a project with your agent's integration key, such as `claude`, `copilot`,
 `cursor-agent`, `gemini`, or `codex`. `specify integration list` shows all 43:
@@ -118,9 +119,12 @@ steps in order:
    with the tag above, run the install again with `--force`.
 4. **Verify.** `uv tool list --show-version-specifiers` shows this repository's URL
    with the tag, and `specify progress --help` prints its usage. The original Spec Kit
-   has no `progress` command. `specify check` lists Graphify `0.9.102`.
-5. **Set up a project only if the user asked for one.** Ask which folder, and use the
-   key of the agent the user works with. Run it without prompts:
+   has no `progress` command. `specify check` lists Graphify `0.9.102`. If the shell
+   cannot find `specify`, run it by its full path in the folder that
+   `uv tool dir --bin` prints. Ask the user before you run `uv tool update-shell`,
+   because it edits their shell profile.
+5. **Set up a project only if the user asked for one.** Use the folder and the agent
+   the user named, and ask only for what they did not say. Run it without prompts:
 
    ```bash
    specify init my-project --integration claude --non-interactive
