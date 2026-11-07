@@ -161,7 +161,7 @@ Read from each harness's published hook reference on 2026-11-06. Sample messages
 | `claude` | `session_id` | `agent_id`, inside a subagent | Documentation, and one live session |
 | `codex` | `session_id`, the parent's for a subagent | None | Documentation |
 | `copilot` | `sessionId` or `session_id` | None | Documentation; arguments may arrive as text |
-| `cursor-agent` | `conversation_id` | None | Documentation |
+| `cursor-agent` | `session_id` or `conversation_id` | None | Documentation, and one live session |
 | `devin` | `session_id` | None | Documentation |
 | `gemini` | `session_id` | None | Documentation; the shell argument's name is inferred |
 | `opencode` | `input.sessionID` | None | Partial: the arguments are documented for `tool.execute.before`, and `sessionID` is not confirmed |
@@ -169,12 +169,19 @@ Read from each harness's published hook reference on 2026-11-06. Sample messages
 | `tabnine` | `session_id` | None | Documentation; the shell argument's name is inferred |
 | `vibe` | `session_id` | None | Documentation |
 
-Only Claude Code's has been captured from a live session: version 2.1.303 on 2026-11-06, with Sonnet 5.5
-on a 4-task spec, $0.16. It sent these fields as documented, including `agent_id` for the subagent that
-reported a task. All 7 reports got their session, the model repeated the session-start line word for word,
-and each hook exited 0 with nothing on stderr.
+Two have been captured from a live session, both on 2026-11-06.
 
-The other nine rest on their documentation. A harness that sends something else leaves its reports
+Claude Code 2.1.303, with Sonnet 5.5 on a 4-task spec, $0.16. It sent these fields as documented, including
+`agent_id` for the subagent that reported a task. All 7 reports got their session, the model repeated the
+session-start line word for word, and each hook exited 0 with nothing on stderr.
+
+Cursor CLI 2026.11.05, with its Auto model on the same spec, in print mode (`-p`). It sent `session_id` as well
+as the documented `conversation_id`, with the same value, and `user_email`, which is never stored. All 8 reports
+got their session, and the model repeated the session-start line word for word. `stop` did not run in that
+mode, and a shell command that failed sent no `postToolUse`. The report chained after that command had not
+run either, so nothing was lost, and the last report had already redrawn the page.
+
+The other eight rest on their documentation. A harness that sends something else leaves its reports
 `configured` or `declared`, and the page says which. That is the failure mode on purpose.
 
 ## MCP
