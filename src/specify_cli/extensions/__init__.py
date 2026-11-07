@@ -1526,6 +1526,7 @@ class ExtensionManager:
         extension_dir: Path,
         link_outputs: bool = False,
         force: bool = False,
+        rendered_commands: Optional[Dict[str, List[str]]] = None,
     ) -> List[str]:
         """Generate SKILL.md files for extension commands as agent skills.
 
@@ -1544,6 +1545,17 @@ class ExtensionManager:
                 ``setup()`` has just freshly regenerated core-template skill
                 files and the skip guard would otherwise prevent extension
                 content from being layered on top.
+            rendered_commands: The ``registered_commands`` mapping returned by
+                the command-registration pass that ran just before this one
+                in the same operation.  For an agent whose command output is
+                itself a ``SKILL.md`` (Claude, Codex, ...), that pass has
+                already written a skill file for each listed command; it is
+                ours, so it is replaced with the extension skill like
+                ``force`` would.  Without this, install, ``use`` and
+                ``switch`` kept the registrar's rendering while ``upgrade``
+                (``force=True``) replaced it, so the two disagreed on every
+                extension skill's frontmatter.  Files the pass did not
+                write keep the skip guard.
 
         Returns:
             List of skill names that were created (for registry storage).
@@ -1571,6 +1583,11 @@ class ExtensionManager:
         agent_config = registrar.AGENT_CONFIGS.get(selected_ai, {})
         integration = get_integration(selected_ai)
         ai_skills_enabled = is_ai_skills_enabled(opts)
+        just_rendered: Set[str] = set()
+        if agent_config.get("extension") == "/SKILL.md":
+            just_rendered = set(
+                self._valid_name_list((rendered_commands or {}).get(selected_ai))
+            )
 
         def _resolve_command_ref_tokens(body: str) -> str:
             """Resolve explicit command-ref tokens with the active skill style."""
@@ -1628,6 +1645,9 @@ class ExtensionManager:
                 skill_subdir.exists() or skill_subdir.is_symlink()
             )
             CommandRegistrar._ensure_inside(cache_file, cache_root)
+            # The registrar wrote this very file moments ago in the same
+            # operation, so it is ours to replace (see ``rendered_commands``).
+            replace = force or cmd_name in just_rendered
             if selected_ai == "generic" and skill_dir_preexists:
                 metadata = self.registry.get(manifest.id) or {}
                 if skill_name not in self._generic_owned_names(
@@ -1641,11 +1661,12 @@ class ExtensionManager:
                 # Do not overwrite user-customized skills, but allow dev-mode
                 # symlinks that point back to this extension's generated cache
                 # to be refreshed on a subsequent dev install.  In the upgrade
-                # path (force=True) the file was just written by setup(), so
+                # path (force=True) the file was just written by setup(), and
+                # a command in ``just_rendered`` by the registrar, so
                 # overwriting it with the composed extension content is correct.
-                if not is_expected_dev_symlink and not force:
+                if not is_expected_dev_symlink and not replace:
                     continue
-            elif skill_dir_preexists and not force:
+            elif skill_dir_preexists and not replace:
                 # Never add files to a pre-existing user directory. Without a
                 # verifiable SKILL.md ownership marker, rollback/removal cannot
                 # distinguish our output from unrelated user artifacts.
@@ -3063,7 +3084,10 @@ class ExtensionManager:
             # Auto-register extension commands as agent skills when skills mode
             # was used during project initialisation (feature parity).
             registered_skills = self._register_extension_skills(
-                manifest, dest_dir, link_outputs=link_commands
+                manifest,
+                dest_dir,
+                link_outputs=link_commands,
+                rendered_commands=registered_commands,
             )
             if register_commands and generic_active and manifest.commands:
                 expected = set(names)
@@ -4002,7 +4026,10 @@ class ExtensionManager:
                 if agent_name == active_agent:
                     try:
                         registered_skills = self._register_extension_skills(
-                            manifest, ext_dir, force=force
+                            manifest,
+                            ext_dir,
+                            force=force,
+                            rendered_commands={agent_name: registered},
                         )
                         if agent_name == "generic" and skills_mode_active:
                             registered_skills = self._complete_generic_refresh(
