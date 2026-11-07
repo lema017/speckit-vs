@@ -454,6 +454,45 @@ def test_on_every_integration_the_default_adds_only_its_own(tmp_path: Path, monk
     assert in_project or list((tmp_path / "home").rglob("*capabilities*")), "no command reached this integration"
 
 
+def _files(*roots: Path) -> dict[str, bytes]:
+    return {
+        f"{root.name}/{path.relative_to(root).as_posix()}": path.read_bytes()
+        for root in roots
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+
+
+@pytest.mark.parametrize("key", sorted(INTEGRATION_REGISTRY))
+def test_on_every_integration_an_upgrade_rewrites_nothing_init_wrote(tmp_path: Path, monkeypatch, key: str):
+    """init and integration upgrade both write the skills of the default: they must write the same bytes.
+
+    init used to keep the skills the command registrar rendered, and upgrade replaced them with the
+    ones the extension renders, so the first upgrade of a new project rewrote every capabilities skill.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    project = tmp_path / "proj"
+    _init_for(project, key)
+    after_init = _files(project, home)
+    previous = os.getcwd()
+    try:
+        os.chdir(project)
+        result = CliRunner().invoke(app, ["integration", "upgrade", key], catch_exceptions=False)
+    finally:
+        os.chdir(previous)
+    assert result.exit_code == 0, result.output
+    after_upgrade = _files(project, home)
+    changed = sorted(
+        path
+        for path in after_init.keys() | after_upgrade.keys()
+        if after_init.get(path) != after_upgrade.get(path) and not path.endswith(_TIMESTAMPED)
+    )
+    assert changed == []
+
+
 def test_a_new_project_with_code_gets_its_first_graph(tmp_path: Path):
     (tmp_path / "demo").mkdir()
     (tmp_path / "demo" / "app.py").write_text("def main():\n    return 1\n", encoding="utf-8")
