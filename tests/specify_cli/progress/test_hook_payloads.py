@@ -94,6 +94,28 @@ def cursor():
     }
 
 
+def cursor_live():
+    # The fields a live session of Cursor CLI 2026.11.05 sent, on 2026-11-06. It adds session_id,
+    # with the same value as conversation_id. The sample above is what its documentation describes.
+    return {
+        "conversation_id": "abc123def456",
+        "generation_id": "abc123def456",
+        "model": "default",
+        "tool_name": "Shell",
+        "tool_input": {"command": COMMAND, "cwd": "/project", "timeout": 30000},
+        "tool_output": RESULT,
+        "duration": 8583.074,
+        "tool_use_id": "abc",
+        "cwd": "/project",
+        "session_id": "abc123def456",
+        "hook_event_name": "postToolUse",
+        "cursor_version": "2026.11.05-86047df",
+        "workspace_roots": ["/project"],
+        "user_email": "SECRET-EMAIL",
+        "transcript_path": "/tmp/x",
+    }
+
+
 def devin():
     # https://docs.devin.ai/cli/extensibility/hooks/lifecycle-hooks: the shell tool is exec.
     return {
@@ -175,6 +197,7 @@ MESSAGES = {
     "copilot": (copilot_camel, None),
     "copilot-vscode": (copilot_vscode, None),
     "cursor-agent": (cursor, None),
+    "cursor-agent-live": (cursor_live, None),
     "devin": (devin, None),
     "gemini": (gemini, None),
     "opencode": (opencode, None),
@@ -198,7 +221,7 @@ def test_the_report_is_labelled_with_what_the_harness_saw_and_nothing_else_is_ke
     ])
     project.set_current(directory)
     message, agent = MESSAGES[harness]
-    key = harness.split("-vscode")[0]
+    key = harness.split("-vscode")[0].split("-live")[0]
     engine.run_hook(project.root, key, "post_tool_use", json.dumps(message()).encode())
     raw = (directory / "progress.jsonl").read_text(encoding="utf-8")
     for secret in ("SECRET-NOTE", "SECRET-OUTPUT", "SECRET-EMAIL", "/tmp/x"):
