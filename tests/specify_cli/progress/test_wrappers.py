@@ -203,7 +203,7 @@ def test_no_python_at_all_changes_nothing_the_model_sees_in_bash(root, tmp_path)
     for folder in ("/usr/bin", "/bin"):
         for tool in Path(folder).iterdir():
             name = tool.name
-            if name.startswith(("python", "py")) or name == "specify" or (tools / name).exists():
+            if name.startswith(("python", "py")) or name == "specify" or os.path.lexists(tools / name):
                 continue
             (tools / name).symlink_to(tool)
     env = clean_env()
@@ -604,7 +604,7 @@ def test_no_python_at_all_fails_a_task_call_in_bash_and_only_a_task_call(root, t
     for folder in ("/usr/bin", "/bin"):
         for tool in Path(folder).iterdir():
             name = tool.name
-            if name.startswith(("python", "py")) or name == "specify" or (tools / name).exists():
+            if name.startswith(("python", "py")) or name == "specify" or os.path.lexists(tools / name):
                 continue
             (tools / name).symlink_to(tool)
     env = clean_env()
