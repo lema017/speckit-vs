@@ -2,6 +2,16 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.5.1] - 2026-11-07
+
+### Changed
+
+- docs(progress): record what a live Cursor session showed
+- test(progress): give the Cursor sample the shape a live session sent
+- fix(progress): keep a hook's redraw under 150 ms on Python 3.9
+- test(progress): close the last gaps a full mutant run found
+- chore: begin 1.5.1.dev0 development
+
 ## [1.5.0] - 2026-11-06
 
 ### Changed
