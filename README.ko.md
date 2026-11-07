@@ -1,14 +1,17 @@
 <div align="center">
-    <img src="https://raw.githubusercontent.com/github/spec-kit/main/media/logo_large.webp" alt="Spec Kit 로고" width="200" height="200"/>
-    <h1>🌱 Spec Kit</h1>
+    <img src="media/logo.svg" alt="Spec Kit 로고" width="160" height="160"/>
+    <h1>Spec Kit</h1>
     <h3><em>코딩 에이전트와 함께 스펙으로 개발하고, 버그를 고치고, 아이디어를 평가하세요.</em></h3>
 </div>
 
+> [!NOTE]
+> 이 저장소는 [github/spec-kit](https://github.com/github/spec-kit)의 포크입니다. 변경 사항과 설치 방법은 [영어 README](./README.md#install)에 있습니다. PyPI에서 설치하지 마세요. PyPI의 `specify-cli`는 원래 프로젝트이며 이 포크의 변경 사항이 없습니다.
+
 <p align="center">
-    <a href="https://github.com/github/spec-kit/releases/latest"><img src="https://img.shields.io/github/v/release/github/spec-kit" alt="최신 릴리스"/></a>
-    <a href="https://github.com/github/spec-kit/stargazers"><img src="https://img.shields.io/github/stars/github/spec-kit?style=social" alt="GitHub stars"/></a>
-    <a href="https://github.com/github/spec-kit/blob/main/LICENSE"><img src="https://img.shields.io/github/license/github/spec-kit" alt="라이선스"/></a>
-    <a href="https://github.github.io/spec-kit/"><img src="https://img.shields.io/badge/docs-GitHub_Pages-blue" alt="문서"/></a>
+    <a href="https://github.com/lema017/speckit-vs/releases/latest"><img src="https://img.shields.io/github/v/release/lema017/speckit-vs" alt="최신 릴리스"/></a>
+    <a href="https://github.com/lema017/speckit-vs/stargazers"><img src="https://img.shields.io/github/stars/lema017/speckit-vs?style=social" alt="GitHub stars"/></a>
+    <a href="https://github.com/lema017/speckit-vs/blob/main/LICENSE"><img src="https://img.shields.io/github/license/lema017/speckit-vs" alt="라이선스"/></a>
+    <a href="./docs/index.md"><img src="https://img.shields.io/badge/docs-in_this_repository-blue" alt="문서"/></a>
 </p>
 
 <p align="center">
@@ -43,7 +46,7 @@ Linux, macOS, Windows 환경에서 **Python 3.11+**, **[uv](https://github.githu
 **CLI 설정**은 터미널에서 진행합니다. 아래 명령어를 실행해 Spec Kit을 설치하고 프로젝트를 만드세요:
 
 ```bash
-uv tool install specify-cli
+uv tool install specify-cli --from git+https://github.com/lema017/speckit-vs.git@v1.5.1
 specify init my-project --integration copilot
 cd my-project
 ```
@@ -182,11 +185,11 @@ specify extension add assess
 ## 스타 추이
 
 <p align="center">
-    <a href="https://www.star-history.com/#github/spec-kit&Date">
+    <a href="https://www.star-history.com/#lema017/speckit-vs&Date">
         <picture>
-            <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=github%2Fspec-kit&type=Date&theme=dark"/>
-            <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=github%2Fspec-kit&type=Date"/>
-            <img src="https://api.star-history.com/svg?repos=github%2Fspec-kit&type=Date" alt="Spec Kit 스타 추이 차트"/>
+            <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=lema017%2Fspeckit-vs&type=Date&theme=dark"/>
+            <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=lema017%2Fspeckit-vs&type=Date"/>
+            <img src="https://api.star-history.com/svg?repos=lema017%2Fspeckit-vs&type=Date" alt="Spec Kit 스타 추이 차트"/>
         </picture>
     </a>
 </p>
@@ -199,7 +202,7 @@ specify extension add assess
 
 ## 지원 및 기여
 
-[버그 신고 또는 기능 요청](https://github.com/github/spec-kit/issues/new) ·
+[버그 신고 또는 기능 요청](https://github.com/lema017/speckit-vs/issues/new) ·
 [기여 가이드](./CONTRIBUTING.md) · [행동 강령](./CODE_OF_CONDUCT.md)
 
 <a id="-license"></a>
