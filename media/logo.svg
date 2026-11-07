@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">speckit-vs</title>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0F766E"/>
+      <stop offset="1" stop-color="#172554"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#tile)"/>
+  <path d="M62 80V184" stroke="#5EEAD4" stroke-width="8" stroke-linecap="round" opacity="0.45"/>
+  <path d="M62 128C62 158 90 152 90 178" fill="none" stroke="#BEF264" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="62" cy="80" r="14" fill="#FFFFFF"/>
+  <circle cx="62" cy="128" r="14" fill="#FFFFFF"/>
+  <circle cx="90" cy="180" r="14" fill="#BEF264"/>
+  <rect x="90" y="70" width="112" height="20" rx="10" fill="#FFFFFF"/>
+  <rect x="90" y="118" width="84" height="20" rx="10" fill="#FFFFFF" opacity="0.85"/>
+  <path d="M130 178l16 16 34-36" fill="none" stroke="#BEF264" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

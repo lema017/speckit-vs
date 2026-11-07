@@ -69,8 +69,8 @@
     "globalMetadata": {
       "_appTitle": "Spec Kit Documentation",
       "_appName": "Spec Kit",
-      "_appLogoPath": "images/spec-kit-logo.webp",
-      "_appFaviconPath": "images/spec-kit-logo.webp",
+      "_appLogoPath": "images/logo.svg",
+      "_appFaviconPath": "images/logo.svg",
       "_appFooter": "Spec Kit - A specification-driven development toolkit",
       "_enableSearch": true,
       "_disableContribution": false,

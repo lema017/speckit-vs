@@ -1,14 +1,17 @@
 <div align="center">
-    <img src="https://raw.githubusercontent.com/github/spec-kit/main/media/logo_large.webp" alt="Spec Kit 标志" width="200" height="200"/>
-    <h1>🌱 Spec Kit</h1>
+    <img src="media/logo.svg" alt="Spec Kit 标志" width="160" height="160"/>
+    <h1>Spec Kit</h1>
     <h3><em>与你的编码助手一起，依据规范开发、修复缺陷，或评估想法。</em></h3>
 </div>
 
+> [!NOTE]
+> 本仓库是 [github/spec-kit](https://github.com/github/spec-kit) 的分支（fork）。它的改动和安装步骤见[英文 README](./README.md#install)。请不要从 PyPI 安装：PyPI 上的 `specify-cli` 是原项目，不包含这些改动。
+
 <p align="center">
-    <a href="https://github.com/github/spec-kit/releases/latest"><img src="https://img.shields.io/github/v/release/github/spec-kit" alt="最新版本"/></a>
-    <a href="https://github.com/github/spec-kit/stargazers"><img src="https://img.shields.io/github/stars/github/spec-kit?style=social" alt="GitHub stars"/></a>
-    <a href="https://github.com/github/spec-kit/blob/main/LICENSE"><img src="https://img.shields.io/github/license/github/spec-kit" alt="许可证"/></a>
-    <a href="https://github.github.io/spec-kit/"><img src="https://img.shields.io/badge/docs-GitHub_Pages-blue" alt="文档"/></a>
+    <a href="https://github.com/lema017/speckit-vs/releases/latest"><img src="https://img.shields.io/github/v/release/lema017/speckit-vs" alt="最新版本"/></a>
+    <a href="https://github.com/lema017/speckit-vs/stargazers"><img src="https://img.shields.io/github/stars/lema017/speckit-vs?style=social" alt="GitHub stars"/></a>
+    <a href="https://github.com/lema017/speckit-vs/blob/main/LICENSE"><img src="https://img.shields.io/github/license/lema017/speckit-vs" alt="许可证"/></a>
+    <a href="./docs/index.md"><img src="https://img.shields.io/badge/docs-in_this_repository-blue" alt="文档"/></a>
 </p>
 
 <p align="center">
@@ -41,10 +44,10 @@ SDD 内置于核心；缺陷修复和想法评估由随工具提供的扩展实�
 
 你需要 **Python 3.11+**、**[uv](https://github.github.io/spec-kit/install/uv.html)**
 以及受支持的 AI 编码助手，可在 Linux、macOS 或 Windows 上使用。
-**仅 CLI 配置步骤在终端中执行**：从 PyPI 安装 Spec Kit 并创建项目：
+**仅 CLI 配置步骤在终端中执行**：从本仓库安装 Spec Kit 并创建项目：
 
 ```bash
-uv tool install specify-cli
+uv tool install specify-cli --from git+https://github.com/lema017/speckit-vs.git@v1.5.1
 specify init my-project --integration copilot
 cd my-project
 ```
@@ -184,7 +187,7 @@ specify extension add assess
 
 ## 支持与贡献
 
-[报告缺陷或提出功能建议](https://github.com/github/spec-kit/issues/new) ·
+[报告缺陷或提出功能建议](https://github.com/lema017/speckit-vs/issues/new) ·
 [贡献指南](./CONTRIBUTING.md) · [行为准则](./CODE_OF_CONDUCT.md)
 
 <a id="-许可证"></a>

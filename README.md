@@ -1,11 +1,11 @@
 <div align="center">
-    <img src="https://raw.githubusercontent.com/github/spec-kit/main/media/logo_large.webp" alt="Spec Kit Logo" width="200" height="200"/>
-    <h1>🌱 Spec Kit</h1>
+    <img src="media/logo.svg" alt="speckit-vs logo" width="160" height="160"/>
+    <h1>Spec Kit</h1>
     <h3><em>Build with a spec, fix a bug, or assess an idea — with your coding agent.</em></h3>
 </div>
 
 > [!NOTE]
-> This repository is a fork of [github/spec-kit](https://github.com/github/spec-kit). See [What this fork changes](#what-this-fork-changes). Install it from this repository, not from PyPI: the `specify-cli` package on PyPI is the original project and does not include these changes.
+> This repository is a fork of [github/spec-kit](https://github.com/github/spec-kit). See [What this fork changes](#what-this-fork-changes). Install it from this repository, as shown in [Install](#install), not from PyPI: the `specify-cli` package on PyPI is the original project and does not include these changes.
 
 <p align="center">
     <a href="https://github.com/lema017/speckit-vs/releases/latest"><img src="https://img.shields.io/github/v/release/lema017/speckit-vs" alt="Latest Release"/></a>
@@ -24,6 +24,120 @@
 Spec Kit is an open source toolkit that gives AI coding agents structured
 processes, reusable templates, and documented outcomes. Start with a ready-made
 process, customize it, or bring your own.
+
+<a id="-get-started"></a>
+<a id="-prerequisites"></a>
+<a id="get-started"></a>
+
+## Install
+
+You need [uv](https://docs.astral.sh/uv/getting-started/installation/), Git, and a
+[supported coding agent](docs/integrations/index.md), on Linux, macOS, or Windows.
+uv downloads Python 3.11 or later if your machine does not have it.
+
+<!-- Keep the tag in this section on the latest release. -->
+
+Install the latest release, `v1.5.1`:
+
+```bash
+uv tool install specify-cli --from git+https://github.com/lema017/speckit-vs.git@v1.5.1
+```
+
+- **It takes a few minutes the first time.** It installs about 165 MB, most of it
+  [Graphify](#graphify-a-code-graph-for-the-catalog), which comes with this fork.
+- **If `specify` is already installed**, from PyPI or an older release of this fork,
+  add `--force` to replace it.
+- **If your shell cannot find `specify`** afterwards, run `uv tool update-shell` and
+  open a new terminal.
+
+Check that you installed this fork and not the original:
+
+```bash
+uv tool list --show-version-specifiers
+```
+
+It should list `specify-cli v1.5.1 [required: git+https://github.com/lema017/speckit-vs.git@v1.5.1]`.
+
+Create a project with your agent's integration key, such as `claude`, `copilot`,
+`cursor-agent`, `gemini`, or `codex`. `specify integration list` shows all 43:
+
+```bash
+specify init my-project --integration claude
+```
+
+To set up the folder you are in, even if it already has code, run
+`specify init --here --integration claude` instead. Then open your coding agent in
+the project folder and [choose a process](#choose-your-process).
+
+<a id="-supported-ai-coding-agent-integrations"></a>
+
+For other setups, see these guides in this repository:
+
+- [Installation](docs/installation.md) for pipx, pip, a one-time run with `uvx`, CI, and troubleshooting.
+- [Air-gapped installation](docs/install/air-gapped.md) for machines without access to GitHub.
+- [Existing projects](docs/how-to/existing-projects.md) to start with code you already have.
+- [Integrations](docs/integrations/index.md) for every agent's key and [invocation syntax](docs/integrations/cli.md#command-invocation).
+
+### Update a project you already have
+
+This works for a project set up with an older release of this fork or with the
+original Spec Kit. Install the new release:
+
+```bash
+uv tool install specify-cli --force --from git+https://github.com/lema017/speckit-vs.git@v1.5.1
+```
+
+Then, from the project's directory, with your integration key in the first command:
+
+```bash
+specify integration upgrade claude
+```
+
+```bash
+specify extension add capabilities --force
+```
+
+Both keep your configuration. See [Upgrade](docs/upgrade.md) for the details.
+
+### If you are an AI agent installing this repository
+
+Someone gave you this repository's URL and asked you to install it. Follow these
+steps in order:
+
+1. **Check the tools.** Run `uv --version` and `git --version`. If uv is missing, ask
+   the user before you install it. The official installers are
+   `curl -LsSf https://astral.sh/uv/install.sh | sh` on macOS and Linux, and
+   `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
+   on Windows.
+2. **Install from the Git URL with the tag.** Run the `uv tool install` command
+   above, and allow it at least 10 minutes. Do not use `pip install specify-cli`,
+   `uvx specify-cli`, or `uv tool install specify-cli` without `--from`: all three
+   install the original Spec Kit from PyPI. You do not need to clone the repository.
+3. **Replace an older install.** If uv says `specify-cli` is already installed, run
+   `uv tool list --show-version-specifiers`. Unless it shows this repository's URL
+   with the tag above, run the install again with `--force`.
+4. **Verify.** `uv tool list --show-version-specifiers` shows this repository's URL
+   with the tag, and `specify progress --help` prints its usage. The original Spec Kit
+   has no `progress` command. `specify check` lists Graphify `0.9.102`.
+5. **Set up a project only if the user asked for one.** Ask which folder, and use the
+   key of the agent the user works with. Run it without prompts:
+
+   ```bash
+   specify init my-project --integration claude --non-interactive
+   ```
+
+   - For the current folder, run
+     `specify init --here --integration claude --non-interactive --force`. Without
+     `--force` it stops when the folder is not empty. It adds Spec Kit's files and
+     leaves the files already there as they were.
+   - If it stops because the agent's command-line tool is missing, for example
+     because you run inside an IDE or a desktop app, add `--ignore-agent-tools`.
+   - On Windows, `init` uses PowerShell scripts, and then it leaves out the
+     [capability catalog](#the-capability-catalog).
+6. **Tell the user** the version you installed, the project folder and integration,
+   and that Spec Kit's commands, such as `/speckit-specify`, run in the agent's chat,
+   not in the terminal. Their exact syntax depends on the agent: see
+   [Command invocation](docs/integrations/cli.md#command-invocation).
 
 ## What this fork changes
 
@@ -349,49 +463,6 @@ Search the active catalogs with commands such as `specify extension search`,
 Spec Kit includes community catalogs, and organizations can add their own
 curated sources. Catalog listings are not audits or endorsements, so review
 community source code before installing or running it.
-
-<a id="-get-started"></a>
-<a id="-prerequisites"></a>
-
-## Get started
-
-You need Python 3.11+, [uv](https://github.github.io/spec-kit/install/uv.html),
-and a supported AI coding agent on Linux, macOS, or Windows.
-
-Run these commands in your terminal to install Spec Kit and create a project.
-This example uses GitHub Copilot.
-
-```bash
-uv tool install specify-cli --from git+https://github.com/lema017/speckit-vs.git
-specify init my-project --integration copilot
-cd my-project
-```
-
-This also installs [Graphify](#graphify-a-code-graph-for-the-catalog), and `specify init`
-builds the first graph of the project. `specify check` tells you if it is missing.
-
-To bring a project you already have up to date, run these from its directory. The
-second command keeps your configuration:
-
-```bash
-uv tool install specify-cli --force --from git+https://github.com/lema017/speckit-vs.git
-```
-
-```bash
-specify extension add capabilities --force
-```
-
-<a id="-supported-ai-coding-agent-integrations"></a>
-
-After installing the Specify CLI and creating your project, launch your coding
-agent in the project directory, then choose a process below.
-
-For other setups:
-
-- [Installation](https://github.github.io/spec-kit/installation.html) for pinned releases, other installers, CI, and troubleshooting.
-- [Existing projects](https://github.github.io/spec-kit/how-to/existing-projects.html) to start with code you already have.
-- [Other agents](https://github.github.io/spec-kit/integrations/index.html) for integration keys and [invocation syntax](https://github.github.io/spec-kit/integrations/cli.html#command-invocation).
-- [Upgrade](https://github.github.io/spec-kit/upgrade.html) to update an existing installation.
 
 <a id="-what-is-spec-driven-development"></a>
 <a id="sdd-quickstart"></a>

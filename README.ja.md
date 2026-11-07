@@ -1,14 +1,17 @@
 <div align="center">
-    <img src="https://raw.githubusercontent.com/github/spec-kit/main/media/logo_large.webp" alt="Spec Kitロゴ" width="200" height="200"/>
-    <h1>🌱 Spec Kit</h1>
+    <img src="media/logo.svg" alt="Spec Kitロゴ" width="160" height="160"/>
+    <h1>Spec Kit</h1>
     <h3><em>仕様で作る、バグを直す、アイデアを見極める ―― あなたのコーディングエージェントと共に。</em></h3>
 </div>
 
+> [!NOTE]
+> このリポジトリは [github/spec-kit](https://github.com/github/spec-kit) のフォークです。変更点とインストール手順は[英語のREADME](./README.md#install)にあります。PyPI からはインストールしないでください。PyPI の `specify-cli` は元のプロジェクトで、このフォークの変更を含みません。
+
 <p align="center">
-    <a href="https://github.com/github/spec-kit/releases/latest"><img src="https://img.shields.io/github/v/release/github/spec-kit" alt="最新リリース"/></a>
-    <a href="https://github.com/github/spec-kit/stargazers"><img src="https://img.shields.io/github/stars/github/spec-kit?style=social" alt="GitHub stars"/></a>
-    <a href="https://github.com/github/spec-kit/blob/main/LICENSE"><img src="https://img.shields.io/github/license/github/spec-kit" alt="ライセンス"/></a>
-    <a href="https://github.github.io/spec-kit/"><img src="https://img.shields.io/badge/docs-GitHub_Pages-blue" alt="ドキュメント"/></a>
+    <a href="https://github.com/lema017/speckit-vs/releases/latest"><img src="https://img.shields.io/github/v/release/lema017/speckit-vs" alt="最新リリース"/></a>
+    <a href="https://github.com/lema017/speckit-vs/stargazers"><img src="https://img.shields.io/github/stars/lema017/speckit-vs?style=social" alt="GitHub stars"/></a>
+    <a href="https://github.com/lema017/speckit-vs/blob/main/LICENSE"><img src="https://img.shields.io/github/license/lema017/speckit-vs" alt="ライセンス"/></a>
+    <a href="./docs/index.md"><img src="https://img.shields.io/badge/docs-in_this_repository-blue" alt="ドキュメント"/></a>
 </p>
 
 <p align="center">
@@ -39,7 +42,7 @@ Linux、macOS、またはWindows上で、**Python 3.11以降**、**[uv](https://
 **CLIのみのセットアップ**を行う場合は、ターミナルで以下のコマンドを実行してSpec Kitをインストールし、プロジェクトを作成してください:
 
 ```bash
-uv tool install specify-cli
+uv tool install specify-cli --from git+https://github.com/lema017/speckit-vs.git@v1.5.1
 specify init my-project --integration copilot
 cd my-project
 ```
@@ -163,11 +166,11 @@ specify extension add assess
 ## スター数の推移
 
 <p align="center">
-    <a href="https://www.star-history.com/#github/spec-kit&Date">
+    <a href="https://www.star-history.com/#lema017/speckit-vs&Date">
         <picture>
-            <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=github%2Fspec-kit&type=Date&theme=dark"/>
-            <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=github%2Fspec-kit&type=Date"/>
-            <img src="https://api.star-history.com/svg?repos=github%2Fspec-kit&type=Date" alt="Spec Kitのスター推移チャート"/>
+            <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=lema017%2Fspeckit-vs&type=Date&theme=dark"/>
+            <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=lema017%2Fspeckit-vs&type=Date"/>
+            <img src="https://api.star-history.com/svg?repos=lema017%2Fspeckit-vs&type=Date" alt="Spec Kitのスター推移チャート"/>
         </picture>
     </a>
 </p>
@@ -180,7 +183,7 @@ specify extension add assess
 
 ## サポートと貢献
 
-[バグを報告する、または機能をリクエストする](https://github.com/github/spec-kit/issues/new) ·
+[バグを報告する、または機能をリクエストする](https://github.com/lema017/speckit-vs/issues/new) ·
 [コントリビューションガイド](./CONTRIBUTING.md) · [行動規範](./CODE_OF_CONDUCT.md)
 
 <a id="-ライセンス"></a>

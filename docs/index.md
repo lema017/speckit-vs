@@ -1,6 +1,6 @@
 <div class="landing-hero">
 
-<img class="landing-hero-logo" src="images/spec-kit-logo.webp" alt="" width="120" height="120">
+<img class="landing-hero-logo" src="images/logo.svg" alt="" width="120" height="120">
 
 # GitHub Spec Kit
 
