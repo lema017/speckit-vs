@@ -11,7 +11,6 @@ untrusted: pages carry it as escaped JSON and paint it only as text.
 
 from __future__ import annotations
 
-import argparse
 import contextlib
 import errno
 import hashlib
@@ -19,9 +18,7 @@ import json
 import os
 import re
 import stat
-import subprocess
 import sys
-import tempfile
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -923,9 +920,22 @@ def _replace(temporary, path):
             time.sleep(REPLACE_WAIT_SECONDS)
 
 
+def _new_temporary_file(folder):
+    """A new file only this process can read, next to its target so the rename is atomic. It does
+    what tempfile.mkstemp does, because importing tempfile costs a hook about 10 ms on every redraw.
+    O_EXCL also refuses a link left under that name, and O_BINARY keeps Windows off the bytes."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    while True:
+        temporary = os.path.join(str(folder), ".tmp-%s-%s" % (GENERATOR, os.urandom(8).hex()))
+        try:
+            return os.open(temporary, flags, 0o600), temporary
+        except FileExistsError:
+            continue
+
+
 def write_atomic_bytes(path, data, mode=0o644):
     """Write through a temporary file, so a reader never sees half a file."""
-    handle, temporary = tempfile.mkstemp(dir=str(path.parent), prefix=".tmp-" + GENERATOR + "-")
+    handle, temporary = _new_temporary_file(path.parent)
     try:
         with os.fdopen(handle, "wb") as stream:
             stream.write(data)
@@ -1422,6 +1432,8 @@ def set_browser(root, enabled):
 
 def open_in_background(link):
     """In its own process, so a browser that hangs cannot hang the command that asked for it."""
+    import subprocess  # Only here: a hook loads this file after every tool call.
+
     subprocess.Popen(
         [sys.executable, "-I", "-c", "import sys, webbrowser; webbrowser.open(sys.argv[1])", link],
         stdin=subprocess.DEVNULL,
@@ -1608,6 +1620,8 @@ def status_data(root, feature=None, now=None):
 
 
 def _parser():
+    import argparse  # Only here: a hook loads this file after every tool call.
+
     parser = argparse.ArgumentParser(
         prog="progress",
         allow_abbrev=False,

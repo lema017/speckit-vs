@@ -116,18 +116,24 @@ harness on directories several integrations share, such as `.agents/skills`.
 than `tasks.md`, `progress.jsonl`, `spec.md` and `plan.md`, it returns without loading the engine. The
 same date counts as older, because a coarse file system can give two writes the same date.
 
-Measured through the real dispatcher on macOS, 100 runs each with Python 3.13 and 30 with Python 3.9, on a
-40-task spec, with a bare Python start taking 33 and 50 ms:
+Measured through the real dispatcher on macOS, 200 runs of each case, twice, on a 40-task spec, with a bare
+Python start taking about 35 ms on Python 3.13 and 44 ms on the Python 3.9 macOS includes:
 
 | Case | How often | p95, Python 3.13 | p95, Python 3.9 |
 | --- | --- | --- | --- |
-| Nothing changed | Nearly every tool call | 54 ms | 74 ms |
-| The message mentions `progress.`, so the engine loads | Each report, and reads of the log | 131 ms | 222 ms |
-| Something changed, so the page is redrawn | After a change | 118 ms | 166 ms |
+| Nothing changed | Nearly every tool call | 54 ms | 71 ms |
+| The message mentions `progress.`, so the engine loads | Each report, and reads of the log | 102 ms | 138 ms |
+| Something changed, so the page is redrawn | After a change | 103 ms | 140 ms |
 
-The target was a p95 under 150 ms, and a `matcher` or a `stop`-only hook if it was missed. The common case
-meets it on both, so neither was needed. The two rarer cases miss it on Python 3.9, and they do so only
-after something happened.
+The target was a p95 under 150 ms, and a `matcher` or a `stop`-only hook if it was missed. All three cases
+meet it, so neither was needed. Version 1.5.0 missed it on Python 3.9 in the last two, at about 153 and 156 ms
+with this same measurement.
+
+**That margin depends on what the engine imports.** `argparse` and `subprocess` load only where they are used,
+and writes make their own temporary file instead of importing `tempfile`, as the three together cost a
+redraw about 20 ms. `test_a_redraw_imports_nothing_it_does_not_need` keeps them out. Caching the engine's
+bytecode would save 15 ms more, but it would put a binary that runs after every tool call into the project,
+so it was left out while the target is met without it.
 
 **It never raises and never prints, except one line at the start of a session.** The line is what
 `session_start` adds to the model's context: the spec, its totals and the page. It never holds a note,
