@@ -554,6 +554,17 @@ def test_the_quick_way_in_imports_nothing_it_does_not_need(dispatcher, project, 
         assert heavy not in imported, heavy
 
 
+def test_a_redraw_imports_nothing_it_does_not_need(dispatcher, project, current):
+    # Each of these cost about 10 ms on Python 3.9, which took a redraw past the 150 ms target.
+    done = dispatch(dispatcher, HOOK, "stop", "10", flags=("-I", "-X", "importtime"))
+    assert done.returncode == 0
+    assert (project.root / ".specify" / "progress" / "001-login.html").is_file()
+    imported = {line.rsplit("|", 1)[-1].strip() for line in done.stderr.decode().splitlines() if "|" in line}
+    assert "pathlib" in imported  # So the engine did load: the quick way never imports this.
+    for heavy in ("argparse", "subprocess", "tempfile", "shutil", "random"):
+        assert heavy not in imported, heavy
+
+
 def test_every_other_handler_still_goes_the_long_way(dispatcher, project, current):
     done = dispatch(dispatcher, "speckit.not-a-command", "stop", "10")
     assert (done.returncode, done.stdout) == (0, b"")

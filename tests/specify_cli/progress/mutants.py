@@ -338,6 +338,19 @@ MUTANTS = [
     # Replacing a file.
     ("no-second-try", "            if attempt == REPLACE_ATTEMPTS - 1:\n                raise\n", "            raise\n"),
     ("tries-forever", "            if attempt == REPLACE_ATTEMPTS - 1:\n                raise\n", ""),
+    # The temporary file behind every write.
+    ("temporary-name-taken-stops-the-write", "        except FileExistsError:\n            continue\n", "        except FileExistsError:\n            raise\n"),
+    ("temporary-file-overwrites-what-is-there", "os.O_WRONLY | os.O_CREAT | os.O_EXCL | ", "os.O_WRONLY | os.O_CREAT | os.O_TRUNC | "),
+    ("temporary-file-open-to-all", "os.open(temporary, flags, 0o600)", "os.open(temporary, flags, 0o644)"),
+    ("temporary-file-in-another-folder", 'os.path.join(str(folder), ".tmp-%s-%s"', 'os.path.join(os.path.dirname(str(folder)), ".tmp-%s-%s"'),
+    ("temporary-name-always-the-same", "os.urandom(8).hex()", '"0" * 16'),
+    ("temporary-name-unmarked", '".tmp-%s-%s" % (GENERATOR', '"%s-%s" % (GENERATOR'),
+    # What a hook must not have to load.
+    ("engine-imports-tempfile-again", "import stat\nimport sys\n", "import stat\nimport tempfile\nimport sys\n"),
+    ("engine-imports-subprocess-again", "import stat\nimport sys\n", "import stat\nimport subprocess\nimport sys\n"),
+    ("engine-imports-argparse-again", "import stat\nimport sys\n", "import stat\nimport argparse\nimport sys\n"),
+    ("browser-without-its-import", "    import subprocess  # Only here: a hook loads this file after every tool call.\n\n", ""),
+    ("parser-without-its-import", "    import argparse  # Only here: a hook loads this file after every tool call.\n\n", ""),
     # The command line.
     ("empty-note-accepted", 'if args.command == "step" and args.status == "note" and not (args.note or "").strip():\n        parser.error("a note needs --note")\n', ""),
     ("options-can-be-abbreviated", 'step = commands.add_parser("step", parents=[shared], allow_abbrev=False,', 'step = commands.add_parser("step", parents=[shared],'),

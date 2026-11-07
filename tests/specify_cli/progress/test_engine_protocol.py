@@ -8,6 +8,7 @@ import stat
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import pytest
 
@@ -676,6 +677,77 @@ def test_a_file_that_stays_held_fails_and_leaves_no_temporary_behind(engine, tmp
     with pytest.raises(PermissionError):
         engine.write_atomic(tmp_path / "file", "text")
     assert list(tmp_path.iterdir()) == []
+
+
+# -- The temporary file behind every write -----------------------------------------------------
+
+
+def test_a_write_keeps_the_bytes_it_was_given(engine, tmp_path):
+    # Windows would turn each \n into \r\n if the file were not opened as binary.
+    path = tmp_path / "file"
+    engine.write_atomic_bytes(path, b"one\ntwo\r\nthree\n")
+    assert path.read_bytes() == b"one\ntwo\r\nthree\n"
+    assert list(tmp_path.iterdir()) == [path]
+
+
+def test_the_temporary_file_sits_next_to_the_target(engine, tmp_path):
+    # A rename is only atomic inside one disk, so it cannot live anywhere else.
+    handle, temporary = engine._new_temporary_file(tmp_path)
+    os.close(handle)
+    assert Path(temporary).parent == tmp_path
+    assert Path(temporary).name.startswith(".tmp-speckit-progress-")
+
+
+def test_two_temporary_files_never_share_a_name(engine, tmp_path):
+    names = set()
+    for _ in range(20):
+        handle, temporary = engine._new_temporary_file(tmp_path)
+        os.close(handle)
+        names.add(temporary)
+    assert len(names) == 20
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows has no such permission bits.")
+def test_nobody_else_can_read_a_temporary_file_while_it_is_written(engine, tmp_path):
+    handle, temporary = engine._new_temporary_file(tmp_path)
+    try:
+        assert stat.S_IMODE(os.fstat(handle).st_mode) == 0o600
+    finally:
+        os.close(handle)
+
+
+def _names_taken_first(engine, monkeypatch, tmp_path, make_it_exist):
+    """The next name a write tries is already there. Returns that name."""
+    random_parts = iter([b"\x00" * 8, b"\x01" * 8])
+    monkeypatch.setattr(engine.os, "urandom", lambda size: next(random_parts))
+    taken = tmp_path / (".tmp-speckit-progress-" + "00" * 8)
+    make_it_exist(taken)
+    return taken
+
+
+def test_a_temporary_name_someone_has_is_passed_over(engine, tmp_path, monkeypatch):
+    taken = _names_taken_first(engine, monkeypatch, tmp_path, lambda path: path.write_text("theirs", encoding="utf-8"))
+    path = tmp_path / "file"
+    engine.write_atomic(path, "text")
+    assert taken.read_text(encoding="utf-8") == "theirs"
+    assert path.read_text(encoding="utf-8") == "text"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Making a link needs privileges there.")
+def test_a_link_left_under_a_temporary_name_is_not_written_through(engine, tmp_path, monkeypatch):
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.write_text("mine", encoding="utf-8")
+    taken = _names_taken_first(engine, monkeypatch, tmp_path, lambda path: path.symlink_to(elsewhere))
+    path = tmp_path / "file"
+    engine.write_atomic(path, "text")
+    assert elsewhere.read_text(encoding="utf-8") == "mine"
+    assert taken.is_symlink()
+    assert path.read_text(encoding="utf-8") == "text"
+
+
+def test_a_folder_that_is_not_there_is_a_failure_and_not_a_loop(engine, tmp_path):
+    with pytest.raises(FileNotFoundError):
+        engine.write_atomic(tmp_path / "missing" / "file", "text")
 
 
 # -- Small pieces ------------------------------------------------------------------------------
