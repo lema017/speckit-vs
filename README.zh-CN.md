@@ -47,7 +47,7 @@ SDD 内置于核心；缺陷修复和想法评估由随工具提供的扩展实�
 **仅 CLI 配置步骤在终端中执行**：从本仓库安装 Spec Kit 并创建项目：
 
 ```bash
-uv tool install specify-cli --from git+https://github.com/lema017/speckit-vs.git@v1.5.2
+uv tool install specify-cli --from git+https://github.com/lema017/speckit-vs.git@v1.5.3
 specify init my-project --integration copilot
 cd my-project
 ```
