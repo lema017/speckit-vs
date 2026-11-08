@@ -2,6 +2,13 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.5.5] - 2026-11-08
+
+### Changed
+
+- feat(progress): open the page every time /speckit.progress runs
+- chore: begin 1.5.5.dev0 development
+
 ## [1.5.4] - 2026-11-08
 
 ### Changed
