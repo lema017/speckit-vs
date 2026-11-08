@@ -101,7 +101,7 @@ If Graphify is missing, these commands stop and show the command to reinstall `s
 
 The first use writes `graphify-out/`, which ignores itself, and a `.graphifyignore` if you have none. No tracked file changes. Every read updates the graph first: in a repository of 350 source files that took 2 seconds with no changes and 44 seconds after a change. The graph leaves tests out, so the tests a change reaches come from the catalog.
 
-To bring a project you already have up to date, reinstall `specify` and add the extension again. `--force` keeps your configuration and registers the new hook:
+To bring a project you already have up to date, run `specify upgrade` from its directory. It updates `specify`, then adds the extension again, which keeps your configuration and registers the new hook. By hand, reinstall `specify` and add the extension again:
 
 ```bash
 uv tool install specify-cli --force --from git+https://github.com/lema017/speckit-vs.git

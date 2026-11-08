@@ -81,24 +81,29 @@ For other setups, see these guides in this repository:
 
 ### Update a project you already have
 
+From the project's directory, one command updates `specify` to the latest
+release of this fork, then the project to it:
+
+```bash
+specify upgrade
+```
+
+It runs `specify self upgrade`, then `specify integration upgrade` for each of
+the project's integrations, then adds again each extension that ships with
+`specify`, such as `capabilities`. Your configuration is kept. If you edited an
+integration file, it stops before replacing it and says which. Run it in each
+project that uses the fork.
+
 This works for a project set up with an older release of this fork or with the
-original Spec Kit. Install the new release:
+original Spec Kit. If your `specify` does not have `specify upgrade` yet, install
+the new release once:
 
 ```bash
 uv tool install specify-cli --force --from git+https://github.com/lema017/speckit-vs.git@v1.5.5
 ```
 
-Then, from the project's directory, with your integration key in the first command:
-
-```bash
-specify integration upgrade claude
-```
-
-```bash
-specify extension add capabilities --force
-```
-
-Both keep your configuration. See [Upgrade](docs/upgrade.md) for the details.
+Then run `specify upgrade` from each project's directory. See
+[Upgrade](docs/upgrade.md) for its options and the details.
 
 ### If you are an AI agent installing this repository
 

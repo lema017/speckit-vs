@@ -8,13 +8,50 @@
 
 | What to Upgrade | Command | When to Use |
 |----------------|---------|-------------|
+| **CLI and project, in one step** | `specify upgrade` | From each project's directory. Updates the CLI to the latest release, then the project's integrations and the extensions that ship with `specify` |
 | **CLI Tool (recommended)** | `specify self upgrade` | Latest stable release, in place. Auto-detects whether you installed via `uv tool` or `pipx`. |
 | **CLI Tool — pin a version** | `specify self upgrade --tag vX.Y.Z[suffix]` | Upgrade to a specific release tag instead of the latest stable. Suffixes are limited to dev, alpha/beta/rc, and/or build metadata forms. |
 | **CLI Tool — manual fallback** | `uv tool install specify-cli --force --from git+https://github.com/lema017/speckit-vs.git@vX.Y.Z` | When `specify self upgrade` isn't available (older installs) or when you want explicit control. |
 | **CLI Tool — manual fallback (pipx)** | `pipx install --force git+https://github.com/lema017/speckit-vs.git@vX.Y.Z` | Same as above, for pipx installs. |
 | **Project Files** | Run `specify integration upgrade <key>`, then `specify extension update` | Refresh installed integration files and extensions in your project |
 | **Both** | Run CLI upgrade, then project update | Recommended for major version updates |
-| **The `capabilities` extension** | `specify extension add capabilities --force` | After upgrading the CLI. Registers new hooks and keeps your configuration |
+| **The `capabilities` extension** | `specify extension add capabilities --force` | After upgrading the CLI by hand. Registers new hooks and keeps your configuration. `specify upgrade` does this for you |
+
+---
+
+## Upgrade the CLI and a project in one step
+
+Run this from the directory of a project that uses Spec Kit:
+
+```bash
+specify upgrade
+```
+
+It runs three steps. The project steps run with the `specify` the first step installed:
+
+1. `specify self upgrade`, which installs the latest release. `--tag vX.Y.Z` installs that release instead. See [Part 1](#part-1-upgrade-the-cli-tool).
+2. `specify integration upgrade <key>` for each integration in `.specify/integration.json`, the default one first. See [Part 2](#part-2-updating-project-files).
+3. `specify extension add <id> --force --priority <its priority>` for each extension that ships with `specify`. This installs the copy that comes with the installed release and registers its new hooks. The extension's configuration files and priority are kept, and an extension you turned off is turned off again.
+
+The third step adds extensions again instead of running `specify extension update`, which compares with the catalog on the repository's `main` branch. That comparison skips an extension whose files or hooks changed under the same version.
+
+`specify upgrade` stops at the first step that does not finish, and says which. If the CLI upgrade does not finish, the project is not changed. If you edited an integration file, the integration upgrade stops and lists it: look at the change, or rerun with `--force` to replace it with the new one. `--force` only reaches the integration upgrades.
+
+Extensions installed from a catalog are not updated. For each one, `specify upgrade` prints the `specify extension update <id>` command to run.
+
+To see what it would do, without changing anything:
+
+```bash
+specify upgrade --dry-run
+```
+
+This runs `specify self upgrade --dry-run`, then lists the project commands that would follow. The CLI part shows the install command even when you are already on that release; the real run then installs nothing.
+
+Run `specify upgrade` in each project that uses Spec Kit. After the first project, the CLI is already on the latest release, and only the project is updated.
+
+If `specify self upgrade` cannot replace `specify` itself, as with a `uv tool` install on Windows, it prints the command to run and exits without upgrading. `specify upgrade` then updates the project with the `specify` you already have. Run the printed command, then run `specify upgrade` again.
+
+If your `specify` does not have `specify upgrade` yet, upgrade the CLI once with a command from [Part 1](#part-1-upgrade-the-cli-tool), then run `specify upgrade`.
 
 ---
 
