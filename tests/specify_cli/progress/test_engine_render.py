@@ -447,6 +447,25 @@ def test_the_viewer_never_gives_a_document_a_real_link(engine):
     assert '$("vopen").setAttribute("href", doc.href)' in source
 
 
+def test_the_page_names_and_colors_every_state_a_step_can_have():
+    source = (ROOT / "scripts" / "progress" / "page.html").read_text(encoding="utf-8")
+    engine_source = (ROOT / "scripts" / "progress" / "engine.py").read_text(encoding="utf-8")
+    states = set(re.findall(r'_step\("\w+", "\w+", "(\w+)"', engine_source))
+    assert {"done", "active", "attention", "pending", "skipped", "review"} <= states
+    names = re.search(r"var STATES = \{([^}]*)\}", source).group(1)
+    for state in states:
+        assert re.search(r'\b%s: "[^"]+"' % state, names), state
+    assert 'review: "Awaiting review"' in names
+    for state in states - {"pending", "skipped"}:
+        assert ".pipeline li.%s{border-top-color:var(--" % state in source, state
+    assert source.count("--review:") == 2, "a color for light and for dark"
+
+
+def test_a_step_tab_lists_its_details_when_pointed_at():
+    source = (ROOT / "scripts" / "progress" / "page.html").read_text(encoding="utf-8")
+    assert 'b.title = s.label + ": " + s.fact + (s.details.length ? "\\n" + s.details.join("\\n") : "");' in source
+
+
 # -- Documents carried by the page -----------------------------------------------------------
 
 

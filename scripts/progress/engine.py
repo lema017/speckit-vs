@@ -70,6 +70,9 @@ TASK_REPORTS = {"in_progress": "started", "done": "done", "blocked": "blocked", 
 ACTOR_SOURCES = frozenset({"observed", "configured", "declared"})
 STEP_ALIASES = {"clarify-deep": "clarify"}
 STEP_NAMES = ("constitution", "specify", "clarify", "plan", "checklist", "tasks", "analyze", "implement", "converge")
+# The specify and clarify commands keep this checklist and check its boxes themselves. Every other
+# checklist comes from the checklist command, which never checks a box: [x] there is a reviewer's.
+SPEC_QUALITY_CHECKLIST = "requirements.md"
 _UNSAFE_CODES = (
     list(range(0x00, 0x20)) + list(range(0x7f, 0xa0)) + [0x200e, 0x200f] + list(range(0x202a, 0x202f)) + list(range(0x2066, 0x206a))
 )
@@ -505,8 +508,30 @@ def _checklist_facts(directory):
             "name": path.name,
             "checked": sum(1 for box in boxes if box.group(1) != " "),
             "total": len(boxes),
+            "spec_quality": path.name == SPEC_QUALITY_CHECKLIST,
         })
     return rows
+
+
+def _checklist_detail(row):
+    owner = "spec quality, kept by the specify and clarify commands" if row["spec_quality"] else "reviewer checklist"
+    return "%s: %d of %d (%s)" % (row["name"], row["checked"], row["total"], owner)
+
+
+def _checklist_reasons(lists):
+    """One entry per checklist with unchecked boxes, saying whose boxes they are."""
+    reasons = []
+    for row in lists:
+        left = row["total"] - row["checked"]
+        if not left:
+            continue
+        if row["spec_quality"]:
+            text = "%s: %s %s unchecked. The specify and clarify commands keep this checklist." % (
+                row["name"], _count(left, "spec-quality item"), "is" if left == 1 else "are")
+        else:
+            text = "%s: %s %s reviewer review." % (row["name"], _count(left, "item"), "awaits" if left == 1 else "await")
+        reasons.append({"task": None, "text": text})
+    return reasons
 
 
 def _count(number, noun):
@@ -528,7 +553,9 @@ def _step(name, label, state, fact, details=None):
 
 
 def build_steps(root, directory, phases, events, spec):
-    """Each step says what its files prove; the log only adds who, and what files cannot show."""
+    """Each step says what its files prove; the log only adds who, and what files cannot show.
+
+    Returns the steps and, for "Needs your attention", why each step that needs it does."""
     every = [task for phase in phases for task in phase["tasks"]]
     done = sum(1 for task in every if task["status"] == "done")
     started = any(task["status"] != "pending" for task in every)
@@ -587,13 +614,17 @@ def build_steps(root, directory, phases, events, spec):
     lists = _checklist_facts(directory)
     checked = sum(row["checked"] for row in lists)
     total = sum(row["total"] for row in lists)
-    details = ["%s: %d of %d" % (row["name"], row["checked"], row["total"]) for row in lists]
+    details = [_checklist_detail(row) for row in lists]
     if not lists:
         checklist = _step("checklist", "Checklist", "skipped", "not run")
     elif checked == total:
         checklist = _step("checklist", "Checklist", "done", "%d of %d" % (checked, total), details)
-    else:
+    elif any(row["spec_quality"] and row["checked"] < row["total"] for row in lists):
         checklist = _step("checklist", "Checklist", "attention", "%d of %d" % (checked, total), details)
+    else:
+        # Only reviewers' boxes are left: the command did its part, and the rest is review.
+        generated = "generated \u00b7 " if "checklist" in finished else ""
+        checklist = _step("checklist", "Checklist", "review", "%s%d of %d reviewed" % (generated, checked, total), details)
 
     if every:
         tasks = _step("tasks", "Tasks", "done", _count(len(every), "task"))
@@ -625,18 +656,26 @@ def build_steps(root, directory, phases, events, spec):
         checklist["document"] = "checklists/" + lists[0]["name"]
 
     steps = [first, specify, clarify, plan, checklist, tasks, analyze, implement, converge]
+    reasons = []
     for step in steps:
         name = step["name"]
         step["actor"] = actors.get(name)
         step["who"] = actor_label(actors.get(name))
         step["note"] = notes.get(name)
+        if name == "clarify" and open_questions:
+            reasons.append({"task": None, "text": "Clarify: %s in spec.md %s still open." % (
+                _count(open_questions, "question"), "is" if open_questions == 1 else "are")})
+        elif name == "checklist":
+            reasons.extend(_checklist_reasons(lists))
         status = logged[name]["status"] if name in logged else None
         if status == "in_progress" and step["state"] in ("pending", "skipped"):
             step["state"] = "active"
             step["fact"] = "started"
         elif status == "failed":
             step["state"] = "attention"
-    return steps
+            note = step["note"]
+            reasons.append({"task": None, "text": "%s: its last run failed%s" % (step["label"], ": " + note if note else ".")})
+    return steps, reasons
 
 
 # -- One spec ---------------------------------------------------------------------------------
@@ -687,8 +726,8 @@ def build_agents(tasks):
     return [rows[key] for key in sorted(rows) if rows[key]["done"] or rows[key]["active"]]
 
 
-def build_attention(tasks, parsed, bad_lines, tasks_truncated, log_truncated, refused_tasks):
-    items = []
+def build_attention(tasks, parsed, bad_lines, tasks_truncated, log_truncated, refused_tasks, step_reasons=()):
+    items = list(step_reasons)
     for task in tasks:
         if task["problem"]:
             items.append({"task": task["id"], "text": task["problem"]})
@@ -762,6 +801,7 @@ def build_feature(root, directory, out_dir, now=None, include_documents=True):
     totals = {"total": len(every)}
     for status in ("done", "in_progress", "blocked", "failed", "skipped", "pending"):
         totals[status] = sum(1 for task in every if task["status"] == status)
+    steps, step_reasons = build_steps(root, directory, phases, events, spec)
 
     data = {
         "schema": SCHEMA_VERSION,
@@ -770,11 +810,11 @@ def build_feature(root, directory, out_dir, now=None, include_documents=True):
         "generated": now.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "abandon_after_seconds": ABANDONED_AFTER_SECONDS,
         "totals": totals,
-        "steps": build_steps(root, directory, phases, events, spec),
+        "steps": steps,
         "phases": phases,
         "agents": build_agents(every),
         "attention": build_attention(
-            every, parsed, bad_lines, tasks_truncated, log_truncated, tasks_path.is_symlink()
+            every, parsed, bad_lines, tasks_truncated, log_truncated, tasks_path.is_symlink(), step_reasons
         ),
         "activity": list(reversed(events))[:ACTIVITY_LIMIT],
         "documents": collect_documents(root, directory, out_dir) if include_documents else [],

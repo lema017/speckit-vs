@@ -123,27 +123,107 @@ def test_a_plan_with_design_documents(engine, project):
     assert (item["state"], item["fact"], item["details"]) == ("done", "2 design docs", ["research.md", "contracts"])
 
 
-def checklist_project(project, text):
-    directory = project.feature()
+def boxes(checked, unchecked):
+    return "".join("- [x] CHK%03d A\n" % n for n in range(checked)) + "".join("- [ ] CHK%03d B\n" % n for n in range(unchecked))
+
+
+def checklist_project(project, lists, events=None):
+    directory = project.feature(events=events)
     (directory / "checklists").mkdir()
-    (directory / "checklists" / "ux.md").write_text(text, encoding="utf-8")
+    for name, text in lists.items():
+        (directory / "checklists" / name).write_text(text, encoding="utf-8")
     return directory
 
 
+def checklist_attention(data):
+    return [item["text"] for item in data["attention"] if ".md:" in item["text"]]
+
+
+SPEC_QUALITY = " (spec quality, kept by the specify and clarify commands)"
+
+
 def test_no_checklist(engine, project):
-    assert step(build(engine, project, project.feature()), "checklist")["state"] == "skipped"
+    data = build(engine, project, project.feature())
+    item = step(data, "checklist")
+    assert (item["state"], item["fact"]) == ("skipped", "not run")
+    assert data["attention"] == []
 
 
-def test_an_unfinished_checklist_needs_attention(engine, project):
-    item = step(build(engine, project, checklist_project(project, "- [x] CHK001 A\n- [ ] CHK002 B\n")), "checklist")
-    assert (item["state"], item["fact"]) == ("attention", "1 of 2")
-    assert item["details"] == ["ux.md: 1 of 2"]
+def test_a_generated_checklist_awaits_review_and_says_what_is_left(engine, project):
+    # /speckit-checklist never checks its own items: [x] is a reviewer's approval, so an
+    # unchecked custom list after the command is done is work for a reviewer, not a failed step.
+    lists = {"requirements.md": boxes(16, 0), "measurement.md": boxes(0, 39)}
+    data = build(engine, project, checklist_project(project, lists, events=[step_event(step="checklist")]))
+    item = step(data, "checklist")
+    assert (item["state"], item["fact"]) == ("review", "generated · 16 of 55 reviewed")
+    assert item["details"] == ["measurement.md: 0 of 39 (reviewer checklist)", "requirements.md: 16 of 16" + SPEC_QUALITY]
+    assert checklist_attention(data) == ["measurement.md: 39 items await reviewer review."]
+
+
+def test_each_custom_checklist_with_open_items_gets_its_own_entry(engine, project):
+    lists = {"ux.md": boxes(1, 1), "security.md": boxes(0, 2), "api.md": boxes(3, 0)}
+    data = build(engine, project, checklist_project(project, lists, events=[step_event(step="checklist")]))
+    assert step(data, "checklist")["state"] == "review"
+    assert checklist_attention(data) == ["security.md: 2 items await reviewer review.", "ux.md: 1 item awaits reviewer review."]
+
+
+def test_a_custom_checklist_awaits_review_even_without_a_record_of_the_command(engine, project):
+    item = step(build(engine, project, checklist_project(project, {"ux.md": boxes(1, 1)})), "checklist")
+    assert (item["state"], item["fact"]) == ("review", "1 of 2 reviewed")
+    assert item["details"] == ["ux.md: 1 of 2 (reviewer checklist)"]
     assert item["document"] == "checklists/ux.md"
 
 
+def test_a_failed_checklist_command_still_needs_attention(engine, project):
+    events = [step_event(step="checklist", status="failed")]
+    item = step(build(engine, project, checklist_project(project, {"ux.md": boxes(0, 2)}, events=events)), "checklist")
+    assert item["state"] == "attention"
+
+
+def test_unchecked_spec_quality_items_need_attention(engine, project):
+    # requirements.md is the spec commands' own checklist: an open item there is a gap in the spec.
+    lists = {"requirements.md": boxes(14, 2)}
+    data = build(engine, project, checklist_project(project, lists, events=[step_event(step="checklist")]))
+    item = step(data, "checklist")
+    assert (item["state"], item["fact"]) == ("attention", "14 of 16")
+    assert item["details"] == ["requirements.md: 14 of 16" + SPEC_QUALITY]
+    assert checklist_attention(data) == [
+        "requirements.md: 2 spec-quality items are unchecked. The specify and clarify commands keep this checklist."
+    ]
+
+
+def test_every_checked_box_is_done(engine, project):
+    lists = {"requirements.md": boxes(16, 0), "measurement.md": boxes(39, 0)}
+    data = build(engine, project, checklist_project(project, lists, events=[step_event(step="checklist")]))
+    item = step(data, "checklist")
+    assert (item["state"], item["fact"]) == ("done", "55 of 55")
+    assert data["attention"] == []
+
+
+def test_the_spec_quality_checklist_alone_and_complete_is_done(engine, project):
+    data = build(engine, project, checklist_project(project, {"requirements.md": boxes(16, 0)}))
+    item = step(data, "checklist")
+    assert (item["state"], item["fact"]) == ("done", "16 of 16")
+    assert item["document"] == "checklists/requirements.md"
+    assert data["attention"] == []
+
+
 def test_a_finished_checklist_is_done(engine, project):
-    item = step(build(engine, project, checklist_project(project, "- [x] CHK001 A\n- [X] CHK002 B\n")), "checklist")
+    item = step(build(engine, project, checklist_project(project, {"ux.md": "- [x] CHK001 A\n- [X] CHK002 B\n"})), "checklist")
     assert (item["state"], item["fact"]) == ("done", "2 of 2")
+
+
+def test_no_step_needs_attention_without_saying_why(engine, project):
+    spec = SPEC + "\n- **FR-003**: [NEEDS CLARIFICATION: which?] and [NEEDS CLARIFICATION: when?]\n"
+    events = [step_event(step="plan", status="failed", note="contracts missing"), step_event(step="analyze", status="failed")]
+    data = build(engine, project, project.feature(spec=spec, events=events))
+    flagged = [item["label"] for item in data["steps"] if item["state"] == "attention"]
+    assert flagged == ["Clarify", "Plan", "Analyze"]
+    assert [item["text"] for item in data["attention"]] == [
+        "Clarify: 2 questions in spec.md are still open.",
+        "Plan: its last run failed: contracts missing",
+        "Analyze: its last run failed.",
+    ]
 
 
 # -- Tasks and after -------------------------------------------------------------------------

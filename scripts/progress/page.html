@@ -9,9 +9,9 @@
 <title>Spec progress</title>
 <style>
 :root{color-scheme:light dark;--bg:#f6f7f8;--panel:#fff;--ink:#14181d;--soft:#5b6570;--line:#dfe3e7;--track:#e7eaee;
---done:#1a7f4b;--active:#1f63c9;--blocked:#a85f00;--failed:#c4322b;--pending:#7d8791;--tint:#f0f2f4}
+--done:#1a7f4b;--active:#1f63c9;--blocked:#a85f00;--failed:#c4322b;--pending:#7d8791;--review:#7b4fc9;--tint:#f0f2f4}
 @media (prefers-color-scheme:dark){:root{--bg:#101316;--panel:#191d21;--ink:#e9edf0;--soft:#a3adb6;--line:#2c3238;--track:#2c3238;
---done:#3fbf7f;--active:#6ea6ff;--blocked:#e0a040;--failed:#f0736c;--pending:#7d8791;--tint:#22272c}}
+--done:#3fbf7f;--active:#6ea6ff;--blocked:#e0a040;--failed:#f0736c;--pending:#7d8791;--review:#b392f0;--tint:#22272c}}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 html{-webkit-text-size-adjust:100%}
@@ -42,10 +42,11 @@ header .id{color:var(--soft);font-size:13px;margin-top:2px;overflow-wrap:anywher
 .pipeline button:hover,.pipeline button[aria-expanded=true]{background:var(--tint)}
 .pipeline button:focus-visible{outline:2px solid var(--active);outline-offset:-2px}
 .pipeline .label{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pipeline .fact{color:var(--soft);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pipeline .fact{color:var(--soft);font-size:12px;overflow-wrap:anywhere}
 .pipeline li.done{border-top-color:var(--done)}
 .pipeline li.active{border-top-color:var(--active)}
 .pipeline li.attention{border-top-color:var(--blocked)}
+.pipeline li.review{border-top-color:var(--review)}
 .pipeline li.skipped .label,.pipeline li.pending .label{color:var(--soft);font-weight:500}
 .stepinfo{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-top:8px;padding:10px 14px;font-size:13px}
 .stepinfo h2{font-size:14px;margin:0 0 2px}
@@ -176,7 +177,7 @@ dialog::backdrop{background:rgba(10,14,18,.5)}
   var COLORS = {done: "var(--done)", in_progress: "var(--active)", blocked: "var(--blocked)", failed: "var(--failed)", pending: "var(--pending)", skipped: "var(--pending)"};
   var LABELS = {done: "Done", in_progress: "In progress", blocked: "Blocked", failed: "Failed", pending: "Pending", skipped: "Skipped", note: "Note"};
   var SOURCES = {observed: "seen by the harness", configured: "from the project setup", declared: "declared by the agent"};
-  var STATES = {done: "Done", active: "In progress", attention: "Needs attention", pending: "Not started", skipped: "Skipped"};
+  var STATES = {done: "Done", active: "In progress", attention: "Needs attention", review: "Awaiting review", pending: "Not started", skipped: "Skipped"};
   var KEY = "speckit-progress:" + D.id, HASH = "#state=";
   var RELOAD_MS = 5000, QUIET_MS = 3000, STALE_MINUTES = 30, LONG_LINE = 4000;
 
@@ -273,7 +274,7 @@ dialog::backdrop{background:rgba(10,14,18,.5)}
   D.steps.forEach(function (s) {
     var li = el("li", s.state), b = el("button");
     b.type = "button"; b.setAttribute("aria-expanded", S.step === s.name ? "true" : "false");
-    b.title = s.label + ": " + s.fact;
+    b.title = s.label + ": " + s.fact + (s.details.length ? "\n" + s.details.join("\n") : "");
     b.appendChild(el("div", "label", s.label));
     b.appendChild(el("div", "fact", s.fact));
     b.addEventListener("click", function () {
