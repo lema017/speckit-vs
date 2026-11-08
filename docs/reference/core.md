@@ -170,6 +170,20 @@ specify --version
 specify -V
 ```
 
+## Update the CLI and a Project
+
+```bash
+specify upgrade
+```
+
+Run it from a project's directory. It runs `specify self upgrade`, then, with the
+`specify` that is installed, `specify integration upgrade` for each of the
+project's integrations and `specify extension add <id> --force` for each
+extension that ships with `specify`. It stops at the first step that does not
+finish. `--tag vX.Y.Z` installs that release instead of the latest one,
+`--dry-run` shows what it would run, and `--force` replaces integration files you
+edited. See [Upgrade](../upgrade.md#upgrade-the-cli-and-a-project-in-one-step).
+
 ## See How Far a Spec Has Come
 
 ```bash
