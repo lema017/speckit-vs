@@ -290,6 +290,14 @@ def test_rendering_init_preserves_command_guidance(tmp_path):
     assert "specify integration switch <key>" not in output
 
 
+def test_init_points_to_the_lifecycle_image(tmp_path):
+    result = _init(tmp_path, "proj")
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "proj" / ".specify" / "lifecycle.png").is_file()
+    output = " ".join(_strip(result.output).split())
+    assert "Every command, in the order to run them: .specify/lifecycle.png" in output
+
+
 def test_rendering_init_preserves_skill_guidance(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     result = CliRunner().invoke(

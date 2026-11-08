@@ -49,6 +49,8 @@ starting either path.
 8. `/speckit-implement`
 9. `/speckit-converge`
 
+Every project also gets this map as a picture in Spanish, `.specify/lifecycle.png`, and `specify init` ends by pointing to it. The picture adds the capabilities commands, marks the optional steps, and names every command as Claude Code invokes it.
+
 ### Install Specify
 
 **In your terminal**, install the CLI from this fork's repository (requires [uv](install/uv.md)), then initialize your project:

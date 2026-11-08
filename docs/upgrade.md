@@ -107,6 +107,7 @@ For existing Spec Kit projects, use the manifest-aware upgrade path first:
 
 - ✅ **Integration command/skill files** (`.claude/skills/`, `.github/skills/`, `.agents/skills/`, etc.)
 - ✅ **Managed shared scripts and templates** (`.specify/scripts/`, `.specify/templates/`) when they are unchanged from the previous managed copy
+- ✅ **The picture of the command lifecycle** (`.specify/lifecycle.png`) when it is unchanged from the previous managed copy. A project created before it existed gets it on its first upgrade.
 - ✅ **Installed extensions** when you run `specify extension update`
 
 The integration upgrade command uses the install manifest to detect local edits. If a managed integration file was modified after install, the command stops and asks you to inspect the change or rerun with `--force`.

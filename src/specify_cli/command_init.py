@@ -28,6 +28,7 @@ from ._assets import (
 from ._console import StepTracker, console, select_with_arrows, show_banner
 from ._graphify import build_first_graph
 from ._utils import check_tool
+from .shared_infra import LIFECYCLE_IMAGE
 
 
 def _stdin_is_interactive() -> bool:
@@ -1309,6 +1310,10 @@ def register(app: typer.Typer) -> None:
         steps_lines.append(
             f"   {step_num}.6 [cyan]{_display_cmd('converge')}[/] - Assess the codebase and append remaining work as tasks"
         )
+        if (project_path / LIFECYCLE_IMAGE).is_file():
+            steps_lines.append(
+                f"{step_num + 1}. Every command, in the order to run them: [cyan]{LIFECYCLE_IMAGE}[/cyan]"
+            )
 
         steps_panel = Panel(
             "\n".join(steps_lines),
