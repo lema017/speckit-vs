@@ -1501,6 +1501,20 @@ def open_once(root, page, env=None, opener=None):
     return True
 
 
+def open_now(root, link, env=None, opener=None):
+    """Open a page because the person asked to see it: every time, unless opening pages is turned
+    off here or nobody would see the browser. Returns the line that tells them what happened."""
+    if browser_is_off(root, env):
+        return "Not opened: pages are set not to open here. Open the link above."
+    if not can_open_browser(env):
+        return "Not opened: nobody would see a browser here (CI, SSH or no display). Open the link above."
+    try:
+        (opener or open_in_background)(link)
+    except (OSError, ValueError):
+        return "Not opened: the browser could not be started. Open the link above."
+    return "Opening it in your browser."
+
+
 def plain_text(value, limit=MAX_FIELD_CHARS):
     """File-derived text for a terminal or a model's context: no control or reordering characters."""
     return _UNSAFE_TEXT.sub(" ", str(value))[:limit]
@@ -1606,12 +1620,16 @@ def run_step_command(root, name, status, harness=None, note=None, reference=None
     return 0
 
 
-def run_show_command(root, reference=None):
-    """Redraw and report in full. For /speckit.progress, and for the end of a command."""
+def run_show_command(root, reference=None, open_page=False):
+    """Redraw and report in full. For /speckit.progress, which also opens the page every time, and
+    for the end of a command, which does not."""
     problems = []
     feature = _resolve_feature(root, reference, problems)
     drawn = _draw(root, feature, problems)
     _report(root, feature, drawn, problems, detail=True)
+    link = _page_link(drawn, feature)
+    if open_page and link:
+        _say(open_now(root, link))
     for problem in problems:
         _say("progress: %s" % plain_text(problem, MAX_NOTE_CHARS), sys.stderr)
     return 0
@@ -1676,7 +1694,8 @@ def _parser():
     commands = parser.add_subparsers(dest="command", metavar="COMMAND", required=True)
     commands.add_parser("render", parents=[shared], allow_abbrev=False, help="Draw the pages. Prints JSON.")
     commands.add_parser("status", parents=[shared], allow_abbrev=False, help="Read the progress. Prints JSON, writes nothing.")
-    commands.add_parser("show", parents=[shared], allow_abbrev=False, help="Draw the page and report in full.")
+    show = commands.add_parser("show", parents=[shared], allow_abbrev=False, help="Draw the page and report in full.")
+    show.add_argument("--open", action="store_true", dest="open_page", help="Also open the page in a browser, every time.")
     step = commands.add_parser("step", parents=[shared], allow_abbrev=False, help="Record a step, draw the page and report.")
     step.add_argument("name", choices=STEP_NAMES + tuple(STEP_ALIASES))
     step.add_argument("status", choices=sorted(STEP_STATUSES))
@@ -1766,7 +1785,7 @@ def main(argv=None):
         return _run_machine_command(args, root)
     try:
         if args.command == "show":
-            return run_show_command(root, args.feature)
+            return run_show_command(root, args.feature, args.open_page)
         return run_step_command(root, args.name, args.status, args.harness, args.note, args.feature, args.quiet)
     except Exception as exc:
         _say("progress: unexpected %s: %s" % (type(exc).__name__, plain_text(exc, MAX_NOTE_CHARS)), sys.stderr)

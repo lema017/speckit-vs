@@ -149,6 +149,19 @@ def test_a_ready_project_really_succeeds_so_the_comparison_means_something(root,
     assert json.loads(result.stdout.decode("utf-8", "replace"))
 
 
+@pytest.mark.parametrize("variant", VARIANTS, ids=_variant_id)
+def test_the_progress_command_asks_for_its_page_to_open(root, variant):
+    tokens, _ = split_header(header_command("progress", variant[0]))
+    assert tokens[-2:] == ["show", "--open"]
+    build(root, variant[0], "ready")
+    result = run_tool(variant, tokens, root)
+    assert result.returncode == 0, result.stderr
+    lines = result.stdout.decode("utf-8", "replace").splitlines()
+    assert lines[-2].startswith("Page: file:") and lines[-2].endswith("/001-login.html")
+    # --open reached the engine through the wrapper. The switch clean_env sets keeps a real browser shut.
+    assert lines[-1] == "Not opened: pages are set not to open here. Open the link above."
+
+
 # -- Same output, whatever happens to the page -------------------------------------------------
 
 BROKEN_ENGINES = {

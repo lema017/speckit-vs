@@ -89,7 +89,7 @@ def test_the_progress_command_only_reads_and_treats_output_as_data():
         ("ps", "scripts/powershell/progress.ps1"),
         ("py", "scripts/python/progress.py"),
     ):
-        assert re.search(r"^\s*%s: %s --harness __AGENT__ show$" % (variant, re.escape(script)), text, re.MULTILINE)
+        assert re.search(r"^\s*%s: %s --harness __AGENT__ show --open$" % (variant, re.escape(script)), text, re.MULTILINE)
         assert (REPO / script).is_file()
 
 

@@ -3,7 +3,7 @@
 
 Usage: progress.py [--harness NAME] COMMAND [OPTIONS]
 
-Commands: show, step NAME STATUS, render, status, browser on|off,
+Commands: show [--open], step NAME STATUS, render, status, browser on|off,
 start TASK, done TASK, block TASK, fail TASK, skip TASK, note TASK TEXT.
 """
 

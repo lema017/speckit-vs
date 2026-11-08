@@ -385,7 +385,7 @@ SKILL_DESCRIPTIONS = {
     "clarify-deep": "Exhaustive decision-tree clarification workflow for underspecified requirements.",
     "constitution": "Create or update project governing principles and development guidelines.",
     "checklist": "Generate custom quality checklists for validating requirements completeness and clarity.",
-    "progress": "Show how far the current spec has come, what is left, and where to open its page.",
+    "progress": "Show how far the current spec has come, what is left, and open its page in the browser.",
 }
 
 
