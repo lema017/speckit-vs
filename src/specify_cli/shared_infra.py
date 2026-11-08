@@ -38,6 +38,13 @@ integrations/packages/
 integrations/packages.json
 """
 
+# The picture of the command lifecycle: which command to run, and in what order.
+# It lives under the shared templates source, in a folder of its own so the
+# template loops (which read every top-level file as text) never see it, and is
+# copied byte for byte, with no command placeholders resolved.
+LIFECYCLE_IMAGE_SOURCE = ("guide", "lifecycle.png")
+LIFECYCLE_IMAGE = ".specify/lifecycle.png"
+
 # Matches a SHA-256 digest in its normalized form: exactly 64 hexadecimal
 # characters. Callers lowercase the declared value before matching (see
 # ``expected_hex = raw.lower()`` below), so an uppercase digest is accepted and
@@ -727,6 +734,29 @@ def install_shared_infra(
                         console.print(
                             f"[yellow]⚠[/yellow]  could not record {gitignore_rel} in manifest: {exc}"
                         )
+
+        # The lifecycle picture follows the same overwrite/skip/preserve policy.
+        image_src = templates_src.joinpath(*LIFECYCLE_IMAGE_SOURCE)
+        image_dst = project_path / LIFECYCLE_IMAGE
+        if image_src.is_file():
+            seen_rels.add(LIFECYCLE_IMAGE)
+            if _safe_dest_or_bucket(image_dst, LIFECYCLE_IMAGE):
+                write, bucket = _decide_overwrite(LIFECYCLE_IMAGE, image_dst)
+                if write:
+                    planned_copies.append(
+                        (image_dst, LIFECYCLE_IMAGE, image_src.read_bytes(), 0o644)
+                    )
+                elif bucket == "preserved":
+                    preserved_user_files.append(LIFECYCLE_IMAGE)
+                else:
+                    skipped_files.append(LIFECYCLE_IMAGE)
+                    if image_dst.is_file() and LIFECYCLE_IMAGE not in prior_hashes:
+                        try:
+                            manifest.record_existing(LIFECYCLE_IMAGE, recovered=True)
+                        except (OSError, ValueError) as exc:
+                            console.print(
+                                f"[yellow]⚠[/yellow]  could not record {LIFECYCLE_IMAGE} in manifest: {exc}"
+                            )
 
     for dst_path, rel, content, mode in planned_copies:
         if not _ensure_or_bucket_dir(dst_path.parent):
