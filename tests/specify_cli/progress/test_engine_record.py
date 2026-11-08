@@ -482,6 +482,56 @@ def test_show_and_render_do_not_open_anything(engine, project, current, browser_
     assert browser_calls == []
 
 
+OPENING = "Opening it in your browser."
+TURNED_OFF = "Not opened: pages are set not to open here. Open the link above."
+
+
+def test_show_with_open_opens_the_page_every_time(engine, project, current, browser_calls):
+    for _ in range(3):
+        text = report(engine, project, "show", "--open")
+    assert [link.rsplit("/", 1)[1] for link in browser_calls] == ["001-login.html"] * 3
+    lines = text.splitlines()
+    assert lines[-2].startswith("Page: file:") and lines[-2].endswith("/001-login.html")
+    assert lines[-1] == OPENING
+
+
+def test_show_with_open_opens_the_page_it_links_to(engine, project, browser_calls):
+    project.feature()
+    project.feature("002-logout")
+    report(engine, project, "show", "--open")
+    report(engine, project, "show", "--open", "--feature", "002")
+    assert [link.rsplit("/", 1)[1] for link in browser_calls] == ["index.html", "002-logout.html"]
+
+
+def test_show_with_open_keeps_a_project_where_opening_is_off_shut(engine, project, current, browser_calls):
+    assert engine.main(["--root", str(project.root), "browser", "off"]) == 0
+    text = report(engine, project, "show", "--open")
+    assert browser_calls == []
+    assert text.splitlines()[-1] == TURNED_OFF
+
+
+@pytest.mark.parametrize(
+    ("env", "said"),
+    [
+        ({"CI": "true"}, "Not opened: nobody would see a browser here (CI, SSH or no display). Open the link above."),
+        ({"SSH_CONNECTION": "1.2.3.4 22 5.6.7.8 22"}, "Not opened: nobody would see a browser here (CI, SSH or no display). Open the link above."),
+        ({"SPECKIT_PROGRESS_NO_BROWSER": "1"}, TURNED_OFF),
+    ],
+)
+def test_asking_to_open_says_why_it_did_not(engine, project, env, said):
+    calls = []
+    assert engine.open_now(project.root, "file:///page.html", env=env, opener=calls.append) == said
+    assert calls == []
+
+
+def test_a_browser_that_cannot_start_is_reported(engine, project, browser_calls):
+    def broken(link):
+        raise OSError("no browser here")
+
+    said = engine.open_now(project.root, "file:///page.html", env={}, opener=broken)
+    assert said == "Not opened: the browser could not be started. Open the link above."
+
+
 def test_no_spec_means_nothing_to_open(engine, project, browser_calls):
     engine.run_step_command(project.root, "plan", "done", quiet=True)
     assert browser_calls == []

@@ -7,7 +7,7 @@
 # Usage: ./progress.ps1 [--harness NAME] COMMAND [OPTIONS]
 #
 # COMMANDS:
-#   show                       Draw the page and report in full
+#   show [--open]              Draw the page and report in full; --open also opens it
 #   step NAME STATUS           Record a step, draw the page and report
 #   render                     Draw the pages
 #   status                     Read the progress, as JSON

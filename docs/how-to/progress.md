@@ -10,11 +10,13 @@ There is nothing to install or turn on. It works in all 43 integrations and with
 
 The first time a command draws a spec's page, it opens in your browser. It opens once per spec, and never over SSH or in CI. Each command also ends its report with the link.
 
+`/speckit.progress` opens the page every time you run it, and its last line says whether it did. It opens the current spec's page, the one you name, or the list of specs when none is current.
+
 | You want to | Run |
 | --- | --- |
 | Open the page of the current spec | `specify progress open` |
 | See the summary in a terminal | `specify progress status` |
-| See the summary inside your coding agent | `/speckit.progress` |
+| See the summary inside your coding agent, and open the page | `/speckit.progress` |
 | Keep the page current from another terminal | `specify progress watch` |
 | Find out why something is not working | `specify progress doctor` |
 | Stop pages from opening by themselves | `specify progress browser off` |
@@ -103,7 +105,7 @@ With other script variants, use `.specify/scripts/powershell/progress.ps1` or `.
 
 The page itself has no off switch. You can turn off what acts on its own:
 
-- **Pages opening by themselves:** `specify progress browser off`, or set `SPECKIT_PROGRESS_NO_BROWSER=1`. Pages are still drawn.
+- **Pages opening by themselves:** `specify progress browser off`, or set `SPECKIT_PROGRESS_NO_BROWSER=1`. Pages are still drawn. This also keeps `/speckit.progress` from opening the page: it says so and gives the link.
 - **Native events:** install with `--integration-options="--events false"`, and the hooks are not added. The page falls back to updating when a command calls it, or with `watch`. See [integration events](../integrations/cli.md).
 
 A hook is code that runs on your machine by itself, so you may want to look at it first. It is `.specify/scripts/progress/hook.py`, and it only reads project files, writes the page and the log, and prints one line at the start of a session.
