@@ -2,6 +2,13 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.5.6] - 2026-11-08
+
+### Changed
+
+- feat: update specify and the project with one command
+- chore: begin 1.5.6.dev0 development
+
 ## [1.5.5] - 2026-11-08
 
 ### Changed
