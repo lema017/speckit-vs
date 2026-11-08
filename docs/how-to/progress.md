@@ -24,10 +24,14 @@ The page reloads itself while it is open. `.specify/progress/index.html` lists e
 ## What the page shows
 
 - **Totals:** how many tasks are done, in progress, blocked, failed, skipped and pending.
-- **The steps:** Constitution, Specify, Clarify, Plan, Checklist, Tasks, Analyze, Implement and Converge, each with a fact such as "3 decisions" or "10 of 19".
+- **The steps:** Constitution, Specify, Clarify, Plan, Checklist, Tasks, Analyze, Implement and Converge, each with a fact such as "3 decisions" or "10 of 19". Click a step, or point at it, to see what the fact is made of.
+- **The Checklist step:** it counts the boxes of every file in `checklists/`, and shows each file on its own.
+  - `requirements.md` is the spec-quality checklist that `/speckit.specify` and `/speckit.clarify` keep and check themselves. An unchecked box there is a gap in the spec, so the step needs attention.
+  - Every other checklist comes from `/speckit.checklist`, which never checks a box: `[x]` means a reviewer approved that item. Unchecked boxes there leave the step **awaiting review**, and once the command has reported that it finished, the fact reads like "generated · 16 of 55 reviewed".
+  - With every box checked, the step is done.
 - **The tasks by phase and story:** open one to see its notes, its files, its history and who worked on it.
 - **Who did what:** how many tasks each agent closed, and which one it is on now.
-- **What needs your attention:** blocks, failures, and contradictions such as an agent saying it finished a task whose box is still empty.
+- **What needs your attention:** blocks, failures, and contradictions such as an agent saying it finished a task whose box is still empty. Every step that needs attention or awaits review says why here, for example "measurement.md: 39 items await reviewer review."
 - **The documents:** `spec.md`, `plan.md` and the others.
 
 ## What you can rely on
