@@ -2,6 +2,13 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.5.4] - 2026-11-08
+
+### Changed
+
+- feat: give every project a picture of the command lifecycle
+- chore: begin 1.5.4.dev0 development
+
 ## [1.5.3] - 2026-11-07
 
 ### Changed
