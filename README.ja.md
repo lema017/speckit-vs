@@ -42,7 +42,7 @@ Linux、macOS、またはWindows上で、**Python 3.11以降**、**[uv](https://
 **CLIのみのセットアップ**を行う場合は、ターミナルで以下のコマンドを実行してSpec Kitをインストールし、プロジェクトを作成してください:
 
 ```bash
-uv tool install specify-cli --from git+https://github.com/lema017/speckit-vs.git@v1.5.2
+uv tool install specify-cli --from git+https://github.com/lema017/speckit-vs.git@v1.5.3
 specify init my-project --integration copilot
 cd my-project
 ```

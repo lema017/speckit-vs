@@ -2,6 +2,13 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.5.3] - 2026-11-07
+
+### Changed
+
+- fix(progress): tell a checklist awaiting review from an unfinished step
+- chore: begin 1.5.3.dev0 development
+
 ## [1.5.2] - 2026-11-07
 
 ### Changed
