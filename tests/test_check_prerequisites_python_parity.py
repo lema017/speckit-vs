@@ -535,11 +535,33 @@ def test_powershell_does_not_match_wildcard_shaped_feature_neighbor(
     assert "Feature directory not found" in result.stderr
 
 
-def test_python_repo_copy_script_file_fallback_finds_repo_root(tmp_path: Path) -> None:
+def _cwd_outside_every_project(tmp_path: Path) -> Path:
+    """A working directory with no .specify in it or in any folder above it.
+
+    A folder under tmp_path is not enough. The scripts look for .specify from
+    the working directory up before they fall back to their own location, and
+    the temp folder can have one above it: on Windows it sits under the user
+    profile, where ~/.specify holds auth.json and the user catalogs. The
+    filesystem root has no folder above it.
+    """
+    root = Path(tmp_path.anchor)
+    if (root / ".specify").is_dir():
+        pytest.skip(f"{root / '.specify'} exists, so no folder is outside every project")
+    return root
+
+
+@pytest.mark.parametrize(
+    "specify_above", [False, True], ids=["nothing-above", "specify-above"]
+)
+def test_python_repo_copy_script_file_fallback_finds_repo_root(
+    tmp_path: Path, specify_above: bool
+) -> None:
+    if specify_above:
+        # What the Windows CI runner had at times: a .specify above the test's
+        # folders, with no feature.json in it.
+        (tmp_path / ".specify").mkdir()
     repo = tmp_path / "proj"
-    outside = tmp_path / "outside"
     repo.mkdir()
-    outside.mkdir()
     _git_init(repo)
     (repo / ".specify").mkdir()
     _write_feature_json(repo)
@@ -550,7 +572,10 @@ def test_python_repo_copy_script_file_fallback_finds_repo_root(tmp_path: Path) -
     shutil.copy(COMMON_PY, py_dir / "common.py")
     shutil.copy(CHECK_PREREQS_PY, py_dir / "check_prerequisites.py")
 
-    py = _run(_repo_copy_py_cmd(repo, "--json", "--paths-only"), outside)
+    py = _run(
+        _repo_copy_py_cmd(repo, "--json", "--paths-only"),
+        _cwd_outside_every_project(tmp_path),
+    )
 
     assert py.returncode == 0, py.stderr
     assert Path(_json_stdout(py)["REPO_ROOT"]) == repo
