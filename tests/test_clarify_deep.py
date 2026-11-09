@@ -1,8 +1,11 @@
 """``templates/commands/clarify-deep.md`` must stay a variant of ``clarify.md``.
 
-The command is a copy of ``clarify.md`` that changes only how questions are
-asked. These tests fail when a merge changes the shared behavior in one file
-without the other, and when the fork's install source drifts back to upstream.
+The command shares the mechanics of ``clarify.md``: reading the feature paths,
+writing answers into the spec, validating it, re-checking the checklist, and the
+hooks. It changes how the decision tree is built and walked, and drops the rules
+that keep ``clarify`` short. These tests fail when a merge changes the shared
+mechanics in one file without the other, when a rule that keeps the interview
+short comes back, and when the fork's install source drifts back to upstream.
 """
 
 from pathlib import Path
@@ -28,7 +31,7 @@ UPSTREAM = "github/spec-kit"
 # (start marker, end marker) of blocks that must be byte-identical.
 SHARED_BLOCKS = (
     ("handoffs:\n", "\n---\n"),
-    ("## User Input", "\n4. "),
+    ("## User Input", "\n3. "),
     ("6. Integration after EACH accepted answer", "\n7. Validation"),
     ("8. Write the updated spec", "\nBehavior rules:"),
     ("Context for prioritization:", "\n## Completion Report"),
@@ -37,22 +40,14 @@ SHARED_BLOCKS = (
 
 # Lines kept from blocks that also contain authorized changes.
 SHARED_LINE_PREFIXES = (
-    "    - Only include questions whose answers",
-    "    - Exclude questions already answered",
-    "    - Favor clarifications that reduce",
-    "    - If no valid questions exist at start",
     "   - Clarifications session contains",
     "   - Updated sections contain",
     "   - No contradictory earlier statement",
     "   - Markdown structure valid",
     "   - Terminology consistency",
-    "- If no meaningful ambiguities found",
     "- If spec file missing",
     "- Avoid speculative tech stack",
     "- Respect user early termination",
-    "- If no questions asked due to full coverage",
-    "- Number of questions asked",
-    "- Path to updated spec",
     "- Sections touched",
     "- Spec quality checklist status",
     "- Suggested next command",
@@ -69,6 +64,16 @@ QUOTA_PHRASES = (
     "exceed 5",
     "top 5",
     "quota",
+)
+
+# Rules of ``clarify`` that keep its five questions to the highest impact. In
+# ``clarify-deep`` they stopped the interview after one round.
+SHORT_INTERVIEW_PHRASES = (
+    "materially impact",
+    "materially change",
+    "low-impact",
+    "No critical ambiguities detected worth formal clarification",
+    "whole frontier as one round",
 )
 
 SCOPE_RULE = "implementation method, tech-stack comparison, or task breakdown"
@@ -139,7 +144,8 @@ def test_interview_method_is_present() -> None:
     for required in (
         "**design tree**",
         "**frontier**",
-        "whole frontier as one round",
+        "Every decision branches into the decisions that hang off it",
+        "at most 10 questions, highest risk first",
         "**Facts vs decisions:**",
         "shared understanding",
         '"yes" accepts your recommended answer',
@@ -147,6 +153,72 @@ def test_interview_method_is_present() -> None:
         "➡️",
     ):
         assert required in text
+
+
+def test_tree_grows_from_this_spec_and_from_each_answer() -> None:
+    text = _deep_text()
+    for required in (
+        "The interview covers **this spec only**",
+        "**Inventory the spec.**",
+        "**Look at every subject through every lens.**",
+        "**What it touches:**",
+        "**Look for what the spec does not name.**",
+        "Never add nodes from another spec's own content.",
+        "**Every answer opens its children.**",
+        "run the inventory and the lenses of step 3 again on the updated spec",
+        "**One decision per question.**",
+        '**"I don\'t know."** A decision the user cannot make yet stays open',
+        "`⚠️ Business decision`",
+    ):
+        assert required in text
+
+
+def test_session_ends_only_on_the_definition_of_clear() -> None:
+    text = _deep_text()
+    for required in (
+        "**The definition of clear.** The frontier can be empty only if",
+        "**Adversarial pass.**",
+        "places where two developers would build different things",
+        "The session ends only after that confirmation.",
+        "Round <N> · <X> settled · <Y> on the frontier · <Z> waiting",
+    ):
+        assert required in text
+    assert (
+        "The definition of clear: each item" in text.split("## Completion Report", 1)[1]
+    )
+
+
+def test_tree_file_is_written_and_resumed() -> None:
+    text = _deep_text()
+    assert "If `FEATURE_DIR/clarify-tree.md` exists, this is a resumed session." in text
+    assert "write `FEATURE_DIR/clarify-tree.md` (atomic overwrite)" in text
+    for heading in (
+        "## Settled",
+        "## Frontier",
+        "## Waiting",
+        "## Open",
+        "## For the plan",
+        "## Assumptions",
+    ):
+        assert f"      {heading}\n" in text
+
+
+def test_one_question_at_a_time_is_available() -> None:
+    assert (
+        '("one at a time", "una a la vez"), each round has one question' in _deep_text()
+    )
+
+
+def test_no_short_interview_rule_remains() -> None:
+    text = _deep_text()
+    assert [phrase for phrase in SHORT_INTERVIEW_PHRASES if phrase in text] == []
+
+
+def test_short_interview_check_would_catch_clarify_rules() -> None:
+    text = _clarify_text()
+    assert "materially impact" in text
+    assert "low-impact" in text
+    assert "No critical ambiguities detected worth formal clarification" in text
 
 
 def test_planning_deferral_stays_bounded() -> None:

@@ -1,5 +1,5 @@
 ---
-description: Identify underspecified areas in the current feature spec by interviewing the user in rounds along a decision tree, asking as many targeted questions as the spec needs and encoding answers back into the spec.
+description: Interview the user in rounds along a decision tree built from the current feature spec, opening the decisions each answer creates until the spec passes a definition of clear, and encode the answers back into the spec.
 handoffs:
   - label: Build Technical Plan
     agent: speckit.plan
@@ -70,7 +70,45 @@ Execution steps:
 
 2. **IF EXISTS**: Load `/memory/constitution.md` for project principles and governance constraints.
 
-3. Load the current spec file. Perform a structured ambiguity & coverage scan using this taxonomy. For each category, mark status: Clear / Partial / Missing. Produce an internal coverage map used for prioritization (do not output raw map unless no questions will be asked).
+3. Load the current spec file. The interview covers **this spec only**: the rest of the project is a source of facts and of conflicts, never of questions of its own.
+   - **Resume.** If `FEATURE_DIR/clarify-tree.md` exists, this is a resumed session. Load it:
+      - its settled decisions stay settled;
+      - its frontier, waiting, and plan items are the starting tree;
+      - its question numbering continues;
+      - a settled decision that the spec no longer reflects is reopened.
+   - **Inventory the spec.** List every subject it names:
+      - each actor or role, user story, and acceptance scenario;
+      - each functional requirement;
+      - each entity, with its states and transitions;
+      - each external integration;
+      - each non-functional requirement and success criterion;
+      - each assumption and glossary term;
+      - each `[NEEDS CLARIFICATION]` marker, TODO, or vague adjective ("fast", "robust", "intuitive") that has no number.
+   - **Look at every subject through every lens.** Each pair of subject and lens that the spec does not answer becomes a node of the design tree:
+      - **Who:** which role does it, and with which permissions.
+      - **What:** the data and fields, which are required, and the validation rules.
+      - **When:** what triggers it, in what order, and with what timing.
+      - **How much:** limits, volumes, and numeric targets.
+      - **What if:** error, empty, duplicate, concurrent use, abusive input, and an external service that is down, slow, or answers something unexpected.
+      - **How we know:** the observable acceptance criterion a tester would check.
+      - **What not:** what is explicitly out of scope.
+      - **What it touches:** only for a subject the spec shares with the capability catalog, another spec, or the code. Does this feature reuse it as it is, extend it, or change it?
+   - **Look for what the spec does not name.** A feature of this kind usually has subjects that a spec can leave out entirely. For each one that is missing, add a node that asks whether it applies. Once it is in scope, its lenses follow:
+      - other actors who touch the same data: support or operations staff, administrators, auditors, scheduled jobs;
+      - the rest of the main entity's life: change, cancel, delete, expire, and what happens when its owner closes the account;
+      - other channels: physical store, mobile, email and its language, API;
+      - money: currency, taxes, rounding;
+      - time: time zones, schedules and recurrence, how long data is kept;
+      - history: what is recorded, who can see it, and for how long;
+      - combinations: other features or promotions it can or cannot be combined with, and transfer or sharing between users.
+   - **Use the rest of the project for facts and for conflicts.**
+      - Facts come from the constitution, the code, the report of the `before_clarify` hooks, and the capability catalog.
+      - When this spec names an entity, actor, or flow that another spec under `specs/` defines and the catalog does not cover, read that spec for facts about what this spec names, and nothing else. Never add nodes from another spec's own content.
+      - Each conflict becomes a node:
+         - the spec contradicts an approved rule: ask whether the rule changes or the spec does;
+         - the spec relies on a rule that is inferred or not conforming;
+         - the graph or the code shows the change reaching beyond what the spec says: ask whether that is in scope.
+   - **Cross-check with the taxonomy.** For each category below that the spec leaves Partial or Missing, make sure the tree holds the nodes that category implies:
 
    Functional Scope & Behavior:
    - Core user goals & success criteria
@@ -122,19 +160,23 @@ Execution steps:
    - TODO markers / unresolved decisions
    - Ambiguous adjectives ("robust", "intuitive") lacking quantification
 
-   For each category with Partial or Missing status, add a candidate question opportunity unless:
-   - Clarification would not materially change implementation or validation strategy
-   - The item is specifically about implementation method, tech-stack comparison, or task breakdown (note internally)
+   - **Leave a pair out of the tree only when:**
+      - the spec, its `## Clarifications`, the tree file, or a fact already settles it;
+      - its answer would change neither what gets built nor how it is tested;
+      - it is about implementation method, tech-stack comparison, or task breakdown. List it under `For the plan` in the tree file instead of dropping it.
 
-4. Build (internally) a **design tree** of the decisions still open in this spec. Each candidate question opportunity from the scan opens a branch, and each decision hangs off the decisions that must be settled first. The **frontier** is the set of decisions whose prerequisites are all settled. Do NOT output the tree. Apply these constraints:
-    - There is no fixed limit on questions: ask every question that passes these constraints, until every branch is resolved, and none that does not.
-    - Only include questions whose answers materially impact architecture, data modeling, task decomposition, test design, UX behavior, operational readiness, or compliance validation.
-    - Exclude questions already answered, trivial stylistic preferences, or plan-level execution details (unless blocking correctness).
-    - Favor clarifications that reduce downstream rework risk or prevent misaligned acceptance tests.
-    - Answers already recorded under `## Clarifications` count as settled; do not ask them again.
+4. Build (internally) the **design tree** from those nodes. Do NOT output the tree.
+    - Every decision branches into the decisions that hang off it. A node whose question only makes sense once another node is answered hangs off that node. For example, how many rows an export can hold hangs off whether there is an export at all.
+    - The **frontier** is every open node whose prerequisites are all settled.
+    - There is no limit on the total number of questions. Ask every decision that a developer or a tester would otherwise have to guess, until every branch is resolved.
+    - Answers already recorded under `## Clarifications`, or settled in the tree file, count as settled; do not ask them again.
+    - **One decision per question.** A recommended answer must not settle anything that was not asked. If it needs a value of its own, such as a time limit, a maximum, or a format, that value is a child node for a later round. For example, `➡️ Yes, the link expires after 30 minutes, and earlier links stop working` settles two decisions: recommend the first, and ask whether earlier links keep working as a question of its own.
+    - **Order the frontier by risk.** First the decisions that unblock the most other nodes, then those whose wrong guess would cost the most rework.
+    - **A tree too big for one interview.** If the first inventory leaves more than about 60 open nodes, the feature is probably too big. Before the first round, say so, propose how to split it, and ask whether to split it or go on.
 
 5. Round-based questioning loop (interactive):
-    - Present the whole frontier as one round, then wait for the user's answers before starting the next round. A question that depends on an answer still open in this round belongs to a later round.
+    - A round asks the frontier, at most 10 questions, highest risk first. The rest of the frontier waits for the next round. Then wait for the user's answers before starting the next round. A question that depends on an answer still open in this round belongs to a later round.
+    - If the user input asks for one question at a time ("one at a time", "una a la vez"), each round has one question.
     - **Facts vs decisions:** facts are your job; decisions belong to the user.
        - Before asking, look up anything the repository or the feature artifacts can settle, without modifying files. Use a sub-agent with a fresh context window if this agent supports them; otherwise look it up yourself.
        - Do not hold a round back for a lookup: only the questions that depend on its result wait.
@@ -157,6 +199,7 @@ Execution steps:
        - "Why it matters" states the stake for acceptance or shipping.
        - Use everyday wording; introduce jargon only if defined in the same sentence. Self-check: a reader who does not know Spec Kit must be able to answer from the question alone. Terse is fine; cryptic labels are not.
        - Word each question so that "yes" accepts your recommended answer.
+       - **Business decisions.** A decision about price, policy, legal or contractual terms, or what is in or out of scope gets `⚠️ Business decision` after its title. Ask the user to answer it in their own words: "yes" alone does not settle it.
        - Answers are open: the user replies in their own words. Offer lettered, mutually exclusive options only when the decision really has discrete choices; they never limit the answer.
        - Base each recommendation on:
           - Best practices for the project type
@@ -164,16 +207,66 @@ Execution steps:
           - Risk reduction (security, performance, maintainability)
           - Alignment with any explicit project goals or constraints visible in the spec
           - The facts you looked up
-    - Close each round with one line stating how many decisions are settled and which open branches you can see.
+    - Close each round with one status line: `Round <N> · <X> settled · <Y> on the frontier · <Z> waiting · open branches: <names>`.
     - After the user answers a round:
        - The user can answer by number ("1 yes, 2 the second option, 3 no, because..."). "yes" uses your previously stated recommendation as the answer.
        - If an answer is ambiguous, ask for a quick disambiguation and do not advance that branch.
        - A question left unanswered stays on the frontier; never assume its answer.
-       - Integrate each accepted answer (step 6), then recompute the tree: an answer can open, close, or reorder branches, and the new frontier is the next round.
+       - **"I don't know."** A decision the user cannot make yet stays open; never fill it in. At the end of that round, list those decisions and offer, for each one: take your recommendation, keep it open under `Open` in the tree file and say who should decide, or record it as an assumption to confirm later. Keep going with the branches that do not depend on them: an unknown answer holds back only its own children.
+       - Integrate each accepted answer (step 6).
+       - **Every answer opens its children.** For each accepted answer, look for the decisions it creates, through the same lenses as step 3. Add each one as a child node unless it is already settled or out of scope. An answer is a leaf only after you looked for its consequences and found none.
+       - Then run the inventory and the lenses of step 3 again on the updated spec, and look for contradictions between the new answers and what the spec already says. Each contradiction is a node.
+       - Write the tree file (below). The new frontier is the next round.
        - If an answer changes a decision already settled, reopen that branch in the next round.
-    - The session ends when the frontier is empty and the user confirms you have reached a shared understanding. End earlier only when the user signals completion ("done", "good", "no more"), and report what remains unresolved.
+    - **The definition of clear.** The frontier can be empty only if the updated spec passes every item. Each item that fails adds nodes:
+       1. No `[NEEDS CLARIFICATION]` marker, TODO, or vague adjective without its number remains.
+       2. Each functional requirement describes an observable result that can be tested.
+       3. Each user story has acceptance scenarios, including at least one error or edge path.
+       4. Each entity has its fields, which are required, how it is identified, and its states and transitions.
+       5. Each role has explicit permissions for each action.
+       6. Each integration says what happens when it fails, is slow, or answers something unexpected.
+       7. Each non-functional requirement has a numeric target, or says why it has none.
+       8. What is out of scope is listed explicitly.
+       9. Terms are consistent and defined.
+       10. Each assumption is confirmed by the user, or listed as open with its reason.
+    - **Adversarial pass.** When the frontier is empty and the definition of clear passes, read the updated spec as if you had never seen this conversation. Use a sub-agent with a fresh context window and only the spec if this agent supports them; otherwise reread only the spec yourself. Look for:
+       - places where two developers would build different things;
+       - acceptance criteria a tester could not check;
+       - anything assumed without being said.
+       Each finding the spec does not settle is a node; ask them as the next round. Repeat the pass until it finds nothing new or the user stops.
+    - **End.** When the frontier is empty, the definition of clear passes, and the adversarial pass finds nothing new, show a summary:
+       - the decisions, grouped by area;
+       - the assumptions confirmed;
+       - what goes to the plan;
+       - anything left open.
+      Then ask the user to confirm that you have reached a shared understanding. If the only nodes left are decisions the user cannot make yet, show the same summary with them under open, each with who should decide, and ask whether to stop here or to settle them now with your recommendations. The session ends only after that confirmation. End earlier only when the user signals completion ("done", "good", "no more"), and report what remains unresolved.
     - Never reveal questions outside the current frontier in advance.
-    - If no valid questions exist at start, immediately report no critical ambiguities.
+    - If, at the start, the spec passes the definition of clear and the adversarial pass finds nothing, report that the spec has no open decisions, and show the definition of clear as the evidence.
+    - **The tree file.** After each round's answers are integrated, write `FEATURE_DIR/clarify-tree.md` (atomic overwrite). It is the interview's memory: a later run of this command resumes from it. Keep one short line per node:
+
+      ```markdown
+      # Clarify tree: <feature>
+
+      Round <N> · <X> settled · <Y> on the frontier · <Z> waiting
+
+      ## Settled
+      - Q<n> (round <r>): <question> → <answer>
+
+      ## Frontier
+      - <question> (<subject> · <lens>)
+
+      ## Waiting
+      - <question> (after Q<n>)
+
+      ## Open
+      - Q<n>: <question> (the user does not know yet; who decides: <role>)
+
+      ## For the plan
+      - <item>
+
+      ## Assumptions
+      - <assumption> → confirmed in Q<n> | open: <reason>
+      ```
 
 6. Integration after EACH accepted answer (incremental update approach):
     - Maintain in-memory representation of the spec (loaded once at start) plus the raw file contents.
@@ -223,11 +316,11 @@ Execution steps:
 
 Behavior rules:
 
-- If no meaningful ambiguities found (or all potential questions would be low-impact), respond: "No critical ambiguities detected worth formal clarification." and suggest proceeding.
+- If the spec has no open decisions at the start, respond: "No open decisions: the spec passes the definition of clear." and suggest proceeding.
 - If spec file missing, instruct user to run `__SPECKIT_COMMAND_SPECIFY__` first (do not create a new spec here).
 - Avoid speculative tech stack questions unless the absence blocks functional clarity.
 - Respect user early termination signals ("stop", "done", "proceed").
-- If no questions asked due to full coverage, output a compact coverage summary (all categories Clear) then suggest advancing.
+- If no questions were asked, show the definition of clear with every item passing, then suggest advancing.
 - If the user ends the session early or postpones a decision while high-impact categories remain unresolved, explicitly flag them under Outstanding or Deferred with rationale.
 
 Context for prioritization: {ARGS}
@@ -271,12 +364,14 @@ Check if `.specify/extensions.yml` exists in the project root.
 ## Completion Report
 
 Report completion (after questioning loop ends or early termination):
-- Number of questions asked & answered.
-- Path to updated spec.
+- Number of rounds, and of questions asked & answered.
+- Path to updated spec, and to `FEATURE_DIR/clarify-tree.md`.
 - Sections touched (list names).
+- Decisions by area, what goes to the plan, and the assumptions confirmed and still open.
+- The definition of clear: each item, and why each one that does not pass does not.
 - Spec quality checklist status (if `FEATURE_DIR/checklists/requirements.md` was re-validated): show before/after pass counts (e.g., "Spec Quality Checklist: 12/16 → 15/16 items passing") and list any items that changed state — both newly checked (unchecked → checked) and any regressions (checked → unchecked). If any items remain unchecked, list them as areas needing attention.
 - Coverage summary table listing each taxonomy category with Status: Resolved (was Partial/Missing and addressed), Deferred (postponed by the user, or remaining item is specifically implementation method, tech-stack comparison, or task breakdown), Clear (already sufficient), Outstanding (still Partial/Missing: low impact, or left open when the user ended the session early).
-- If any Outstanding or Deferred remain, recommend whether to proceed to `__SPECKIT_COMMAND_PLAN__` or run `__SPECKIT_COMMAND_CLARIFY-DEEP__` again later post-plan.
+- If any Outstanding or Deferred remain, recommend whether to proceed to `__SPECKIT_COMMAND_PLAN__` or run `__SPECKIT_COMMAND_CLARIFY-DEEP__` again later post-plan. A new run resumes from the tree file.
 - Suggested next command.
 
 ## Done When

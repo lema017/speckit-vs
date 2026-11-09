@@ -358,9 +358,10 @@ Each answer says which part came from the graph or the code.
 ### Clarify until the decisions are settled
 
 `/speckit.clarify` asks the questions with the most impact and stops at five.
-`/speckit.clarify-deep` builds a tree of the open decisions, so each answer can
-open or close the next questions. Both write the same `## Clarifications` section,
-so the commands after them work the same way.
+`/speckit.clarify-deep` builds a tree of the open decisions from everything the
+spec names, so each answer opens the questions it creates. It does not stop until
+the spec passes a definition of clear and you confirm. Both write the same
+`## Clarifications` section, so the commands after them work the same way.
 
 <picture>
   <source media="(prefers-reduced-motion: reduce)" srcset="media/clarify-deep.png">
@@ -375,7 +376,8 @@ for you.
 
 Use `/speckit.clarify` when a short pass is enough, and `/speckit.clarify-deep`
 when the feature is costly to get wrong. You can stop the interview at any time,
-and it reports what remains open. The number of questions in the animation is only
+and it reports what remains open. Running it again continues from the tree it keeps
+in `clarify-tree.md`. The number of questions in the animation is only
 an example. The method is adapted from the
 [`grilling` skill](https://github.com/mattpocock/skills/tree/main/skills/productivity/grilling)
 by Matt Pocock (MIT License). See the
