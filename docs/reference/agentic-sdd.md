@@ -74,7 +74,13 @@ When `checklists/requirements.md` exists, `/speckit.clarify` may update its eval
 
 ## `/speckit.clarify-deep`
 
-Interviews you about the current spec until every open decision is settled, with no fixed limit on questions, and encodes your answers back into `spec.md` the same way `/speckit.clarify` does. It asks in rounds: each round contains every decision whose prerequisites are already settled, with a recommended answer for each, and your answers decide what the next round asks. It looks up facts in the repository itself and leaves only the decisions to you. Optionally pass a focus area as an argument.
+Interviews you about the current spec until it passes a definition of clear, with no fixed limit on questions, and encodes your answers back into `spec.md` the same way `/speckit.clarify` does. It looks up facts in the repository itself and leaves only the decisions to you. Optionally pass a focus area as an argument.
+
+- **The questions come from the spec.** It lists every actor, user story, requirement, entity, integration, and assumption the spec names, and asks of each one who, what, when, how much, what if, how it is tested, and what is out of scope. Other specs, the catalog, and the code are sources of facts and of conflicts, never of questions of their own.
+- **Each answer opens the questions it creates.** After each round it looks for the decisions your answers created, and reads the updated spec again.
+- **Rounds.** Each round asks at most 10 questions whose prerequisites are settled, the riskiest first, each with a recommended answer. A decision about price, policy, legal terms, or scope is marked ⚠️ and needs an answer in your own words. Pass `one at a time` to get one question per round.
+- **When it ends.** Only when the spec passes the ten checks of its definition of clear, a reread of the spec alone finds nothing two developers would build differently, and you confirm. You can stop it earlier, and it reports what remains open.
+- **It resumes.** It keeps the tree in `clarify-tree.md` in the feature folder, so running it again continues where it stopped.
 
 ```text
 /speckit.clarify-deep Focus on the task card behavior: status changes, comment limits, and who can be assigned.
