@@ -143,7 +143,9 @@ class TestParseIntegrationOptionsEqualsForm:
     ],
 )
 def test_script_help_includes_python_variant(args):
-    result = runner.invoke(app, args)
+    # At 80 columns Rich wraps "sh, ps, or py" across two rows of the options
+    # table, so the check depends on the terminal unless the width is fixed.
+    result = runner.invoke(app, args, env={"COLUMNS": "200"})
 
     assert result.exit_code == 0
     assert "sh, ps, or py" in " ".join(strip_ansi(result.output).split())
