@@ -2,6 +2,13 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.5.7] - 2026-11-09
+
+### Changed
+
+- feat(clarify-deep): keep interviewing until the spec passes a definition of clear
+- chore: begin 1.5.7.dev0 development
+
 ## [1.5.6] - 2026-11-08
 
 ### Changed
