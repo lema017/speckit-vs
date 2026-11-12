@@ -128,7 +128,7 @@ When `review` seals a delta, or `prepare` is `ready`, or `scaffold` lists a capa
 
 [Graphify](https://github.com/Graphify-Labs/graphify) answers where code is and what a change affects. It never decides what the requirement is. It is a dependency of `specify`, so it lives in the environment of `specify` and not on your `PATH`. The gate looks beside the real `specify` first, then on `PATH`.
 
-`context`, `clarify-context`, `locate` and `bootstrap` use it, and stop if it is missing: they show the command to reinstall `specify` without running it. `check` and `fold` do not use it.
+`context`, `clarify-context`, `locate` and `bootstrap` use it, and stop if it is missing: they show the command to reinstall `specify` without running it. `fold` uses `touched` and `anchors`, and goes on without the graph if it does not answer. `check` does not use it.
 
 Everything goes through one door, with no LLM keys in its environment, and only `update`, `explain`, `affected` and `query` reach the tool:
 
@@ -142,12 +142,21 @@ python3 .specify/extensions/capabilities/scripts/python/capabilities.py graph st
 | `graph explain <anchor or name> [--all]` | The node and its connections |
 | `graph affected <anchor> [--depth N]` | What calls or uses it. If the name repeats it warns: confirm in the code |
 | `graph query <english words>` | Nodes around technical English keywords. Spanish or a whole question finds almost nothing |
-| `graph anchors [--capability <name>]` | Whether each `Code` anchor of the catalog still exists: `unique`, `ambiguous`, `by-name`, `missing` |
+| `graph anchors [--capability <name>]` | Whether each anchor of the catalog still exists: `unique`, `ambiguous`, `by-name`, `missing`. It reads each `Code` line, and each row of `## Anchors` that names a file |
+| `graph touched [--onto <branch>]` | The code files the branch changed since the base, with the symbols that hold the changed lines. `fold` offers them as `Code` and `## Anchors` |
+
+`touched` compares the working tree with the merge base, so it counts what is committed and what is not, and untracked files whole. The base is `--onto`, `base_branch` in the config, or `main`, as `rebase` reads it.
+
+- **A changed line goes to the symbol that holds it**: the last one in its file that starts at or before that line. A symbol that starts inside added lines is listed too. The graph gives where a symbol starts and not where it ends, so a line after the end of a method lands in that method. `fold` confirms each one in the code.
+- **Up to 15 symbols per file**, those with the most changed lines. `omitted` says how many were left out.
+- **The file itself** stands for the lines before its first symbol, such as imports and constants.
+- **`other`** lists changed files the graph does not model, such as tests and configuration. The catalog, the features and `.specify/` are never listed.
+- **Without the graph** it exits with 6 and still lists the changed lines of each file.
 
 - Every read runs `update` first, because `query` does not say when the graph is old. In a repository of 350 source files that took 2 s with no changes and 44 s after a change. If it fails, nothing is read from the old graph.
 - It writes `graphify-out/`, which ignores itself, and `.graphifyignore` if you have none. No tracked file changes.
 - `by-name` means the graph has no such node, but the file contains the name: Graphify does not model a Java `static` field, for instance.
-- Without Graphify, `status` says so and `anchors` checks by file and name, both with exit code 0. `explain`, `affected`, `query` and `update` exit with 6.
+- Without Graphify, `status` says so and `anchors` checks by file and name, both with exit code 0. `explain`, `affected`, `query`, `update` and `touched` exit with 6.
 - In a project with no code, `update` and the reads exit with 6 and `reason: no-code`. That is not a failure.
 - `update`, `explain`, `affected` and `query` attempt no connection: a test intercepts the sockets of the real tool. They do load network modules, through `graphify.security`.
 - The graph leaves tests out, so the tests a change reaches come from the catalog.
