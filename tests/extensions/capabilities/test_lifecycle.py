@@ -224,6 +224,18 @@ def test_s1_keep_and_drop_reach_ready(s1_repo, tmp_path, choice):
     assert out["states"][ACCESO] == ("ready" if choice == "keep" else "no-rule-change")
 
 
+def edit_code(repo, path, *edits):
+    """Edit a file of the sample project and drop Python's bytecode caches.
+
+    These edits keep the file's size. If pytest compiled the file in the same second, Python
+    would take the cached bytecode as current and run the old code.
+    """
+    for old, new in edits:
+        repo.replace(path, old, new)
+    for cache in list(repo.path.rglob("__pycache__")):
+        shutil.rmtree(cache)
+
+
 def test_s1_adopt_blocks_until_the_code_changes_and_fold_observes_it_again(s1_repo, tmp_path):
     repo = copied(s1_repo, tmp_path)
     merge_conflicted(repo, "001-acceso", "main", False)
@@ -235,11 +247,11 @@ def test_s1_adopt_blocks_until_the_code_changes_and_fold_observes_it_again(s1_re
     assert rc == 1 and hard_with(out, "R-login-lockout", "state is unverified")
     assert out["states"][ACCESO] != "ready"
 
-    repo.replace("src/auth/lockout.py", "MAX_FAILURES = 5", "MAX_FAILURES = 3")
-    repo.replace("src/auth/lockout.py", "LOCK_MINUTES = 15", "LOCK_MINUTES = 30")
-    repo.replace("tests/test_lockout.py", "range(4)", "range(2)")
-    repo.replace("tests/test_lockout.py", "minutes=14, seconds=59", "minutes=29, seconds=59")
-    repo.replace("tests/test_lockout.py", "assert not policy.is_locked(T0 + timedelta(minutes=15))", "assert not policy.is_locked(T0 + timedelta(minutes=30))")
+    edit_code(repo, "src/auth/lockout.py", ("MAX_FAILURES = 5", "MAX_FAILURES = 3"), ("LOCK_MINUTES = 15", "LOCK_MINUTES = 30"))
+    edit_code(
+        repo, "tests/test_lockout.py", ("range(4)", "range(2)"), ("minutes=14, seconds=59", "minutes=29, seconds=59"),
+        ("assert not policy.is_locked(T0 + timedelta(minutes=15))", "assert not policy.is_locked(T0 + timedelta(minutes=30))"),
+    )
     draft = repo.read(LOGIN + "/implementation.md").replace("- State: unverified", "- State: conforming")
     draft = draft.replace("15 minutos al quinto fallo", "30 minutos al tercer fallo")
     repo.folded(ACCESO, draft)
