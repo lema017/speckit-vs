@@ -19,6 +19,7 @@ $ARGUMENTS
 - Do not edit the spec, the delta or the catalog. Do not run `speckit.capabilities.review` or `speckit.capabilities.fold`. Do not commit. Do not install anything.
 - Do not settle anything for the user. A conflict or a rule that is not confirmed is a question, never an answer.
 - A rule with `inferred: true`, or with a `state` other than `conforming`, is never a settled fact. Nobody approved the first; the second does not match the code, or nobody verified it.
+- A rule listed in `designed` is a business decision already taken, and it has no code yet. It is a settled fact: do not ask it. Proposing to change it is a `⚠️ Business decision` and needs the PO's own words.
 - Copy the text of a rule literally, whatever language it is in.
 - Say where each line comes from: the catalog, the graph or the code. The graph says where code is and what connects to it, never what the requirement is.
 
@@ -48,6 +49,7 @@ $ARGUMENTS
 
    Settled facts: do not ask these
    - <rule id> (<capability>, <state>, <origin>): "<literal text>"
+   - <rule id> (<capability>, designed, <origin>): "<literal text>". Approved, not built yet
 
    Conflicts with approved rules: ask, never settle
    - <what the spec says, with its FR or line> against <rule id>: "<literal text>". <Whether the delta names the rule>

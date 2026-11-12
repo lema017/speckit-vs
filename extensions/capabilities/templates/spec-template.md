@@ -144,6 +144,15 @@
     - Links: FR-003, US1/AC2
 
   ADDED uses "From: (none)". REMOVED uses "To: (none)" and "Replaced-By: <rule id or none>".
+  A rule marked [designed] is approved and not built: build it with IMPLEMENTED, with the
+  catalog's text in both From and To. review writes the catalog's text there and says so.
+
+    ### IMPLEMENTED R-login-lockout
+    - Capability: login
+    - From: <the [designed] rule's text, literal>
+    - To: <the same text>
+    - Links: FR-007
+
   A new capability also needs "### NEW-CAPABILITY <name>" with "- Covers: <business language>".
   If no rule changes, write one line instead: Capabilities: none — <reason>
   Keep this block as is. The headings above are examples and do not count.

@@ -14,3 +14,6 @@ allow_manual_evidence: false
 # Allow a feature with open tasks to be integrated while the catalog has not
 # folded its delta yet. When false, a feature is integrated complete.
 allow_partial_features: false
+# The branch that `rebase` and `defer` rebuild the catalog from when you do not
+# pass --onto. Empty means main. Example: origin/develop
+base_branch:

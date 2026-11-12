@@ -19,12 +19,40 @@ specs/_capabilities/
 │   ├── spec.md                   # approved rules, written only by fold
 │   ├── implementation.md         # what the code does, its state, code and tests
 │   └── history.md                # changes and retired rules, append-only
-└── _changes/20261104-fix-expiry/ # rule changes made outside specify
+└── _changes/20261104-fix-expiry/ # rule changes and designs made outside specify
 ```
 
 - `spec.md` holds the approved requirement. `implementation.md` holds what was observed. If they differ, neither overwrites the other: the rule is `discrepant` and CI blocks.
 - Every feature spec declares a `## Capability Delta` with `From` and `To`, literal. `fold` copies `To` to the catalog by script.
 - Under the catalog, capability directories match `^[a-z][a-z0-9-]*$`, records under `_changes/` are `YYYYMMDD-slug`, and `plan.md`, `tasks.md` and `README.md` are not allowed at any depth.
+
+## Rules designed before they are built
+
+A rule can be approved before its code exists. A design record under `_changes/` declares it with `DESIGNED`, and `publish-design` writes it to the catalog with the `[designed]` mark:
+
+```bash
+python3 .specify/extensions/capabilities/scripts/python/capabilities.py publish-design --change specs/_capabilities/_changes/20261111-design-login
+```
+
+```markdown
+- **R-login-lockout** [designed]: Tras 5 intentos fallidos seguidos, la cuenta se bloquea 15 minutos. (specs/_capabilities/_changes/20261111-design-login)
+```
+
+| Operation | Who declares it | What it does |
+|---|---|---|
+| `DESIGNED` | A design record, only | Adds a `[designed]` rule (`From: (none)`) or redesigns one (`From` is its current text). It never touches a built rule |
+| `REMOVED` | A design record, for a `[designed]` rule | Retires it. A spec cannot: to leave a designed rule out, run `defer` (below) |
+| `IMPLEMENTED` | A spec | Builds the rule as designed: `From` and `To` are both the catalog's text. `fold` publishes it with its code and tests, and the mark goes |
+| `MODIFIED` | A spec | Builds the rule with another text. That is a business decision, and `clarify-context` says so |
+
+- `delta-block --implement R-a R-b` prints the `IMPLEMENTED` blocks with the catalog's text, for a spec to copy. `context` uses it.
+- A spec does not add a rule over a `[designed]` one, nor validate it.
+- Before the lock exists, `review` fixes an `IMPLEMENTED` block with a copy slip, where `To` equals `From` or the catalog's text: it writes the catalog's text in both and reports `normalized`. Any other difference is a conflict.
+- A design record declares only `NEW-CAPABILITY`, `DESIGNED` and `REMOVED` of `[designed]` rules. `fold` does not take it and points to `publish-design`, which writes under the same publication lock. `recover` finishes it if it was interrupted.
+
+**States.** The index gives each capability one: `designed` when all its rules are `[designed]`, `partial` when some are, `consolidated` when none are, and `retired` when it has no rules. An older row with no rules that says `consolidated` is accepted as it is.
+
+**Format seal.** With the first `[designed]` rule, `index.md` gets `<!-- capability-catalog: 2 -->` under its title. From 0.3.0, a script that finds a newer format stops and asks for `specify upgrade`. `check` fails when the catalog holds `[designed]` rules without the seal, and `index --rebuild` writes it. A catalog with no `[designed]` rule stays as it was.
 
 ## Hooks
 
@@ -47,6 +75,32 @@ Prompts run hooks in install order, so install `capabilities` before `git` if yo
 | `speckit.capabilities.locate` | Answers where a behaviour lives, which change set it and which tests cover it, from the catalog first. Says when part of the answer comes from the code | Nothing of yours. The graph leaves its own untracked files (see below) |
 
 The script has subcommands for them: `scaffold --capability <name> --covers "<one line>"` and `locate [--capability <name>]`. `clarify-context [--change <dir>]` gives the hook the feature, its parsed delta and every capability, and ends with exit code 0 when there is no feature, because `clarify` reports that itself.
+
+## Two branches on one capability
+
+When two branches change the same capability, git merges the catalog's files line by line. The result can have conflict markers, or be clean and still be wrong, for example with two rows for one capability in the index. `review`, `prepare`, `fold` and `check` stop at the markers. You never resolve the catalog by hand: `rebase` builds it again for one change.
+
+```bash
+python3 .specify/extensions/capabilities/scripts/python/capabilities.py rebase --change specs/002-oauth
+```
+
+- **Sides.** During a merge, `HEAD` and `MERGE_HEAD`; after a merge commit, its two parents; otherwise `HEAD` and the base. The branch is the side that holds the change's document. The base is `--onto <ref>`, or `base_branch` in the config, or `main`.
+- **What it builds.** It starts from the base's catalog files and applies this change's delta on top. From the branch it takes what this change wrote in `implementation.md`: Rule Status, Retirement Evidence, Approach, Decisions and Anchors. It never reads the catalog from the working tree, so it does not matter how git left it.
+- **When the base changed a rule.** It stops with exit code 3, both texts and the choices for each rule. Run it again with one per rule:
+
+| Choice | What happens |
+|---|---|
+| `--adopt R-x` | Only when the base redesigned a `[designed]` rule. The entry becomes `IMPLEMENTED` of the base's text, and the rule stays `unverified` until the code does it and `fold` runs again. The `FR` links are noted, because the spec may still say the old text |
+| `--keep R-x` | The entry becomes `MODIFIED` from the base's text to this change's, and a `REMOVED` retires the base's text. It is a business decision for whoever approves the product |
+| `--drop R-x [--reason "…"]` | The rule leaves this change, and its links are noted as out of scope. If it was the only rule, the delta says `Capabilities: none — <reason>` |
+
+- When the delta changes, the lock is stamped again with the same seal, and fold's observations of the rules that stay are kept.
+- It does not stage anything. Run `git add specs/_capabilities <the change>` and finish the merge.
+- `--keep` of a rule the base retired is refused, because retired ids are not reused. Drop it, and add a new rule with `ADDED` if the spec still needs one.
+
+`defer --change <spec> R-a R-b [--reason "…"]` takes rules out of a spec's delta. A `[designed]` rule stays designed for a later spec. If the spec was already folded, its catalog files are built again from `merge-base(HEAD, base)`, with the working tree as the branch.
+
+`index --rebuild` writes `index.md` again from the capability directories, after a merge left it with markers or with two rows for one capability. It keeps the first row of each, recalculates its state, drops linked rows whose directory is gone, keeps `planned` rows, adds the missing directories and the seal.
 
 ## The block for agents
 
@@ -128,6 +182,8 @@ In a merge queue, add `--combined`: a changed anchored file is then revalidated 
 | Observation | With no delta: a rule's state changes while this change touches its anchored files, or a file anchored to a rule no longer exists, or that rule's mapped tests do not pass |
 | Retirement | A retired rule has no evidence (see below) |
 | Discovery | A new `spec.md` under `feature_roots`, or with `FR-###` lines anywhere, has no delta |
+| Design | A `[designed]` mark no `DESIGNED` entry set, a `DESIGNED` outside a design record, a spec that retires a `[designed]` rule or leaves it `[designed]` after `IMPLEMENTED`, or `[designed]` rules without the format seal |
+| Merge markers | git's conflict markers are still in the change's document or in the catalog |
 
 **Retiring a rule.** With `Replaced-By: R-x`, `R-x` must exist, be `conforming` and pass its tests. With `Replaced-By: none`, `implementation.md` needs a `## Retirement Evidence` block with at least one passing test that proves the behaviour is gone. `discrepant` there means it is still present, and blocks.
 
@@ -171,6 +227,9 @@ A report that names no time zone, or no time, is judged by when the file was wri
 
 ## Known limits
 
+- A branch that still has 0.2.0 does not read `[designed]`. Once the base has one, its `check` fails with `line in ## Rules is not a rule`, and `Provenance` fails on every rule built with `IMPLEMENTED`. Merging the base brings the new script and the new catalog together: merge the base into open branches after you upgrade, and keep "Require branches to be up to date".
+- `rebase` rebuilds one change per capability. If the branch also folded another change into the same capabilities, it refuses with exit code 2: merge them one at a time.
+- `check` takes any `spec.md` that carries the delta marker as a change, also one that git does not track yet.
 - `fold` on a feature that was already delivered rewrites its lock, and `check` rejects it with the way out: restore the lock with `git checkout`, and declare a new change to change a rule. It fails closed, but `fold` does not stop you first, because it does not know the base.
 - The `init` step of a workflow has no way to opt out of the default install. Use `specify extension remove capabilities` afterwards.
 

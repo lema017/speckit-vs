@@ -29,6 +29,7 @@ MODULES = [
     "test_fold_and_check.py",
     "test_discovery_tools.py",
     "test_report_languages.py",
+    "test_lifecycle.py",
 ]
 GATE_MODULES = ["test_graph_gate.py"]
 CLARIFY_MODULES = ["test_clarify_context.py"]
@@ -172,6 +173,59 @@ MUTANTS += [
     ("comment-is-a-field", 're.sub(r"<!--.*?-->", "", raw, flags=re.S).splitlines()', "raw.splitlines()"),
     ("placeholder-title-matches", 'if not "".join(TITLE_SLOT.split(parts[-1])).strip():', "if False:"),
     ("template-literal-slot", r'''|\$\{[^{}]*\}|''', "|"),
+]
+
+MUTANTS += [
+    # F1, the lifecycle: [designed], DESIGNED and IMPLEMENTED.
+    ("designed-anywhere", "    if not is_record(source):\n        return [\"DESIGNED", "    if False:\n        return [\"DESIGNED"),
+    ("design-record-mixes-operations", 'return ["a design record declares only', 'return [] and ["a design record declares only'),
+    ("publish-design-takes-any-op", '        if others:\n            return emit({"status": "invalid", "errors": ["publish-design publishes', '        if False:\n            return emit({"status": "invalid", "errors": ["publish-design publishes'),
+    ("publish-design-retires-built", 'if entry["op"] == "REMOVED" and rule is not None and not rule["designed"]:', "if False:"),
+    ("fold-publishes-design", "if is_design(delta) or (design_capable(delta, source) and retires_designed(root, delta)):", "if False:"),
+    ("designed-over-built", '    if not rule["designed"]:\n        return "the rule is %s', '    if False:\n        return "the rule is %s'),
+    ("implemented-on-built-rule", 'conflicts.append(where + ": the rule is not [designed]; a spec changes an implemented rule with MODIFIED")', 'actions.append((entry, "apply"))'),
+    ("implemented-applies-stale-text", 'elif rule["designed"] and rule["text"] == entry["from"]:', 'elif rule["designed"]:'),
+    ("added-over-designed", 'elif rule is not None and rule["designed"] and entry["op"] in ("ADDED", "INFERRED", "VALIDATED"):', "elif False:"),
+    ("spec-retires-designed", 'elif rule is not None and rule["text"] == entry["from"] and rule["designed"] and not designer:', "elif False:"),
+    ("implemented-applied-while-designed", '        if rule["designed"] != (op == "DESIGNED"):\n            return False', "        pass"),
+    ("base-designed-counts-as-delivered", ' and base_says["designed"] == (op == "DESIGNED")', ""),
+    ("implemented-owes-no-evidence", 'elif entry["op"] in ("ADDED", "MODIFIED", "IMPLEMENTED"):', 'elif entry["op"] in ("ADDED", "MODIFIED"):'),
+    ("retiring-designed-needs-evidence", 'if entry["op"] == "DESIGNED" or (entry["op"] == "REMOVED" and self.was_designed(entry)):', 'if entry["op"] == "DESIGNED":'),
+    ("spec-retires-designed-in-check", '                if entry["op"] == "REMOVED" and not design_capable(delta, source):', "                if False:"),
+    ("provenance-ignores-designed", '                if rule["designed"] != (entry["op"] == "DESIGNED"):\n                    return "origin', '                if False:\n                    return "origin'),
+    ("reverse-ignores-designed", '                if after["designed"] != (entry["op"] == "DESIGNED"):\n                    continue', "                pass"),
+    ("base-retired-says-now-none", 'elif says is None and retired_by and op != "REMOVED":', "elif False:"),
+    # Conflict markers.
+    ("markers-not-seen", "return bool(text) and bool(CONFLICT_SIDE.search(text))", "return False"),
+    ("lone-equals-is-a-marker", r'CONFLICT_SIDE = re.compile(r"^(?:<{7}|>{7}|\|{7})(?: .*)?$", re.M)', r'CONFLICT_SIDE = re.compile(r"^(?:<{7}|>{7}|\|{7}|={7})(?: .*)?$", re.M)'),
+    ("fold-ignores-catalog-markers", "        files = conflicted(root, rels)\n", "        files = []\n"),
+    ("check-ignores-catalog-markers", "        for rel in conflicted(self.root, files):\n", "        for rel in []:\n"),
+    ("check-ignores-delta-markers", "        if has_conflict(text):\n            self.hard.append", "        if False:\n            self.hard.append"),
+    # review normalizes IMPLEMENTED, only before the first seal and only a slip in the copy.
+    ("review-does-not-normalize", "text, normalized = normalize_implemented(root, text, source) if lock is None else (text, [])", "text, normalized = text, []"),
+    ("review-normalizes-after-the-seal", "text, normalized = normalize_implemented(root, text, source) if lock is None else (text, [])", "text, normalized = normalize_implemented(root, text, source)"),
+    ("normalize-takes-a-new-text", 'if entry.get("from") in (None, "(none)") or entry.get("to") not in (entry.get("from"), rule["text"]):', "if False:"),
+    # The format seal and the index.
+    ("newer-format-accepted", "    if found > CATALOG_FORMAT:\n", "    if False:\n"),
+    ("seal-never-written", "    return with_seal(text) if designed else text\n", "    return text\n"),
+    ("seal-not-required", "catalog_format(index) < CATALOG_FORMAT:", "catalog_format(index) < 0:"),
+    ("index-states-unchecked", "        self.check_index_states(index)\n", "        pass\n"),
+    ("legacy-row-rejected", 'if said != expected and not (not rules and said == "consolidated"):', "if said != expected:"),
+    ("rebuild-keeps-duplicate-rows", "            if name in done:\n                continue\n", "            if False:\n                continue\n"),
+    ("delta-block-any-rule", '        elif not rule["designed"]:\n            errors.append(', "        elif False:\n            errors.append("),
+    # rebase and defer.
+    ("rebase-reads-the-working-tree", 'return lambda rel: git(root, "show", "%s:%s" % (rev, rel)) if rev else None', "return lambda rel: read(root / rel)"),
+    ("rebase-branch-is-always-head", "if not holds_change(root, first, source) and holds_change(root, second, source):", "if False:"),
+    ("rebase-ignores-the-merge-commit", 'elif resolve_rev(root, "HEAD^2"):', "elif False:"),
+    ("rebase-index-from-the-branch", '    index = base(INDEX) or template("capability-index.md")', '    index = branch(INDEX) or template("capability-index.md")'),
+    ("rebase-leaves-dropped-files", "                plan[rel] = base(rel)\n", "                pass\n"),
+    ("rebase-applies-an-unfolded-change", 'mine = [action for action in actions if action[0]["capability"] == capability] if folded else []', 'mine = [action for action in actions if action[0]["capability"] == capability]'),
+    ("adopt-keeps-the-old-observation", 'block = re.sub(r"^- State: .*$", "- State: unverified", block, flags=re.M)', "block = block"),
+    ("keep-on-a-retired-rule", 'if said is not None and said["text"] != entry["to"]:', 'if said is None or said["text"] != entry["to"]:'),
+    ("rebase-does-not-reseal", '                plan[source + "/" + LOCK_NAME] = dumps(relocked(lock, new_text, new_delta, source, {entry["id"] for entry in dropped}))', "                pass"),
+    ("rebase-loses-other-folds", '        if others:\n            raise CapError("this branch also folded', '        if False:\n            raise CapError("this branch also folded'),
+    ("defer-leaves-the-catalog", "plan, conflicts = rebased_plan(root, source, new_delta, touched, start, here, start, True)", "plan, conflicts = {}, []"),
+    ("defer-rebuilds-from-the-working-tree", "            start = reader(root, point)\n", "            start = here\n"),
 ]
 
 # The door to Graphify. Each one is checked with test_graph_gate.py alone.

@@ -1,0 +1,10 @@
+from src.auth.oauth import OAuthLogin
+
+
+def test_supports_google_facebook_github():
+    login = OAuthLogin()
+    assert all(login.supports(p) for p in ("google", "facebook", "github"))
+
+
+def test_rejects_other_providers():
+    assert not OAuthLogin().supports("twitter")
