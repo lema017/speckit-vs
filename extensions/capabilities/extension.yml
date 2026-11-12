@@ -3,7 +3,7 @@ schema_version: "1.0"
 extension:
   id: capabilities
   name: "Capability Catalog"
-  version: "0.3.0"
+  version: "0.4.0"
   description: "Keeps the approved behaviour of each capability, its origin, its code and its tests discoverable across sessions."
   author: lema017
   repository: https://github.com/lema017/speckit-vs

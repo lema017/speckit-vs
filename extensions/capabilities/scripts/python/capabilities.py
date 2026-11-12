@@ -2805,7 +2805,7 @@ def dispatch(args, root):
 
 
 def run_graph(args):
-    """The graph has its own door, and check and fold do not use it."""
+    """The graph has its own door. check and the fold subcommands do not use it: the fold command runs it."""
     gate = Path(__file__).resolve().with_name("cap_graph.py")
     return subprocess.run([sys.executable, "-I", "-S", str(gate), *args], check=False).returncode
 

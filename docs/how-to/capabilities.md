@@ -95,9 +95,10 @@ The check needs a test report. It reads what pytest, Maven Surefire, Gradle, Jes
 - `context` and `clarify-context` use it to find capabilities that their `covers` text did not reveal, and `clarify-context` to show what a change reaches beyond its delta.
 - `locate` uses it for what the catalog does not answer: it follows an anchor or a name, or looks around technical English keywords.
 - `bootstrap` builds it first, and takes its groupings only as hints.
-- `check` and `fold` do not use it, so CI does not need it.
+- `fold` uses it to list the symbols that hold the lines the change touched, as candidates for each rule's code and anchors, and then to check the anchors it wrote.
+- `check` does not use it, so CI does not need it.
 
-If Graphify is missing, these commands stop and show the command to reinstall `specify`. The agent installs nothing. A project with no code yet is reported and the command goes on, and so is a graph that cannot be built, with a visible warning and a search with `rg` instead. `specify check` reports the version and does not say the CLI is ready without it.
+If Graphify is missing, these commands stop and show the command to reinstall `specify`, except `fold`, which warns and goes on without it. The agent installs nothing. A project with no code yet is reported and the command goes on, and so is a graph that cannot be built, with a visible warning and a search with `rg` instead. `specify check` reports the version and does not say the CLI is ready without it.
 
 The first use writes `graphify-out/`, which ignores itself, and a `.graphifyignore` if you have none. No tracked file changes. Every read updates the graph first: in a repository of 350 source files that took 2 seconds with no changes and 44 seconds after a change. The graph leaves tests out, so the tests a change reaches come from the catalog.
 

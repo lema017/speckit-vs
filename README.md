@@ -333,8 +333,9 @@ Each answer says which part came from the graph or the code.
 | `clarify-context`, before the first question | The same, plus what each rule touched reaches in the code |
 | `locate` | When the catalog does not answer |
 | `bootstrap` | Builds it first, and takes its groupings only as hints |
+| `fold`, after implement | Lists the symbols that hold the changed lines, as candidates for each rule's code and anchors, and then checks the anchors it wrote. It goes on without the graph |
 
-`check` and `fold` do not use it, so your CI does not need it.
+`check` does not use it, so your CI does not need it.
 
 - **It comes with the install:** version `0.9.102`, always the same one, in the
   environment of `specify` and not on your `PATH`. It adds about 116 MB and 30 packages.

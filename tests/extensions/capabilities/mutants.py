@@ -265,6 +265,25 @@ GATE_MUTANTS = [
     ("gate-read-error-escapes", 'except OSError as error:\n        return degraded("read-failed"', 'except ZeroDivisionError as error:\n        return degraded("read-failed"'),
     ("gate-anchor-symbols-cut", 'path, *symbols = ref.split("::")', 'path, *symbols = ref.split("::")[:2]'),
     ("gate-unquoted-anchors-dropped", 'QUOTED.findall(line) or [part.strip() for part in line.split(",") if part.strip() not in ("", "none")]', "QUOTED.findall(line)"),
+    ("gate-anchors-rows-not-read", '                found.setdefault(ref, (path.parent.name, "anchors"))', "                pass"),
+    # touched: where the change is in the code.
+    ("touched-symbol-below-holds-the-line", "at = bisect.bisect_right(starts, line) - 1", "at = bisect.bisect_right(starts, line)"),
+    ("touched-new-symbols-not-listed", "            if row[1] and low <= row[0] <= high:\n                held.setdefault(row, set())", "            if False:\n                held.setdefault(row, set())"),
+    ("touched-no-cap-per-file", "[:PER_FILE]", "[:]"),
+    ("touched-cap-keeps-the-first", 'key=lambda s: (-s["changed"], s["line"], s["ref"]))[:PER_FILE]', 'key=lambda s: (s["line"], s["ref"]))[:PER_FILE]'),
+    ("touched-catalog-is-code", "        if name.startswith(NOT_CODE):\n            continue\n        if not (root", "        if not (root"),
+    ("touched-untracked-dropped", 'git_names(root, "ls-files", "--others", "--exclude-standard", "-z")', "[]"),
+    ("touched-uncommitted-dropped", '"diff", "--name-only", "--no-renames", "-z", base, "--")', '"diff", "--name-only", "--no-renames", "-z", base, "HEAD", "--")'),
+    ("touched-deletion-not-counted", "            changed.add(max(start, 1))", "            pass"),
+    ("touched-deleted-file-not-named", "            deleted.append(name)\n", "            pass\n"),
+    ("touched-config-base-ignored", "                ref = match.group(1).strip(\"\\\"'\").strip()", "                pass"),
+    ("touched-dash-base-reaches-git", '    if ref.startswith("-"):\n        # git would read it', '    if False:\n        # git would read it'),
+    ("touched-file-lines-go-to-a-symbol", "row = rows[at] if at >= 0 and rows[at][1] else None", "row = rows[max(at, 0)]"),
+    ("touched-class-not-named", '            symbol["class"] = row[3]', "            pass"),
+    ("touched-reads-an-old-graph", "    if state is None:\n        return degraded(why, base=ref", "    if False:\n        return degraded(why, base=ref"),
+    ("touched-no-lines-without-the-graph", "return degraded(why, base=ref, files=plain, deleted=deleted)", "return degraded(why, base=ref)"),
+    ("touched-unmodelled-files-dropped", "            other.append(item)\n", "            pass\n"),
+    ("touched-package-node-is-a-symbol", ' or node.get("type") == "package"', ""),
 ]
 # What clarify gets before its first question, checked with its own module alone.
 CLARIFY_MUTANTS = [

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import posixpath
 import shutil
 import stat
 import subprocess
@@ -15,7 +16,7 @@ import pytest
 
 from specify_cli._graphify import REINSTALL_COMMAND
 
-from .conftest import PYTHON, ROOT, SCRIPT
+from .conftest import PYTHON, ROOT, SCRIPT, Repo
 
 GATE = SCRIPT.with_name("cap_graph.py")
 REINSTALL = "uv tool install specify-cli --force --from git+https://github.com/lema017/speckit-vs.git"
@@ -451,12 +452,273 @@ def test_a_graph_format_not_validated_degrades_with_a_warning(world, schema):
     assert any("format not recognised" in warning for warning in out["warnings"])
 
 
+def test_anchors_read_the_rows_of_anchors_that_name_a_file(world):
+    world.install()
+    world.write(JAVA, SOURCE)
+    world.write(
+        "specs/_capabilities/login/implementation.md",
+        "## Rule Status\n\n### R-a\n- Code: `%s::.isExpired()`\n\n## Anchors\n| Anchor | Kind | What it does |\n|---|---|---|\n"
+        "| `%s::SessionService` | class | Keeps the sessions |\n| `%s::TIMEOUT` | constant | The limit |\n| `GET /session` | endpoint | Reads a session |\n"
+        "| `src/Gone.java::Gone` | class | Was removed |\n\n## Decisions\n| `%s::Nothing` | not an anchor |\n" % (JAVA, JAVA, JAVA, JAVA),
+    )
+    _, out = world.run("anchors", "--capability", "login")
+    rows = {row["ref"]: (row["found"], row["in"]) for row in out["anchors"]}
+    assert rows == {
+        JAVA + "::.isExpired()": ("unique", "code"),
+        JAVA + "::SessionService": ("unique", "anchors"),
+        JAVA + "::TIMEOUT": ("by-name", "anchors"),
+        "src/Gone.java::Gone": ("missing", "anchors"),
+    }
+    assert out["missing"] == ["src/Gone.java::Gone"]
+
+
+# ---------------------------------------------------------------- touched: the symbols that hold the changed lines
+
+BILLING = "src/billing.py"
+
+
+def functions(count, change=None):
+    """Two lines of imports, then ``count`` functions of five lines: f<i> starts at line 3 + 5 * i."""
+    lines = ["import os", ""]
+    for i in range(count):
+        lines += ["def f%d():" % i, "    value = %s" % ((change or {}).get(i, "0")), "    return value", "", ""]
+    return "\n".join(lines) + "\n"
+
+
+def graph_of(files):
+    """A graph as Graphify writes it: the node of each file at L1, then its symbols at their first line."""
+    nodes, links = [], []
+    for path, symbols in files.items():
+        nodes.append({"id": path, "label": posixpath.basename(path), "source_file": path, "source_location": "L1"})
+        for line, label, owner in symbols:
+            ident = "%s:%s:%d" % (path, label, line)
+            nodes.append({"id": ident, "label": label, "source_file": path, "source_location": "L%d" % line})
+            if owner:
+                links.append({"source": "%s:%s" % (path, owner), "target": ident, "relation": "method"})
+                if not any(node["id"] == "%s:%s" % (path, owner) for node in nodes):
+                    nodes.append({"id": "%s:%s" % (path, owner), "label": owner, "source_file": path, "source_location": "L%d" % (line - 1)})
+    return {"directed": False, "multigraph": False, "graph": {"schema_version": 1, "graphify_version": PINNED}, "nodes": nodes, "links": links}
+
+
+def billing_graph(count, extra=()):
+    return graph_of({BILLING: [(3 + 5 * i, "f%d()" % i, None) for i in range(count)] + list(extra)})
+
+
+def committed(world, files, graph):
+    """A project on main with ``files`` committed, and the graph the stand-in for Graphify will write."""
+    repo = Repo(world.root)
+    repo.git("init", "-q", "-b", "main", ".")
+    for rel, text in files.items():
+        repo.write(rel, text)
+    repo.commit("base")
+    world.graph.write_text(json.dumps(graph), encoding="utf-8")
+    return repo
+
+
+def symbols(out, path=BILLING):
+    return [(s["ref"], s["found"]) for item in out["files"] if item["file"] == path for s in item["symbols"]]
+
+
+def test_touched_lists_only_the_function_whose_line_changed(world):
+    world.install()
+    committed(world, {BILLING: functions(12)}, billing_graph(12))
+    world.write(BILLING, functions(12, {5: "1"}))
+    rc, out = world.run("touched")
+    assert rc == 0 and out["status"] == "ok" and out["base"] == "main"
+    assert symbols(out) == [(BILLING + "::f5", "unique")]
+    assert out["files"][0]["lines"] == ["29"] and out["files"][0]["omitted"] == 0
+    assert world.calls() == ["update .", "--version"]
+
+
+def test_a_new_function_is_listed_by_where_it_starts(world):
+    world.install()
+    committed(world, {BILLING: functions(3)}, billing_graph(3, [(18, "added()", None)]))
+    world.write(BILLING, functions(3) + "def added():\n    return 1\n")
+    _, out = world.run("touched")
+    assert symbols(out) == [(BILLING + "::added", "unique")]
+
+
+def test_symbols_that_start_on_one_new_line_are_all_listed(world):
+    graph = billing_graph(2)
+    graph["nodes"] += [{"id": "a", "label": "Added", "source_file": "src/added.ts", "source_location": "L1"}, {"id": "r", "label": ".run()", "source_file": "src/added.ts", "source_location": "L1"}]
+    world.install()
+    committed(world, {BILLING: functions(2)}, graph)
+    world.write("src/added.ts", "export class Added { run() { return 1 } }\n")
+    _, out = world.run("touched")
+    assert symbols(out, "src/added.ts") == [("src/added.ts::.run()", "unique"), ("src/added.ts::Added", "unique")]
+
+
+def test_the_lines_before_the_first_symbol_belong_to_the_file(world):
+    world.install()
+    committed(world, {BILLING: functions(3)}, billing_graph(3))
+    world.write(BILLING, functions(3).replace("import os", "import sys"))
+    _, out = world.run("touched")
+    assert symbols(out) == [(BILLING, "unique")]
+
+
+def test_the_lines_before_the_first_symbol_belong_to_the_file_when_the_graph_has_no_node_for_it(world):
+    graph = billing_graph(3)
+    graph["nodes"] = [node for node in graph["nodes"] if node["id"] != BILLING]
+    world.install()
+    committed(world, {BILLING: functions(3)}, graph)
+    world.write(BILLING, functions(3).replace("import os", "import sys"))
+    _, out = world.run("touched")
+    assert symbols(out) == [(BILLING, "unique")]
+
+
+def test_a_deleted_line_counts_for_the_symbol_above_it(world):
+    world.install()
+    committed(world, {BILLING: functions(4)}, billing_graph(4))
+    world.write(BILLING, functions(4).replace("    value = 0\n    return value\n\n\ndef f3", "    value = 0\n\n\ndef f3", 1))
+    _, out = world.run("touched")
+    assert symbols(out) == [(BILLING + "::f2", "unique")]
+
+
+def test_what_is_committed_what_is_not_and_new_files_all_count(world):
+    world.install()
+    graph = graph_of({BILLING: [(3 + 5 * i, "f%d()" % i, None) for i in range(8)], "src/new.py": [(1, "fresh()", None)]})
+    repo = committed(world, {BILLING: functions(8)}, graph)
+    repo.checkout("-b", "feat")
+    repo.write(BILLING, functions(8, {1: "1"}))
+    repo.commit("on the branch")
+    world.write(BILLING, functions(8, {1: "1", 6: "6"}))
+    world.write("src/new.py", "def fresh():\n    return 1\n")
+    _, out = world.run("touched")
+    assert symbols(out) == [(BILLING + "::f1", "unique"), (BILLING + "::f6", "unique")]
+    assert symbols(out, "src/new.py") == [("src/new.py::fresh", "unique")]
+
+
+def test_files_the_graph_does_not_model_are_other_and_the_catalog_never_appears(world):
+    world.install()
+    files = {BILLING: functions(2), "tests/test_billing.py": "def test_a():\n    pass\n", "specs/_capabilities/b/implementation.md": "x\n", ".specify/x.json": "{}\n"}
+    committed(world, files, billing_graph(2))
+    for rel, text in files.items():
+        world.write(rel, text + "more\n")
+    world.write(".graphifyignore", "tests/\n")
+    world.write("specs/001-x/spec.md", "# A spec\n")
+    _, out = world.run("touched")
+    assert [item["file"] for item in out["files"]] == [BILLING]
+    assert out["other"] == [{"file": "tests/test_billing.py", "lines": ["3"]}]
+
+
+def test_the_package_node_of_a_build_file_is_not_a_symbol(world):
+    # Graphify 0.9.102 writes pom.xml as this one node, with no node for the file itself.
+    graph = billing_graph(2)
+    graph["nodes"].append({"id": "pkg_com_example_auth", "label": "com.example:auth", "type": "package", "source_file": "pom.xml", "source_location": "L1", "file_type": "code"})
+    world.install()
+    committed(world, {BILLING: functions(2), "pom.xml": "<project>\n</project>\n"}, graph)
+    world.write("pom.xml", "<project>\n  <version>2</version>\n</project>\n")
+    _, out = world.run("touched")
+    assert out["files"] == [] and out["other"] == [{"file": "pom.xml", "lines": ["2"]}]
+
+
+def test_a_deleted_file_is_named_apart(world):
+    world.install()
+    committed(world, {BILLING: functions(2), "src/old.py": "def old():\n    pass\n"}, billing_graph(2))
+    (world.root / "src/old.py").unlink()
+    _, out = world.run("touched")
+    assert out["deleted"] == ["src/old.py"] and out["files"] == [] and out["other"] == []
+
+
+def test_more_than_fifteen_symbols_keeps_those_with_most_changed_lines(world):
+    world.install()
+    committed(world, {BILLING: functions(20)}, billing_graph(20))
+    text = functions(20, {i: str(i + 100) for i in range(20)})
+    text = text.replace("def f19():\n    value = 119\n    return value", "def f19():\n    value = 119\n    return value + 1")
+    world.write(BILLING, text)
+    _, out = world.run("touched")
+    listed = [ref for ref, _ in symbols(out)]
+    assert len(listed) == 15 and out["files"][0]["omitted"] == 5
+    assert BILLING + "::f19" in listed
+
+
+def test_a_method_whose_name_repeats_is_ambiguous_and_says_whose_it_is(world):
+    world.install()
+    text = "class A:\n    def expiry(self):\n        return 1\n\n\nclass B:\n    def expiry(self):\n        return 2\n"
+    committed(world, {"src/two.py": text}, graph_of({"src/two.py": [(2, ".expiry()", "A"), (7, ".expiry()", "B")]}))
+    world.write("src/two.py", text.replace("return 2", "return 3"))
+    _, out = world.run("touched")
+    [symbol] = out["files"][0]["symbols"]
+    assert symbol["ref"] == "src/two.py::.expiry()" and symbol["found"] == "ambiguous" and symbol["class"] == "B"
+
+
+def test_nodes_and_links_whose_fields_are_not_text_are_left_out_of_touched(world):
+    world.install()
+    graph = billing_graph(3)
+    graph["nodes"] += [{"id": ["x"], "label": "f9()", "source_file": BILLING, "source_location": "L14"}, {"id": "y", "label": "g()", "source_file": BILLING, "source_location": 14}]
+    graph["links"] += [{"source": ["x"], "target": "y", "relation": "method"}, "not a link"]
+    committed(world, {BILLING: functions(3)}, graph)
+    world.write(BILLING, functions(3, {2: "2"}))
+    rc, out = world.run("touched")
+    assert rc == 0 and [s["ref"] for s in out["files"][0]["symbols"]] == [BILLING + "::f9"]
+
+
+def test_the_base_is_onto_then_the_config_then_main(world):
+    world.install()
+    repo = committed(world, {BILLING: functions(4)}, billing_graph(4))
+    repo.checkout("-b", "trunk")
+    repo.write(BILLING, functions(4, {1: "1"}))
+    repo.commit("on trunk")
+    repo.checkout("-b", "feat")
+    world.write(BILLING, functions(4, {1: "1", 3: "3"}))
+    both, only_feat = [(BILLING + "::f1", "unique"), (BILLING + "::f3", "unique")], [(BILLING + "::f3", "unique")]
+    _, out = world.run("touched")
+    assert out["base"] == "main" and symbols(out) == both
+    world.write(".specify/extensions/capabilities/capabilities-config.yml", "base_branch: trunk  # where features start\n")
+    _, out = world.run("touched")
+    assert out["base"] == "trunk" and symbols(out) == only_feat
+    _, out = world.run("touched", "--onto", "main")
+    assert out["base"] == "main" and symbols(out) == both
+
+
+@pytest.mark.parametrize("onto", [None, "nope"])
+def test_a_base_that_does_not_exist_is_invalid_and_the_tool_does_not_run(world, onto):
+    world.install()
+    committed(world, {BILLING: functions(2)}, billing_graph(2))
+    Repo(world.root).git("branch", "-m", "main", "trunk")
+    rc, out = world.run("touched", *(("--onto", onto) if onto else ()))
+    assert rc == 2 and out["status"] == "invalid" and "--onto" in out["errors"][0]
+    assert world.calls() == []
+
+
+def test_a_base_branch_that_reads_as_an_option_is_invalid(world):
+    # Given to git, it would be `git merge-base HEAD --fork-point`, which prints a commit.
+    world.install()
+    committed(world, {BILLING: functions(2)}, billing_graph(2))
+    world.write(".specify/extensions/capabilities/capabilities-config.yml", "base_branch: --fork-point\n")
+    rc, out = world.run("touched")
+    assert rc == 2 and out["status"] == "invalid" and "--fork-point" in out["errors"][0]
+    assert world.calls() == []
+
+
+def test_without_graphify_touched_still_lists_the_changed_lines(world):
+    world.env["PATH"] += os.pathsep + os.path.dirname(shutil.which("git"))
+    committed(world, {BILLING: functions(3)}, billing_graph(3))
+    world.write(BILLING, functions(3, {2: "2"}))
+    rc, out = world.run("touched")
+    assert rc == 6 and out["reason"] == "not-installed" and out["install"] == REINSTALL
+    assert out["files"] == [{"file": BILLING, "lines": ["14"]}]
+
+
+def test_a_failed_update_lists_the_lines_and_reads_no_old_graph(world):
+    world.install(update_rc=1)
+    committed(world, {BILLING: functions(3)}, billing_graph(3))
+    world.write("graphify-out/graph.json", json.dumps(billing_graph(3)))
+    world.write(BILLING, functions(3, {2: "2"}))
+    rc, out = world.run("touched")
+    assert rc == 6 and out["reason"] == "update-failed"
+    assert out["files"] == [{"file": BILLING, "lines": ["14"]}] and "symbols" not in out["files"][0]
+
+
 # ---------------------------------------------------------------- invalid input
 
 
 @pytest.mark.parametrize(
     "args",
-    [("explain",), ("explain", "a", "b"), ("affected",), ("query",), ("status", "x"), ("update", "x"), ("anchors", "x"), ("anchors", "--capability", "No/Good"), ("install",), ("extract",), ("watch",)],
+    [
+        ("explain",), ("explain", "a", "b"), ("affected",), ("query",), ("status", "x"), ("update", "x"), ("anchors", "x"), ("anchors", "--capability", "No/Good"),
+        ("touched", "x"), ("touched", "--onto", ""), ("anchors", "--onto", "main"), ("install",), ("extract",), ("watch",),
+    ],
 )
 def test_invalid_input_is_refused_before_the_tool_runs(world, args):
     world.install()
@@ -686,6 +948,34 @@ def test_the_real_tool_answers_through_the_gate(tmp_path):
     assert {row["ref"]: row["found"] for row in out["anchors"]} == {"src/session.py::SessionManager": "unique", "src/session.py::Gone": "missing"}
     labels = {node.get("source_file") for node in json.loads((root / "graphify-out/graph.json").read_text(encoding="utf-8"))["nodes"]}
     assert "tests/test_session.py" not in labels
+
+
+LARGE = {
+    "python": ("src/billing.py", lambda seven: "".join("def f%d():\n    value = %s\n    return value\n\n\n" % (i, seven if i == 7 else i) for i in range(25)), "src/billing.py::f7"),
+    "java": (
+        "src/main/java/app/Billing.java",
+        lambda seven: "package app;\n\npublic class Billing {\n" + "".join("    public int f%d() {\n        return %s;\n    }\n\n" % (i, seven if i == 7 else i) for i in range(25)) + "}\n",
+        "src/main/java/app/Billing.java::.f7()",
+    ),
+    "typescript": ("src/billing.ts", lambda seven: "".join("export function f%d(): number {\n  return %s;\n}\n\n" % (i, seven if i == 7 else i) for i in range(25)), "src/billing.ts::f7"),
+}
+
+
+@pytest.mark.parametrize("language", sorted(LARGE))
+def test_the_real_tool_lists_only_the_function_that_changed_in_a_large_file(tmp_path, language):
+    rel, source, expected = LARGE[language]
+    root = tmp_path / "project"
+    repo = Repo(root)
+    root.mkdir()
+    repo.git("init", "-q", "-b", "main", ".")
+    repo.write(rel, source("7"))
+    repo.commit("base")
+    repo.write(rel, source("77"))
+    env = dict(os.environ, HOME=str(tmp_path), PATH=str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", ""))
+    done = subprocess.run([PYTHON, "-I", "-S", str(GATE), "touched", "--root", str(root)], capture_output=True, encoding="utf-8", env=env)
+    out = json.loads(done.stdout)
+    assert done.returncode == 0 and out["status"] == "ok", out
+    assert [(s["ref"], s["found"]) for item in out["files"] for s in item["symbols"]] == [(expected, "unique")]
 
 
 def test_the_gate_needs_nothing_but_the_standard_library():
