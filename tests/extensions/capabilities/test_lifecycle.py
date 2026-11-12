@@ -15,13 +15,10 @@ import pytest
 
 from .conftest import (
     CAT,
-    EXPIRY_15,
-    EXPIRY_30,
     IMPL,
     INDEX,
     LOCKOUT_5,
     MARK,
-    SPEC,
     Repo,
     added,
     delta_block,
