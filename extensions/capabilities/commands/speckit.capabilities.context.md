@@ -43,6 +43,8 @@ $ARGUMENTS
 8. For each one, run `{SCRIPT} status --capability <name>` and report:
    - the literal text of the rules the request affects, with their IDs;
    - rules whose `state` is not `conforming`, with what was observed;
-   - rules marked `inferred`: they describe what the code does, nobody approved them as requirements.
+   - rules marked `inferred`: they describe what the code does, nobody approved them as requirements;
+   - rules marked `designed`: the business approved them and nobody built them yet. They are not current behaviour, so do not look for them in the code.
    Say which capabilities only the graph revealed.
 9. Tell the next step that the spec must declare a `## Capability Delta` that names those IDs and copies their current text literally into `From`.
+10. If the request builds `designed` rules, run `{SCRIPT} delta-block --implement <ids>` and hand its `text` to the next step: one `### IMPLEMENTED` block per rule, with the catalog's text in `From` and `To`. The spec replaces `FR-###` in `Links` with its own requirements and acceptance criteria, and changes nothing else in the block. A spec that builds a `designed` rule with other text declares `MODIFIED` instead, and that is a business decision.

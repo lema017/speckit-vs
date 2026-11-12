@@ -1,0 +1,24 @@
+from datetime import datetime, timedelta
+
+from src.auth.lockout import LockoutPolicy
+
+T0 = datetime(2026, 11, 11, 10, 0)
+
+
+def test_fifth_failure_locks_for_15_minutes():
+    policy = LockoutPolicy()
+    for _ in range(4):
+        policy.record_failure(T0)
+    assert not policy.is_locked(T0)
+    policy.record_failure(T0)
+    assert policy.is_locked(T0 + timedelta(minutes=14, seconds=59))
+    assert not policy.is_locked(T0 + timedelta(minutes=15))
+
+
+def test_success_resets_count():
+    policy = LockoutPolicy()
+    for _ in range(4):
+        policy.record_failure(T0)
+    policy.record_success()
+    policy.record_failure(T0)
+    assert not policy.is_locked(T0)

@@ -60,3 +60,5 @@ docs/dev
 .grok/
 .specify/
 specs/
+# Test fixtures that hold specs/ trees on purpose: the capabilities two-branch tests.
+!tests/extensions/capabilities/fixtures/**/specs/

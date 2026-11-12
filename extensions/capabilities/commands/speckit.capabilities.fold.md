@@ -24,12 +24,13 @@ $ARGUMENTS
    | `ready` | 0 | Report any `setup` entry that starts with `skipped`: that file for agents was left alone. Continue with step 2 |
    | `blocked` | 3 | Open tasks, or no `tasks.md`. Report it and finish: this hook also fires on partial implementations. Pass `--no-tasks` only for a change outside `specify` when the user asked for it |
    | `needs-review`, `conflict` | 3 | Report it and finish. Run `speckit.capabilities.review` |
+   | `merge-conflict` | 3 | A merge left conflict markers in `files`. Report `reason` and finish. Never resolve the catalog by hand: `{SCRIPT} rebase` rebuilds it |
    | `invalid` | 2 | Report the errors and finish |
    | `recover-needed` | 4 | Run `{SCRIPT} recover`, then start again. Never edit the catalog or delete the journal by hand. If it answers `manual`, show `edited_since` and stop |
 
 2. Edit only the drafts under the `staging` directory that `prepare` reported: `<staging>/<capability>/implementation.md`. Limit what you read to `scope`. Files listed in `foreign` are not part of this change: do not use them, and report them.
 
-3. For each rule in the delta except `REMOVED`, write one block under `## Rule Status`:
+3. For each rule in the delta except `REMOVED`, `IMPLEMENTED` included, write one block under `## Rule Status`:
 
    ```markdown
    ### R-session-expiry
@@ -67,7 +68,7 @@ $ARGUMENTS
    - `busy`, exit 5: another process is publishing. Try again when it finishes.
    - `invalid-staging`, exit 2: fix the drafts and run `apply` again.
 
-7. Run `{SCRIPT} check --mode dev --change <source>` and report the state. `prepared` means the catalog holds the requirement on this branch, even if a rule is `discrepant`. Only CI can report `ready`.
+7. Run `{SCRIPT} check --mode dev --change <source>` and report the state. If a rule ends `discrepant` or `unverified` and it is not going to be fixed in this change, `{SCRIPT} defer <id>` takes it out of the delta: a `[designed]` rule goes back to designed, and the output names the requirements to mark out of scope. `prepared` means the catalog holds the requirement on this branch, even if a rule is `discrepant`. Only CI can report `ready`.
 
 ## Do not
 

@@ -21,10 +21,11 @@ $ARGUMENTS
 
    | Status | Exit | What to do |
    |---|---|---|
-   | `stamped` | 0 | Report that the delta is sealed. Report any `setup` entry that starts with `skipped`: that file for agents was left alone. Finish |
+   | `stamped` | 0 | Report that the delta is sealed. If there is `normalized`, report each `rule` with the text it had and the catalog's text, which review wrote into its `From` and `To`: an `IMPLEMENTED` never changes a rule. Report any `setup` entry that starts with `skipped`: that file for agents was left alone. Finish |
    | `unchanged` | 0 | Report that the spec matches what was sealed. Finish |
    | `invalid` | 2 | See step 3 |
-   | `conflict` | 3 | The catalog does not hold the `From` the delta expects. Show `conflicts` and stop. Copy the text from the catalog only if the user confirms this change really starts from it |
+   | `conflict` | 3 | The catalog does not hold the `From` the delta expects. Show `conflicts` and stop. Copy the text from the catalog only if the user confirms this change really starts from it. If the base branch changed the rule, the way out is `{SCRIPT} rebase`, never an edit by hand |
+   | `merge-conflict` | 3 | A merge left conflict markers in `files`. Show `reason` and stop: the catalog is never resolved by hand, `{SCRIPT} rebase` rebuilds it |
    | `changed` | 3 | See step 4 |
 
 3. **`invalid`.** If the errors are only about the delta being empty, complete it from the spec and the catalog, and run step 2 again:
@@ -38,6 +39,7 @@ $ARGUMENTS
    ```
 
    - `ADDED` has `From: (none)`. `REMOVED` has `To: (none)` and `Replaced-By: <rule id or none>`.
+   - A rule marked `[designed]` is approved and not built. The spec builds it with `IMPLEMENTED`, with the catalog's text in both `From` and `To`; `{SCRIPT} delta-block --implement <id>` prints the block. Building it with another text is `MODIFIED`, a business decision. A spec never declares `DESIGNED`, and never retires a `[designed]` rule: to leave one out, run `{SCRIPT} defer <id>`.
    - `Links` must name `FR-###`, `SC-###` or `USn/ACm` keys that exist in this spec.
    - A capability that does not exist yet needs `### NEW-CAPABILITY <name>` with `- Covers: <business language>`.
    - If no rule changes, write `Capabilities: none — <reason>`.

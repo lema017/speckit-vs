@@ -1,0 +1,16 @@
+# login
+
+## Overview
+Entrar a la cuenta con correo o con Google, Facebook o GitHub
+
+## Rules
+
+- **R-login-lockout**: Tras 5 intentos fallidos seguidos, la cuenta se bloquea 15 minutos. (specs/001-acceso)
+
+- **R-login-oauth-providers**: Se puede entrar con una cuenta de Google, Facebook o GitHub. (specs/002-oauth)
+
+- **R-login-one-account-per-email** [designed]: Un correo registra una sola cuenta. (specs/_capabilities/_changes/20261111-design-login)
+
+- **R-login-reset-expiry** [designed]: El enlace para recuperar la contraseña vence a los 30 minutos. (specs/_capabilities/_changes/20261111-design-login)
+
+## Related Capabilities

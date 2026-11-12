@@ -1,0 +1,8 @@
+"""Entrar con una cuenta de otro proveedor."""
+
+
+class OAuthLogin:
+    PROVIDERS = ("google", "facebook", "github")
+
+    def supports(self, provider: str) -> bool:
+        return provider.lower() in self.PROVIDERS

@@ -50,8 +50,16 @@ DOCS = ("spec.md", "capability-delta.md")
 TEMPLATES = Path(__file__).resolve().parents[2] / "templates"
 
 MARK = "<!-- capability-delta:v1 -->"
-RULE = re.compile(r"^- \*\*(R-[a-z0-9-]+)\*\*( \[inferred\])?: (.*?)(?: \(([^()]*/[^()]*)\))?\s*$")
-ENTRY = re.compile(r"^### (ADDED|MODIFIED|REMOVED|INFERRED|VALIDATED) (R-[a-z0-9-]+)\s*$")
+# The catalog format this script reads and writes. 2 adds the [designed] mark, written with the seal below.
+CATALOG_FORMAT = 2
+FORMAT_SEAL = "<!-- capability-catalog: %d -->" % CATALOG_FORMAT
+FORMAT_LINE = re.compile(r"<!-- capability-catalog: (\d+) -->")
+RULE = re.compile(r"^- \*\*(R-[a-z0-9-]+)\*\*( \[(?:inferred|designed)\])?: (.*?)(?: \(([^()]*/[^()]*)\))?\s*$")
+ENTRY = re.compile(r"^### (ADDED|MODIFIED|REMOVED|INFERRED|VALIDATED|DESIGNED|IMPLEMENTED) (R-[a-z0-9-]+)\s*$")
+# What a design record may declare, besides NEW-CAPABILITY. Only a record under _changes/ declares DESIGNED.
+DESIGN_OPS = {"DESIGNED", "REMOVED"}
+# Git's conflict markers. ======= alone is not one: Markdown underlines a heading with it, and git never writes it alone.
+CONFLICT_SIDE = re.compile(r"^(?:<{7}|>{7}|\|{7})(?: .*)?$", re.M)
 BLOCK = re.compile(r"^### (R-[a-z0-9-]+)\s*$")
 BLOCK_FIELD = re.compile(r"^- (Observed|State|Code|Tests|Change): (.*)$")
 FR_LINE = re.compile(r"^\s*- \*\*FR-\d+\*\*", re.M)
@@ -64,7 +72,7 @@ FORBIDDEN_NAMES = {"plan.md", "tasks.md", "README.md"}
 REPORT_SKEW_SECONDS = 300
 SCRIPT_TESTS = (".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts")
 TITLE_SLOT = re.compile(r"%[a-zA-Z#]|\$\{[^{}]*\}|\$[A-Za-z_][\w.]*|\{[^{}]*\}")
-DEFAULTS = {"feature_roots": "specs", "allow_manual_evidence": "false", "allow_partial_features": "false"}
+DEFAULTS = {"feature_roots": "specs", "allow_manual_evidence": "false", "allow_partial_features": "false", "base_branch": ""}
 GITIGNORE_LINE = ".specify/capabilities/"
 GITATTRIBUTES_LINES = (
     "specs/_capabilities/index.md merge=union",
@@ -174,6 +182,42 @@ def section(text, title):
     return text[match.start():(match.end() + following.start()) if following else len(text)]
 
 
+def has_conflict(text):
+    return bool(text) and bool(CONFLICT_SIDE.search(text))
+
+
+def conflicted(root, rels):
+    """The files among ``rels`` that still hold git's conflict markers."""
+    return sorted(rel for rel in set(rels) if has_conflict(read(root / rel)))
+
+
+def conflict_message(files, source=None):
+    change = source or "<feature>"
+    return "merge conflict markers in %s; the catalog is never resolved by hand: run capabilities.py rebase --change %s" % (", ".join(files), change)
+
+
+def catalog_format(text):
+    found = [int(number) for number in FORMAT_LINE.findall(text or "")]
+    return max(found) if found else 1
+
+
+def format_error(text, where="specs/_capabilities/index.md"):
+    found = catalog_format(text)
+    if found > CATALOG_FORMAT:
+        return "%s uses catalog format %d and this script reads up to %d: update with specify upgrade" % (where, found, CATALOG_FORMAT)
+    return None
+
+
+def with_seal(text):
+    """The seal goes under the title once the catalog holds a [designed] rule. A script that predates it ignores the comment."""
+    if FORMAT_LINE.search(text):
+        return text
+    head, _, rest = text.partition("\n")
+    if not head.startswith("# "):
+        return FORMAT_SEAL + "\n\n" + text
+    return head + "\n\n" + FORMAT_SEAL + "\n" + rest
+
+
 def load_config(root):
     config = dict(DEFAULTS)
     for line in (read(root / CONFIG) or "").splitlines():
@@ -183,6 +227,7 @@ def load_config(root):
     config["allow_manual_evidence"] = config["allow_manual_evidence"].lower() == "true"
     config["allow_partial_features"] = config["allow_partial_features"].lower() == "true"
     config["feature_roots"] = [r.strip().strip("/") for r in config["feature_roots"].split(",") if r.strip()]
+    config["base_branch"] = config["base_branch"].strip()
     return config
 
 
@@ -373,7 +418,8 @@ def split_links(value):
     return [link for link in re.split(r"\s*,\s*", value or "") if link]
 
 
-def parse_delta(text):
+def parse_delta(text, source=None):
+    """With ``source``, also where the delta lives: only a record under _changes/ declares DESIGNED."""
     if text.count(MARK) > 1 or len(re.findall(r"^## Capability Delta", text, re.M)) > 1:
         return None, ["delta section appears more than once"]
     raw = section(text, "Capability Delta")
@@ -418,7 +464,33 @@ def parse_delta(text):
         elif new_capability and key == "covers":
             delta["new"][new_capability] = value
     errors.extend(delta_errors(delta, set(spec_sections(text))))
+    if source is not None:
+        errors.extend(placement_errors(delta, source))
     return delta, errors
+
+
+def is_record(source):
+    return source.startswith(CHANGES + "/")
+
+
+def design_capable(delta, source):
+    """A record that only designs or retires: the one place a [designed] rule may be retired."""
+    return is_record(source) and bool(delta["entries"]) and all(entry["op"] in DESIGN_OPS for entry in delta["entries"])
+
+
+def is_design(delta):
+    return any(entry["op"] == "DESIGNED" for entry in delta["entries"])
+
+
+def placement_errors(delta, source):
+    if not is_design(delta):
+        return []
+    if not is_record(source):
+        return ["DESIGNED %s: only a design record under %s/ declares DESIGNED; a spec builds a [designed] rule with IMPLEMENTED" % (entry["id"], CHANGES) for entry in delta["entries"] if entry["op"] == "DESIGNED"]
+    others = sorted({entry["op"] for entry in delta["entries"]} - DESIGN_OPS)
+    if others:
+        return ["a design record declares only NEW-CAPABILITY, DESIGNED and REMOVED of [designed] rules, not %s; declare them in a spec" % ", ".join(others)]
+    return []
 
 
 def delta_errors(delta, known):
@@ -450,6 +522,16 @@ def delta_errors(delta, known):
             errors.append(where + ": From equals To")
         if entry["op"] == "VALIDATED" and entry.get("from") != entry.get("to"):
             errors.append(where + ": From must equal To")
+        if entry["op"] == "IMPLEMENTED":
+            if entry.get("from") == "(none)":
+                errors.append(where + ": From is the text of the [designed] rule; a new rule is ADDED")
+            elif entry.get("from") != entry.get("to"):
+                errors.append(where + ": From must equal To; a spec that changes the text of a [designed] rule declares MODIFIED")
+        if entry["op"] == "DESIGNED":
+            if entry.get("to") == "(none)":
+                errors.append(where + ": To cannot be (none); a design record retires a [designed] rule with REMOVED")
+            elif entry.get("from") == entry.get("to"):
+                errors.append(where + ": From equals To")
         for link in split_links(entry.get("links")):
             if link not in allowed_links:
                 errors.append("%s: link %s not found in the change" % (where, link))
@@ -483,12 +565,23 @@ def parse_rules(text):
         elif match.group(1) in rules:
             errors.append("duplicate rule id %s" % match.group(1))
         else:
-            rules[match.group(1)] = {"text": norm(match.group(3)), "tag": match.group(4), "inferred": bool(match.group(2))}
+            mark = (match.group(2) or "").strip()
+            rules[match.group(1)] = {"text": norm(match.group(3)), "tag": match.group(4), "inferred": mark == "[inferred]", "designed": mark == "[designed]"}
     return rules, errors
 
 
 def rules_of(text):
     return parse_rules(text)[0]
+
+
+def capability_state(rules, retired):
+    """2.1 of the plan. A capability left without rules is retired; one still marked consolidated is accepted as legacy."""
+    if not rules:
+        return "retired"
+    designed = sum(1 for rule in rules.values() if rule["designed"])
+    if designed == len(rules):
+        return "designed"
+    return "partial" if designed else "consolidated"
 
 
 def catalog_errors(text):
@@ -500,6 +593,17 @@ def catalog_errors(text):
     for match in re.finditer(r"^\s*- \*\*(R-[a-z0-9-]+)\*\*", outside, re.M):
         errors.append("rule %s sits outside ## Rules" % match.group(1))
     return errors
+
+
+INDEX_ROW = re.compile(r"^\| \[([a-z0-9-]+)\]\(([^)]*)\) \|")
+
+
+def index_row_cells(line):
+    return [c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", line.strip().strip("|"))]
+
+
+def index_row(name, covers, state, entry_point):
+    return "| [%s](%s/spec.md) | %s | %s | %s |" % (name, name, covers, state, entry_point)
 
 
 def table_rows(text, title):
@@ -608,15 +712,38 @@ def stamp(text, delta, source, fold=None):
     return data
 
 
-def classify(root, delta, source):
+def classify(root, delta, source, get=None):
+    """Each entry against the catalog: apply, done, or a conflict. ``get`` reads a catalog file; by default, the working tree."""
+    get = get or (lambda rel: read(root / rel))
     actions, conflicts = [], []
+    designer = design_capable(delta, source)
     for entry in delta["entries"]:
-        spec = read(root / cap_rel(entry["capability"], "spec.md"))
+        spec = get(cap_rel(entry["capability"], "spec.md"))
         rule = rules_of(spec).get(entry["id"])
-        retired = retired_of(read(root / cap_rel(entry["capability"], "history.md")))
+        retired = retired_of(get(cap_rel(entry["capability"], "history.md")))
         where = "%s %s" % (entry["op"], entry["id"])
+        gone = rule is None and entry["id"] in retired
         if spec is None and entry["capability"] not in delta["new"]:
             conflicts.append("%s: capability %s does not exist; declare NEW-CAPABILITY" % (where, entry["capability"]))
+        elif entry["op"] == "DESIGNED":
+            conflict = designed_conflict(entry, rule, gone, retired, source)
+            if conflict:
+                conflicts.append(where + ": " + conflict)
+            else:
+                actions.append((entry, "done" if rule is not None and rule["text"] == entry["to"] else "apply"))
+        elif entry["op"] == "IMPLEMENTED":
+            if rule is None:
+                conflicts.append(where + (": retired by %s" % retired[entry["id"]]["by"] if gone else ": rule not found"))
+            elif rule["designed"] and rule["text"] == entry["from"]:
+                actions.append((entry, "apply"))
+            elif rule["designed"]:
+                conflicts.append("%s: catalog says %r, delta expects %r; if the base changed the rule, run rebase" % (where, rule["text"], entry["from"]))
+            elif rule["text"] == entry["to"] and rule["tag"] == source and not rule["inferred"]:
+                actions.append((entry, "done"))
+            else:
+                conflicts.append(where + ": the rule is not [designed]; a spec changes an implemented rule with MODIFIED")
+        elif rule is not None and rule["designed"] and entry["op"] in ("ADDED", "INFERRED", "VALIDATED"):
+            conflicts.append(where + ": the rule is [designed]; a spec builds it with IMPLEMENTED")
         elif entry["op"] in ("ADDED", "INFERRED"):
             if rule is None and entry["id"] in retired:
                 conflicts.append(where + ": retired ids are not reused")
@@ -628,8 +755,8 @@ def classify(root, delta, source):
                 conflicts.append("%s: already exists with %r" % (where, rule["text"]))
         elif entry["op"] == "MODIFIED":
             if rule is None:
-                conflicts.append(where + ": rule not found")
-            elif rule["text"] == entry["to"]:
+                conflicts.append(where + (": retired by %s" % retired[entry["id"]]["by"] if gone else ": rule not found"))
+            elif rule["text"] == entry["to"] and not rule["designed"]:
                 actions.append((entry, "done"))
             elif rule["text"] == entry["from"]:
                 actions.append((entry, "apply"))
@@ -647,11 +774,32 @@ def classify(root, delta, source):
         else:
             if rule is None and retired.get(entry["id"], {}).get("by") == source:
                 actions.append((entry, "done"))
+            elif rule is not None and rule["text"] == entry["from"] and rule["designed"] and not designer:
+                conflicts.append(where + ": a [designed] rule is retired only by a design record; to leave it out of this spec, run capabilities.py defer")
+            elif rule is not None and rule["text"] == entry["from"] and not rule["designed"] and is_design(delta):
+                conflicts.append(where + ": a design record retires only [designed] rules; retire an implemented rule with a change that brings evidence")
             elif rule is not None and rule["text"] == entry["from"]:
                 actions.append((entry, "apply"))
             else:
                 conflicts.append(where + ": catalog state does not match From")
     return actions, conflicts
+
+
+def designed_conflict(entry, rule, gone, retired, source):
+    """What stops a DESIGNED entry, or None. A new rule needs a free id; a redesign needs the current [designed] text."""
+    if entry["from"] == "(none)":
+        if gone:
+            return "retired ids are not reused"
+        if rule is None or (rule["designed"] and rule["text"] == entry["to"] and rule["tag"] == source):
+            return None
+        return "already exists with %r" % rule["text"]
+    if rule is None:
+        return "retired by %s" % retired[entry["id"]]["by"] if gone else "rule not found"
+    if not rule["designed"]:
+        return "the rule is %s; a spec changes it with MODIFIED" % ("[inferred]" if rule["inferred"] else "implemented")
+    if rule["text"] in (entry["from"], entry["to"]):
+        return None
+    return "catalog says %r, delta expects %r" % (rule["text"], entry["from"])
 
 
 # ---------------------------------------------------------------- scope and digests
@@ -715,6 +863,30 @@ def base_token(root, change, delta, scope):
 # ---------------------------------------------------------------- fold
 
 
+def merge_conflict(root, change, text, delta=None):
+    """The change document, then the catalog files of its delta, with git's conflict markers. None when clean."""
+    source = source_of(root, change)
+    if has_conflict(text):
+        files = [source_of(root, change_doc(change))]
+    elif delta is not None:
+        rels = [INDEX] + [cap_rel(capability, name) for capability in capabilities_of(delta) for name in ("spec.md", "implementation.md", "history.md")]
+        files = conflicted(root, rels)
+    else:
+        files = []
+    if not files:
+        return None
+    return {"status": "merge-conflict", "files": files, "reason": conflict_message(files, source)}
+
+
+def retires_designed(root, delta):
+    for entry in delta["entries"]:
+        if entry["op"] == "REMOVED":
+            rule = rules_of(read(root / cap_rel(entry["capability"], "spec.md"))).get(entry["id"])
+            if rule is not None and rule["designed"]:
+                return True
+    return False
+
+
 def prepare_state(root, change, no_tasks=False):
     """Validate every precondition. Writes nothing."""
     if (root / JOURNAL).exists():
@@ -723,11 +895,19 @@ def prepare_state(root, change, no_tasks=False):
     text = read(change_doc(change))
     if text is None:
         raise CapError("no spec.md or capability-delta.md in %s" % source)
-    delta, errors = parse_delta(text)
+    blocked = merge_conflict(root, change, text)
+    if blocked:
+        return blocked, None, DECISION
+    delta, errors = parse_delta(text, source)
     if errors:
         return {"status": "invalid", "errors": errors}, None, INVALID
     if delta["none"]:
         return {"status": "no-rule-change", "source": source}, None, OK
+    blocked = merge_conflict(root, change, text, delta)
+    if blocked:
+        return blocked, None, DECISION
+    if is_design(delta) or (design_capable(delta, source) and retires_designed(root, delta)):
+        return {"status": "invalid", "errors": ["%s designs or retires [designed] rules: publish it with capabilities.py publish-design --change %s" % (source, source)]}, None, INVALID
     tasks = open_tasks(change)
     if tasks is None and not no_tasks:
         return {"status": "blocked", "reason": "no tasks.md; pass --no-tasks for a change outside specify"}, None, DECISION
@@ -775,28 +955,106 @@ def cmd_prepare(root, change, no_tasks):
     return emit(public(state))
 
 
+def replace_delta(text, raw):
+    old = section(text, "Capability Delta")
+    start = text.index(old)
+    return text[:start] + raw + text[start + len(old):]
+
+
+def delta_set(text, rule_id, op=None, fields=None):
+    """Rewrite one entry of the delta in place: its operation, or some of its fields. Every other line stays."""
+    raw = section(text, "Capability Delta")
+    out, inside = [], False
+    for line in raw.split("\n"):
+        match = ENTRY.match(line)
+        if line.startswith("#"):
+            inside = bool(match) and match.group(2) == rule_id
+            if inside and op:
+                line = "### %s %s" % (op, rule_id)
+        elif inside:
+            field = re.match(r"^- ([A-Za-z-]+): (.*)$", line)
+            if field and field.group(1) in (fields or {}):
+                line = "- %s: %s" % (field.group(1), fields[field.group(1)])
+        out.append(line)
+    return replace_delta(text, "\n".join(out))
+
+
+def delta_drop(text, rule_ids, reason):
+    """Take entries out of the delta, and the NEW-CAPABILITY blocks nothing uses then. With nothing left, the delta says why."""
+    raw = section(text, "Capability Delta")
+    tail = raw[len(raw.rstrip("\n")):]
+    entries = [entry for entry in parse_delta(text)[0]["entries"] if entry["id"] not in rule_ids]
+    if not entries:
+        head = raw[:raw.index(MARK) + len(MARK)]
+        return replace_delta(text, "%s\n\nCapabilities: none — %s%s" % (head, reason, tail))
+    used = {entry["capability"] for entry in entries}
+    out, skipping = [], False
+    for line in raw.split("\n"):
+        if line.startswith("#"):
+            match, new = ENTRY.match(line), re.match(r"^### NEW-CAPABILITY (\S+)\s*$", line)
+            skipping = bool(match and match.group(2) in rule_ids) or bool(new and new.group(1) not in used)
+        if not skipping:
+            out.append(line)
+    return replace_delta(text, "\n".join(out).rstrip("\n") + tail)
+
+
+def normalize_implemented(root, text, source):
+    """IMPLEMENTED does not change a rule, so its From and To are the catalog's text, whatever the model copied."""
+    delta = parse_delta(text)[0]
+    changes = []
+    for entry in (delta or {}).get("entries", []):
+        if entry["op"] != "IMPLEMENTED" or not CAPABILITY.match(entry.get("capability") or ""):
+            continue
+        rule = rules_of(read(root / cap_rel(entry["capability"], "spec.md"))).get(entry["id"])
+        if rule is None or not (rule["designed"] or (rule["tag"] == source and not rule["inferred"])):
+            continue
+        if entry.get("from") == rule["text"] and entry.get("to") == rule["text"]:
+            continue
+        # A slip in the copy, not a new text: both copies alike, or only From off. A To of its own is a change, and declares MODIFIED.
+        if entry.get("from") in (None, "(none)") or entry.get("to") not in (entry.get("from"), rule["text"]):
+            continue
+        changes.append({"rule": entry["id"], "from": entry.get("from"), "to": entry.get("to"), "catalog": rule["text"]})
+        text = delta_set(text, entry["id"], fields={"From": rule["text"], "To": rule["text"]})
+    return text, changes
+
+
 def cmd_review(root, change, accept):
     if (root / JOURNAL).exists():
         return emit({"status": "recover-needed"}, RECOVER)
     source = source_of(root, change)
-    text = read(change_doc(change))
+    doc = change_doc(change)
+    text = read(doc)
     if text is None:
         raise CapError("no spec.md or capability-delta.md in %s" % source)
-    delta, errors = parse_delta(text)
+    blocked = merge_conflict(root, change, text)
+    if blocked:
+        return emit(blocked, DECISION)
+    lock = load_lock(change)
+    # Only before the first seal: later, a text that differs from the catalog means the base changed the rule.
+    text, normalized = normalize_implemented(root, text, source) if lock is None else (text, [])
+    delta, errors = parse_delta(text, source)
     if errors:
         return emit({"status": "invalid", "errors": errors}, INVALID)
+    blocked = merge_conflict(root, change, text, delta)
+    if blocked:
+        return emit(blocked, DECISION)
     conflicts = classify(root, delta, source)[1]
     if conflicts:
         return emit({"status": "conflict", "conflicts": conflicts}, DECISION)
-    current, lock = stamp(text, delta, source), load_lock(change)
+    current = stamp(text, delta, source)
     if lock is None or accept:
         data = dict(current)
         if lock and lock.get("fold"):
             data["fold"] = lock["fold"]
         setup = ensure_setup(root)
         with publish_lock(root):
+            if normalized:
+                write_file(doc, text)
             write_file(lock_path(change), dumps(data))
-        return emit({"status": "stamped", "setup": setup})
+        out = {"status": "stamped", "setup": setup}
+        if normalized:
+            out["normalized"] = normalized
+        return emit(out)
     changed = sorted(k for k in set(current["sections"]) | set(lock["sections"]) if current["sections"].get(k) != lock["sections"].get(k))
     delta_changed = current["delta_sha"] != lock["delta_sha"]
     if changed or delta_changed or current["spec_sha"] != lock["spec_sha"]:
@@ -835,12 +1093,13 @@ def rewrite_spec(text, capability, overview, actions, source):
         if entry["op"] == "REMOVED":
             rules.pop(entry["id"], None)
         else:
-            rules[entry["id"]] = {"text": entry["to"], "tag": source, "inferred": entry["op"] == "INFERRED"}
+            rules[entry["id"]] = {"text": entry["to"], "tag": source, "inferred": entry["op"] == "INFERRED", "designed": entry["op"] == "DESIGNED"}
     lines = []
     for rule_id in sorted(rules):
         rule = rules[rule_id]
         tag = " (%s)" % rule["tag"] if rule["tag"] else ""
-        lines.append("- **%s**%s: %s%s" % (rule_id, " [inferred]" if rule["inferred"] else "", rule["text"], tag))
+        mark = " [inferred]" if rule["inferred"] else " [designed]" if rule["designed"] else ""
+        lines.append("- **%s**%s: %s%s" % (rule_id, mark, rule["text"], tag))
     return text.replace(section(text, "Rules"), "## Rules\n\n" + "\n\n".join(lines) + ("\n\n" if lines else "\n"))
 
 
@@ -868,18 +1127,39 @@ def rewrite_history(text, capability, actions, source):
     return text
 
 
-def rewrite_index(text, delta, statuses):
+def rewrite_index(text, delta, statuses, specs=None, histories=None, capabilities=None):
+    """One row for each capability of the delta, with its state recalculated (2.1).
+
+    A row keeps its entry point; one that has none takes the first code anchor. ``specs`` and
+    ``histories`` are the texts being published. A catalog with a [designed] rule gets the format seal.
+    """
     if text is None:
         text = template("capability-index.md")
-    for capability in capabilities_of(delta):
-        if not re.search(r"^\| \[%s\]" % re.escape(capability), text, re.M):
+    specs, histories = specs or {}, histories or {}
+    designed = False
+    for capability in capabilities if capabilities is not None else capabilities_of(delta):
+        rules = rules_of(specs.get(capability))
+        designed = designed or any(rule["designed"] for rule in rules.values())
+        state = capability_state(rules, retired_of(histories.get(capability))) if capability in specs else "consolidated"
+        codes = [ref for row in statuses.get(capability, {}).values() for ref in row["code"]]
+        lines = text.split("\n")
+        hits = [number for number, line in enumerate(lines) if re.match(r"^\| \[%s\]\(" % re.escape(capability), line)]
+        if not hits:
             planned = re.search(r"^\| %s \| [^|]* \| planned \|.*\n?" % re.escape(capability), text, re.M)
             if planned:
                 text = text[:planned.start()] + text[planned.end():]
-            codes = [ref for row in statuses.get(capability, {}).values() for ref in row["code"]]
             entry_point = "`%s`" % codes[0] if codes else "none"
-            text = text.rstrip("\n") + "\n| [%s](%s/spec.md) | %s | consolidated | %s |\n" % (capability, capability, delta["new"].get(capability, ""), entry_point)
-    return text
+            text = text.rstrip("\n") + "\n" + index_row(capability, delta["new"].get(capability, ""), state, entry_point) + "\n"
+            continue
+        cells = index_row_cells(lines[hits[0]])
+        covers = cells[1] if len(cells) > 1 and cells[1] else delta["new"].get(capability, "")
+        kept = cells[3] if len(cells) > 3 else "none"
+        entry_point = kept if kept not in ("", "none") else ("`%s`" % codes[0] if codes else "none")
+        lines[hits[0]] = index_row(capability, covers, state, entry_point)
+        for number in reversed(hits[1:]):
+            del lines[number]
+        text = "\n".join(lines)
+    return with_seal(text) if designed else text
 
 
 def draft_errors(root, delta, drafts, source):
@@ -981,7 +1261,9 @@ def cmd_apply(root, change, staged, no_tasks):
             plan[cap_rel(capability, "implementation.md")] = drafts[capability]
             plan[cap_rel(capability, "spec.md")] = rewrite_spec(read(root / cap_rel(capability, "spec.md")), capability, delta["new"].get(capability), actions, source)
             plan[cap_rel(capability, "history.md")] = rewrite_history(read(root / cap_rel(capability, "history.md")), capability, actions, source)
-        plan[INDEX] = rewrite_index(read(root / INDEX), delta, statuses)
+        specs = {capability: plan[cap_rel(capability, "spec.md")] for capability in capabilities_of(delta)}
+        histories = {capability: plan[cap_rel(capability, "history.md")] for capability in capabilities_of(delta)}
+        plan[INDEX] = rewrite_index(read(root / INDEX), delta, statuses, specs, histories)
         scope = scope_of(root, change, delta_rows(delta, drafts.get))
         fold = {"input_digest": input_digest(root, change, delta, scope), "anchors": fold_anchors(root, delta, statuses, retirements, all_rows)}
         plan[source + "/" + LOCK_NAME] = dumps(stamp(text, delta, source, fold))
@@ -990,19 +1272,24 @@ def cmd_apply(root, change, staged, no_tasks):
 
 
 def publish(root, plan, staging):
-    """Journal first, then replace each file, then drop the journal. The rename is the commit point."""
+    """Journal first, then replace each file, then drop the journal. The rename is the commit point.
+
+    A file planned as None is removed: rebase drops a capability the base never had.
+    """
     targets = {}
     for rel, new in plan.items():
         old = read(root / rel)
         if old != new:
-            targets[rel] = {"old": sha(old) if old is not None else None, "new": sha(new)}
+            targets[rel] = {"old": sha(old) if old is not None else None, "new": sha(new) if new is not None else None}
     if not targets:
         shutil.rmtree(str(root / staging), ignore_errors=True)
         return []
     journal, pending = root / JOURNAL, root / (JOURNAL + ".tmp")
     shutil.rmtree(str(pending), ignore_errors=True)
+    (pending / "blobs").mkdir(parents=True, exist_ok=True)
     for rel in targets:
-        write_file(pending / "blobs" / sha(rel), plan[rel])
+        if plan[rel] is not None:
+            write_file(pending / "blobs" / sha(rel), plan[rel])
     write_file(pending / "targets.json", dumps({"targets": targets, "staging": staging}))
     sync_dir(pending / "blobs")
     sync_dir(pending)
@@ -1029,11 +1316,20 @@ def roll_forward(root):
     done = 0
     for rel in sorted(targets):
         current = read(root / rel)
+        if targets[rel]["new"] is None and current is None:
+            continue
         if current is not None and sha(current) == targets[rel]["new"]:
             continue
         if limit not in (None, "end") and done == int(limit):
             os._exit(9)
         destination = root / rel
+        if targets[rel]["new"] is None:
+            os.remove(str(destination))
+            with contextlib.suppress(OSError):
+                destination.parent.rmdir()
+            sync_dir(destination.parent if destination.parent.is_dir() else destination.parent.parent)
+            done += 1
+            continue
         destination.parent.mkdir(parents=True, exist_ok=True)
         temporary = destination.with_name(destination.name + ".captmp")
         shutil.copyfile(str(journal / "blobs" / sha(rel)), str(temporary))
@@ -1069,11 +1365,14 @@ def cmd_status(root, capability):
         if spec is None:
             raise CapError("capability not found: %s" % capability)
         implementation = read(root / cap_rel(capability, "implementation.md"))
+        history = read(root / cap_rel(capability, "history.md"))
+        rules = rules_of(spec)
         return emit({
             "capability": capability,
-            "rules": rules_of(spec),
+            "state": capability_state(rules, retired_of(history)),
+            "rules": rules,
             "rule_status": rule_status(implementation),
-            "history": read(root / cap_rel(capability, "history.md")) or "",
+            "history": history or "",
         })
     return emit(catalog_summary(root))
 
@@ -1086,8 +1385,11 @@ def catalog_summary(root):
         rules = rules_of(read(root / cap_rel(name, "spec.md")))
         capabilities[name] = {
             "covers": covers,
+            "state": capability_state(rules, retired_of(read(root / cap_rel(name, "history.md")))),
             "rules": len(rules),
             "inferred": sorted(rule_id for rule_id, rule in rules.items() if rule["inferred"]),
+            # Approved and not built yet: not current behaviour, so no code to look for.
+            "designed": sorted(rule_id for rule_id, rule in rules.items() if rule["designed"]),
             "not_conforming": sorted(rule_id for rule_id, row in statuses.items() if row["state"] != "conforming"),
         }
     planned = re.findall(r"^\| ([a-z][a-z0-9-]*) \| ([^|]*) \| planned \|", read(root / INDEX) or "", re.M)
@@ -1149,7 +1451,10 @@ def cmd_locate(root, capability):
             "manual": row.get("manual"),
         })
     changes = [{"change": cells[0], "what": " | ".join(cells[1:])} for cells in table_rows(history, "Changes")]
-    return emit({"capability": capability, "rules": rules, "changes": changes, "retired": retired_of(history)})
+    state = capability_state(rules_of(spec), retired_of(history))
+    # Approved and not built: listed apart, so a reader never takes them for current behaviour.
+    designed = sorted(rule_id for rule_id, rule in rules_of(spec).items() if rule["designed"])
+    return emit({"capability": capability, "state": state, "designed": designed, "rules": rules, "changes": changes, "retired": retired_of(history)})
 
 
 def cmd_scaffold(root, capability, covers):
@@ -1169,6 +1474,563 @@ def cmd_scaffold(root, capability, covers):
         setup = ensure_setup(root)
         write_file(root / INDEX, text.rstrip("\n") + "\n| %s | %s | planned | none |\n" % (capability, covers))
     return emit({"status": "planned", "capability": capability, "setup": setup})
+
+
+# ---------------------------------------------------------------- lifecycle: design, rebase and defer
+
+
+def find_rule(root, rule_id):
+    """The capability that holds a rule, and the rule; (None, None) when no capability has it."""
+    catalog = root / CATALOG
+    for spec in sorted(catalog.glob("*/spec.md")) if catalog.is_dir() else []:
+        rule = rules_of(read(spec)).get(rule_id)
+        if rule is not None:
+            return spec.parent.name, rule
+    return None, None
+
+
+def cmd_delta_block(root, ids):
+    """The IMPLEMENTED blocks of [designed] rules, with the catalog's text, for a spec to copy."""
+    if not ids:
+        raise CapError("delta-block requires --implement and the ids of [designed] rules")
+    found, errors = [], []
+    for rule_id in ids:
+        capability, rule = find_rule(root, rule_id)
+        if rule is None:
+            errors.append("%s: not found in the catalog" % rule_id)
+        elif not rule["designed"]:
+            errors.append("%s: the rule is not [designed]; a spec changes an implemented rule with MODIFIED" % rule_id)
+        else:
+            block = "### IMPLEMENTED %s\n- Capability: %s\n- From: %s\n- To: %s\n- Links: FR-###" % (rule_id, capability, rule["text"], rule["text"])
+            found.append({"rule": rule_id, "capability": capability, "block": block})
+    if errors:
+        return emit({"status": "invalid", "errors": errors}, INVALID)
+    return emit({
+        "status": "ok",
+        "blocks": found,
+        "text": "\n\n".join(item["block"] for item in found) + "\n",
+        "links": "replace FR-### with the requirements and acceptance criteria of the spec that build each rule",
+    })
+
+
+def cmd_publish_design(root, change):
+    """review, prepare --no-tasks and apply of a design record, as one operation under the lock. Repeating it changes nothing."""
+    source = source_of(root, change)
+    if not is_record(source):
+        raise CapError("publish-design takes a design record under %s/, not %s" % (CHANGES, source))
+    with publish_lock(root):
+        if (root / JOURNAL).exists():
+            return emit({"status": "recover-needed"}, RECOVER)
+        text = read(change_doc(change))
+        if text is None:
+            raise CapError("no spec.md or capability-delta.md in %s" % source)
+        blocked = merge_conflict(root, change, text)
+        if blocked:
+            return emit(blocked, DECISION)
+        delta, errors = parse_delta(text, source)
+        if errors:
+            return emit({"status": "invalid", "errors": errors}, INVALID)
+        if delta["none"]:
+            return emit({"status": "no-rule-change", "source": source})
+        others = sorted({entry["op"] for entry in delta["entries"]} - DESIGN_OPS)
+        if others:
+            return emit({"status": "invalid", "errors": ["publish-design publishes NEW-CAPABILITY, DESIGNED and REMOVED of [designed] rules, not %s; fold publishes the rest" % ", ".join(others)]}, INVALID)
+        built = []
+        for entry in delta["entries"]:
+            rule = rules_of(read(root / cap_rel(entry["capability"], "spec.md"))).get(entry["id"])
+            if entry["op"] == "REMOVED" and rule is not None and not rule["designed"]:
+                built.append("REMOVED %s: the rule is built; retire it with a change that brings evidence, through fold" % entry["id"])
+        if built:
+            return emit({"status": "invalid", "errors": built}, INVALID)
+        blocked = merge_conflict(root, change, text, delta)
+        if blocked:
+            return emit(blocked, DECISION)
+        actions, conflicts = classify(root, delta, source)
+        if conflicts:
+            return emit({"status": "conflict", "conflicts": conflicts}, DECISION)
+        plan, specs, histories, statuses = {}, {}, {}, {}
+        for capability in capabilities_of(delta):
+            implementation = read(root / cap_rel(capability, "implementation.md"))
+            # No code yet, so no block: the file starts empty and fold fills it.
+            plan[cap_rel(capability, "implementation.md")] = implementation if implementation is not None else template("capability-implementation.md", capability=capability)
+            specs[capability] = plan[cap_rel(capability, "spec.md")] = rewrite_spec(read(root / cap_rel(capability, "spec.md")), capability, delta["new"].get(capability), actions, source)
+            histories[capability] = plan[cap_rel(capability, "history.md")] = rewrite_history(read(root / cap_rel(capability, "history.md")), capability, actions, source)
+            statuses[capability] = rule_status(plan[cap_rel(capability, "implementation.md")])
+        plan[INDEX] = rewrite_index(read(root / INDEX), delta, statuses, specs, histories)
+        plan[source + "/" + LOCK_NAME] = dumps(stamp(text, delta, source))
+        setup = ensure_setup(root)
+        written = publish(root, plan, "%s/%s-design" % (STAGING, sha(source)))
+        return emit({"status": "published" if written else "unchanged", "written": written, "setup": setup})
+
+
+def raw_blocks(text, title):
+    """The ### blocks of a section as written, by rule id, in their order."""
+    out, current = {}, None
+    for line in (section(text or "", title) or "").split("\n")[1:]:
+        match = BLOCK.match(line)
+        if match:
+            current = match.group(1)
+            out[current] = [line]
+        elif current is not None:
+            out[current].append(line)
+    return {rule_id: "\n".join(lines).rstrip("\n") for rule_id, lines in out.items()}
+
+
+def replace_section(text, title, body):
+    """Swap a ## section, heading included, keeping the blank line before the next one."""
+    old = section(text, title)
+    if old is None:
+        return text.rstrip("\n") + "\n\n" + body.rstrip("\n") + "\n"
+    start = text.index(old)
+    tail = "\n\n" if start + len(old) < len(text) else "\n"
+    return text[:start] + body.rstrip("\n") + tail + text[start + len(old):]
+
+
+def with_blocks(text, title, found):
+    return replace_section(text, title, "## %s\n\n%s" % (title, "\n\n".join(found.values())) if found else "## " + title)
+
+
+def paragraphs(text, title):
+    body = (section(text or "", title) or "").split("\n", 1)
+    return [part.strip("\n") for part in re.split(r"\n\s*\n", body[1] if len(body) > 1 else "") if part.strip()]
+
+
+def table_parts(text, title):
+    """The heading and column lines of a table section, and its rows, as written."""
+    raw = section(text or "", title)
+    if raw is None:
+        return None, []
+    lines = raw.rstrip("\n").split("\n")
+    pipes = [number for number, line in enumerate(lines) if line.startswith("|")]
+    end = pipes[1] + 1 if len(pipes) > 1 and re.match(r"^\|[\s:|-]+\|$", lines[pipes[1]].strip()) else len(lines)
+    return lines[:end], [line for line in lines[end:] if line.startswith("|")]
+
+
+def merged_implementation(capability, base, branch, ancestor, actions, source, unverified):
+    """The base's implementation.md plus what the branch wrote for this change's rules.
+
+    Its Rule Status and Retirement Evidence blocks, the Decisions rows that name it, and the Approach
+    paragraphs and Anchors rows the branch added since the common ancestor. Prose is added whole: it does not mix.
+    """
+    text = base if base is not None else template("capability-implementation.md", capability=capability)
+    entries = {entry["id"]: entry for entry, _ in actions}
+    theirs, gone = raw_blocks(branch, "Rule Status"), raw_blocks(branch, "Retirement Evidence")
+    status, retirements = raw_blocks(text, "Rule Status"), raw_blocks(text, "Retirement Evidence")
+    for rule_id, entry in entries.items():
+        if entry["op"] == "REMOVED":
+            status.pop(rule_id, None)
+            if rule_id in gone:
+                retirements[rule_id] = gone[rule_id]
+        elif rule_id in theirs:
+            block = theirs[rule_id]
+            if rule_id in unverified:
+                # The code was observed against the old text: fold observes it again.
+                block = re.sub(r"^- State: .*$", "- State: unverified", block, flags=re.M)
+            status[rule_id] = block
+    text = with_blocks(with_blocks(text, "Rule Status", status), "Retirement Evidence", retirements)
+    mine = paragraphs(text, "Approach")
+    seen = {norm(part) for part in mine + paragraphs(ancestor, "Approach")}
+    added = [part for part in paragraphs(branch, "Approach") if norm(part) not in seen]
+    if added:
+        text = replace_section(text, "Approach", "## Approach\n\n" + "\n\n".join(mine + added))
+    head, rows = table_parts(text, "Decisions")
+    have = {norm(row) for row in rows}
+    extra = [row for row in table_parts(branch, "Decisions")[1] if index_row_cells(row)[-1] == source and norm(row) not in have]
+    if head is not None and extra:
+        text = replace_section(text, "Decisions", "\n".join(head + rows + extra))
+    head, rows = table_parts(text, "Anchors")
+    known = {index_row_cells(row)[0] for row in rows + table_parts(ancestor, "Anchors")[1]}
+    extra = [row for row in table_parts(branch, "Anchors")[1] if index_row_cells(row)[0] not in known]
+    if head is not None and extra:
+        text = replace_section(text, "Anchors", "\n".join(head + rows + extra))
+    return text
+
+
+def index_lines(text):
+    """(name, line) of each capability row, linked or planned."""
+    out = []
+    for line in (text or "").split("\n"):
+        match = re.match(r"^\| (?:\[([a-z0-9-]+)\]\([^)]*\)|([a-z][a-z0-9-]*)) \|", line)
+        if match:
+            out.append((match.group(1) or match.group(2), line))
+    return out
+
+
+def rebased_plan(root, source, delta, touched, base, branch, ancestor, folded, unverified=()):
+    """The catalog of the capabilities ``touched`` and ``delta`` name, as the base plus ``delta``.
+
+    ``base``, ``branch`` and ``ancestor`` read a catalog path at each side. A change never folded
+    adds nothing yet: fold applies it later. A capability that ends up with nothing of the change gets
+    the base's files, or none when the base never had it. Returns the plan and any classification conflicts.
+    """
+    actions, conflicts = classify(root, delta, source, base)
+    if conflicts:
+        return None, conflicts
+    plan, statuses, specs, histories, live = {}, {}, {}, {}, []
+    capabilities = sorted(set(touched) | set(capabilities_of(delta)))
+    for capability in capabilities:
+        rels = {name: cap_rel(capability, name) for name in ("spec.md", "implementation.md", "history.md")}
+        mine = [action for action in actions if action[0]["capability"] == capability] if folded else []
+        if not mine:
+            for rel in rels.values():
+                plan[rel] = base(rel)
+            continue
+        live.append(capability)
+        specs[capability] = plan[rels["spec.md"]] = rewrite_spec(base(rels["spec.md"]), capability, delta["new"].get(capability), mine, source)
+        histories[capability] = plan[rels["history.md"]] = rewrite_history(base(rels["history.md"]), capability, mine, source)
+        implementation = merged_implementation(capability, base(rels["implementation.md"]), branch(rels["implementation.md"]), ancestor(rels["implementation.md"]), mine, source, unverified)
+        plan[rels["implementation.md"]] = implementation
+        statuses[capability] = rule_status(implementation)
+    index = base(INDEX) or template("capability-index.md")
+    present = {name for name, _ in index_lines(index)} | {name for name, _ in index_lines(ancestor(INDEX))}
+    # Rows the branch added for capabilities of other changes stay; the rows of this one come from the base.
+    for name, line in index_lines(branch(INDEX)):
+        if name not in present and name not in capabilities:
+            index = index.rstrip("\n") + "\n" + line + "\n"
+            present.add(name)
+    plan[INDEX] = rewrite_index(index, delta, statuses, specs, histories, live)
+    return plan, []
+
+
+def resolve_rev(root, ref):
+    found = git(root, "rev-parse", "--verify", "--quiet", ref + "^{commit}")
+    return found.strip() if found else None
+
+
+def base_ref(root, onto):
+    ref = onto or load_config(root)["base_branch"] or "main"
+    rev = resolve_rev(root, ref)
+    if rev is None:
+        raise CapError("base not found: %s; pass --onto <ref> or set base_branch in %s" % (ref, CONFIG))
+    return ref, rev
+
+
+def holds_change(root, rev, source):
+    return any(MARK in (git(root, "show", "%s:%s/%s" % (rev, source, name)) or "") for name in DOCS)
+
+
+def rebase_sides(root, source, onto):
+    """(branch, base) as commits. The two sides of a merge in progress or just committed; else HEAD and the base.
+
+    Of the two sides, the branch is the one that holds the change, so either merge direction works. Never
+    the working tree, which may hold conflict markers.
+    """
+    merging = resolve_rev(root, "MERGE_HEAD")
+    if merging:
+        first, second = resolve_rev(root, "HEAD"), merging
+    elif resolve_rev(root, "HEAD^2"):
+        first, second = resolve_rev(root, "HEAD^1"), resolve_rev(root, "HEAD^2")
+    else:
+        head = resolve_rev(root, "HEAD")
+        if head is None:
+            raise CapError("rebase needs a git repository with at least one commit")
+        return head, base_ref(root, onto)[1]
+    if not holds_change(root, first, source) and holds_change(root, second, source):
+        first, second = second, first
+    if not holds_change(root, first, source):
+        raise CapError("neither side of the merge holds %s; commit the change on its branch first" % source)
+    return first, base_ref(root, onto)[1] if onto else second
+
+
+def reader(root, rev):
+    return lambda rel: git(root, "show", "%s:%s" % (rev, rel)) if rev else None
+
+
+def was_folded(change, lock, histories, source):
+    """A change is in its branch's catalog once fold published it: its history row, or a fold in its lock."""
+    if (lock or {}).get("fold"):
+        return True
+    return any(cells[0] == source for text in histories for cells in table_rows(text, "Changes"))
+
+
+def other_folds(source, capabilities, base, branch, ancestor):
+    """Changes the branch folded into the same capabilities, besides this one. Rebuilding one change would lose them."""
+    found = set()
+    for capability in capabilities:
+        rel = cap_rel(capability, "history.md")
+        known = {cells[0] for text in (base(rel), ancestor(rel)) for cells in table_rows(text, "Changes")}
+        found |= {cells[0] for cells in table_rows(branch(rel), "Changes") if cells[0] not in known and cells[0] != source}
+    return sorted(found)
+
+
+def relocked(lock, text, delta, source, dropped):
+    """The lock for a delta rebase or defer rewrote: the same seal, and fold's observations of the rules that stay."""
+    data = stamp(text, delta, source)
+    fold = dict((lock or {}).get("fold") or {})
+    if fold and not delta["none"]:
+        fold["anchors"] = {rule_id: files for rule_id, files in (fold.get("anchors") or {}).items() if rule_id not in dropped}
+        data["fold"] = fold
+    return data
+
+
+def drop_reason(entries, how):
+    links = sorted({link for entry in entries for link in split_links(entry["links"]) if link != "none"})
+    reason = "%s left this change (%s)" % (", ".join(entry["id"] for entry in entries), how)
+    return reason + ("; %s out of scope" % ", ".join(links) if links else "")
+
+
+def cmd_rebase(root, change, onto, adopt, keep, drop, reason):
+    """3.3 of the plan: the catalog of a branch after merging its base, as the base plus this change's delta."""
+    source = source_of(root, change)
+    doc = change_doc(change)
+    text = read(doc)
+    if text is None:
+        raise CapError("no spec.md or capability-delta.md in %s" % source)
+    if has_conflict(text):
+        raise CapError("%s has merge conflict markers; resolve them in the spec, then run rebase" % source_of(root, doc))
+    delta, errors = parse_delta(text, source)
+    if errors:
+        return emit({"status": "invalid", "errors": errors}, INVALID)
+    if delta["none"]:
+        return emit({"status": "no-rule-change", "source": source})
+    choices = {}
+    for choice, ids in (("adopt", adopt), ("keep", keep), ("drop", drop)):
+        for rule_id in ids or []:
+            if choices.setdefault(rule_id, choice) != choice:
+                raise CapError("%s: choose one of --adopt, --keep and --drop" % rule_id)
+    entries = {entry["id"]: entry for entry in delta["entries"]}
+    unknown = sorted(set(choices) - set(entries))
+    if unknown:
+        raise CapError("not in the delta of %s: %s" % (source, ", ".join(unknown)))
+    branch_rev, base_rev = rebase_sides(root, source, onto)
+    ancestor_rev = (git(root, "merge-base", branch_rev, base_rev) or "").strip() or None
+    base, branch, ancestor = reader(root, base_rev), reader(root, branch_rev), reader(root, ancestor_rev)
+    with publish_lock(root):
+        if (root / JOURNAL).exists():
+            return emit({"status": "recover-needed"}, RECOVER)
+        pending, resolved, notes, dropped, unverified = [], [], [], [], set()
+        new_text = text
+        for entry in delta["entries"]:
+            rule_id, choice = entry["id"], choices.get(entry["id"])
+            conflict = classify(root, dict(delta, entries=[entry]), source, base)[1]
+            if not conflict:
+                if choice in ("adopt", "keep"):
+                    raise CapError("%s does not conflict with the base; only --drop takes it out" % rule_id)
+                if choice == "drop":
+                    dropped.append(entry)
+                continue
+            said = rules_of(base(cap_rel(entry["capability"], "spec.md"))).get(rule_id)
+            retired = retired_of(base(cap_rel(entry["capability"], "history.md"))).get(rule_id) if said is None else None
+            options = []
+            if said is not None and said["designed"] and entry["op"] != "REMOVED":
+                options.append("adopt")
+            if said is not None and said["text"] != entry["to"]:
+                options.append("keep")
+            options.append("drop")
+            if choice is None:
+                pending.append({
+                    "rule": rule_id, "op": entry["op"], "capability": entry["capability"], "conflict": conflict[0],
+                    "spec": entry["to"], "base": said["text"] if said else None, "base_designed": bool(said and said["designed"]),
+                    "retired_by": retired["by"] if retired else None, "choices": options,
+                })
+                continue
+            if choice not in options:
+                if retired:
+                    why = "the base retired the rule (retired by %s) and retired ids are not reused; --drop it, and add a new rule with ADDED if the spec still needs one" % retired["by"]
+                elif choice == "adopt":
+                    why = "the base's rule is not [designed], so there is no design to adopt; --keep or --drop"
+                else:
+                    why = "the base already says the spec's text; --adopt"
+                raise CapError("--%s %s: %s" % (choice, rule_id, why))
+            resolved.append({"rule": rule_id, "choice": choice})
+            links = ", ".join(split_links(entry["links"]))
+            if choice == "adopt":
+                new_text = delta_set(new_text, rule_id, op="IMPLEMENTED", fields={"From": said["text"], "To": said["text"]})
+                unverified.add(rule_id)
+                notes.append("%s: the spec now builds the base's text; its block stays unverified until fold observes the code again" % rule_id)
+                if links and links != "none":
+                    notes.append("%s: %s of %s still say the old text; update them" % (rule_id, links, source))
+            elif choice == "keep":
+                fields = {"From": said["text"]}
+                new_text = delta_set(new_text, rule_id, op="MODIFIED" if entry["op"] != "REMOVED" else None, fields=fields)
+                notes.append("%s: the spec changes the base's text %r to %r; that is a business decision for the PO" % (rule_id, said["text"], entry["to"]))
+            else:
+                dropped.append(entry)
+        if pending:
+            return emit({
+                "status": "decision",
+                "source": source,
+                "conflicts": pending,
+                "next": "choose for each rule: capabilities.py rebase --change %s --adopt <id> | --keep <id> | --drop <id>" % source,
+            }, DECISION)
+        for entry in dropped:
+            code = rule_status(branch(cap_rel(entry["capability"], "implementation.md"))).get(entry["id"], {}).get("code") or []
+            notes.append("%s left the delta%s%s" % (
+                entry["id"],
+                "; %s linked it: mark them out of scope" % entry["links"] if entry["links"] != "none" else "",
+                "; the code that built it has no rule now: %s" % ", ".join(code) if code else "",
+            ))
+        if dropped:
+            new_text = delta_drop(new_text, {entry["id"] for entry in dropped}, reason or drop_reason(dropped, "rebase --drop"))
+        new_delta, errors = parse_delta(new_text, source)
+        if errors:
+            raise CapError("the rebased delta is not valid: %s" % "; ".join(errors))
+        touched = capabilities_of(delta)
+        lock = load_lock(change)
+        folded = was_folded(change, lock, [branch(cap_rel(capability, "history.md")) for capability in touched], source)
+        others = other_folds(source, touched, base, branch, ancestor) if folded else []
+        if others:
+            raise CapError("this branch also folded %s into the same capabilities; rebase rebuilds one change and would lose them" % ", ".join(others))
+        plan, conflicts = rebased_plan(root, source, new_delta, touched, base, branch, ancestor, folded, unverified)
+        if conflicts:
+            return emit({"status": "conflict", "conflicts": conflicts}, DECISION)
+        changed = new_text != text
+        if changed:
+            plan[source_of(root, doc)] = new_text
+            if lock is not None:
+                plan[source + "/" + LOCK_NAME] = dumps(relocked(lock, new_text, new_delta, source, {entry["id"] for entry in dropped}))
+        written = publish(root, plan, "%s/%s-rebase" % (STAGING, sha(source)))
+        steps = ["git add specs/_capabilities %s and finish the merge" % source]
+        if unverified:
+            steps.append("run fold so it observes %s again" % ", ".join(sorted(unverified)))
+        return emit({
+            "status": "rebased",
+            "source": source,
+            "branch": branch_rev,
+            "base": base_rev,
+            "folded": folded,
+            "written": written,
+            "delta_changed": changed,
+            "stamped": changed and lock is not None,
+            "resolved": resolved,
+            "notes": notes,
+            "next": "; ".join(steps),
+        })
+
+
+def cmd_defer(root, change, ids, onto, reason):
+    """7.9 of the plan: leave rules out of a spec's delta. A [designed] rule goes back to designed."""
+    if not ids:
+        raise CapError("defer takes the ids of the rules to leave out: defer --change <spec> R-x")
+    source = source_of(root, change)
+    doc = change_doc(change)
+    text = read(doc)
+    if text is None:
+        raise CapError("no spec.md or capability-delta.md in %s" % source)
+    blocked = merge_conflict(root, change, text)
+    if blocked:
+        return emit(blocked, DECISION)
+    delta, errors = parse_delta(text, source)
+    if errors:
+        return emit({"status": "invalid", "errors": errors}, INVALID)
+    if design_capable(delta, source):
+        raise CapError("defer leaves rules out of a spec; a design record changes with another design record")
+    entries = {entry["id"]: entry for entry in delta["entries"]}
+    unknown = sorted(set(ids) - set(entries))
+    if unknown:
+        raise CapError("not in the delta of %s: %s" % (source, ", ".join(unknown)))
+    blocked = merge_conflict(root, change, text, delta)
+    if blocked:
+        return emit(blocked, DECISION)
+    deferred = [entries[rule_id] for rule_id in sorted(set(ids))]
+    with publish_lock(root):
+        if (root / JOURNAL).exists():
+            return emit({"status": "recover-needed"}, RECOVER)
+        new_text = delta_drop(text, set(ids), reason or drop_reason(deferred, "defer"))
+        new_delta, errors = parse_delta(new_text, source)
+        if errors:
+            raise CapError("the delta left after defer is not valid: %s" % "; ".join(errors))
+        touched = capabilities_of(delta)
+        lock = load_lock(change)
+        here = lambda rel: read(root / rel)
+        folded = was_folded(change, lock, [here(cap_rel(capability, "history.md")) for capability in touched], source)
+        plan = {}
+        if folded:
+            # The catalog of this branch is its base point plus the delta: rebuild it with the delta that is left.
+            ref = base_ref(root, onto)[0]
+            point = (git(root, "merge-base", "HEAD", ref) or "").strip()
+            if not point:
+                raise CapError("no merge base with %s; pass --onto <ref>" % ref)
+            start = reader(root, point)
+            plan, conflicts = rebased_plan(root, source, new_delta, touched, start, here, start, True)
+            if conflicts:
+                return emit({"status": "conflict", "conflicts": conflicts, "reason": "the base changed these rules; run capabilities.py rebase --change %s first" % source}, DECISION)
+        plan[source_of(root, doc)] = new_text
+        if lock is not None:
+            plan[source + "/" + LOCK_NAME] = dumps(relocked(lock, new_text, new_delta, source, set(ids)))
+        written = publish(root, plan, "%s/%s-defer" % (STAGING, sha(source)))
+    designed = [entry["id"] for entry in deferred if rules_of(read(root / cap_rel(entry["capability"], "spec.md"))).get(entry["id"], {}).get("designed")]
+    return emit({
+        "status": "deferred",
+        "source": source,
+        "rules": [entry["id"] for entry in deferred],
+        "links": {entry["id"]: split_links(entry["links"]) for entry in deferred},
+        "designed": designed,
+        "folded": folded,
+        "written": written,
+        "stamped": lock is not None,
+        "next": "mark the requirements in links out of scope in %s, then run review" % source_of(root, doc),
+    })
+
+
+def overview_of(text):
+    for line in (section(text or "", "Overview") or "").split("\n")[1:]:
+        if line.strip():
+            return norm(line).replace("|", "\\|")
+    return ""
+
+
+def cmd_index(root, rebuild):
+    """index --rebuild: the index from the capability directories, one row each, with its state recalculated."""
+    if not rebuild:
+        raise CapError("index takes --rebuild")
+    with publish_lock(root):
+        if (root / JOURNAL).exists():
+            return emit({"status": "recover-needed"}, RECOVER)
+        catalog = root / CATALOG
+        names = sorted(p.name for p in catalog.iterdir() if p.is_dir() and p.name != "_changes" and not p.name.startswith(".") and (p / "spec.md").is_file()) if catalog.is_dir() else []
+        text = read(root / INDEX) or template("capability-index.md")
+        lines = [line for line in text.split("\n") if not CONFLICT_SIDE.match(line) and line != "======="]
+        rows, out, done, designed, states = {}, [], set(), False, {}
+        for name, line in index_lines("\n".join(lines)):
+            rows.setdefault(name, line)
+
+        def row_for(name):
+            spec = read(catalog / name / "spec.md")
+            rules = rules_of(spec)
+            states[name] = capability_state(rules, retired_of(read(catalog / name / "history.md")))
+            cells = index_row_cells(rows[name]) if name in rows else []
+            linked = bool(cells) and cells[0].startswith("[")
+            covers = cells[1] if len(cells) > 1 and cells[1] else overview_of(spec)
+            kept = cells[3] if linked and len(cells) > 3 else "none"
+            codes = [ref for row in rule_status(read(catalog / name / "implementation.md")).values() for ref in row["code"]]
+            entry_point = kept if kept not in ("", "none") else ("`%s`" % codes[0] if codes else "none")
+            return index_row(name, covers, states[name], entry_point), any(rule["designed"] for rule in rules.values())
+
+        last = None
+        for line in lines:
+            match = index_lines(line)
+            if not match:
+                out.append(line)
+                continue
+            name = match[0][0]
+            if name in done:
+                continue
+            done.add(name)
+            if name in names:
+                line, marked = row_for(name)
+                designed = designed or marked
+            elif not re.match(r"^\| %s \| [^|]* \| planned \|" % re.escape(name), line):
+                continue
+            out.append(line)
+            last = len(out)
+        missing = [name for name in names if name not in done]
+        added = []
+        for name in missing:
+            line, marked = row_for(name)
+            designed = designed or marked
+            added.append(line)
+        if added:
+            if last is None:
+                out = ("\n".join(out).rstrip("\n") + "\n" + "\n".join(added)).split("\n")
+            else:
+                out[last:last] = added
+        new = "\n".join(out)
+        new = new.rstrip("\n") + "\n"
+        if designed:
+            new = with_seal(new)
+        written = publish(root, {INDEX: new}, "%s/index-rebuild" % STAGING)
+    return emit({"status": "rebuilt" if written else "unchanged", "written": written, "capabilities": states})
 
 
 # ---------------------------------------------------------------- test evidence
@@ -1492,9 +2354,11 @@ class Check:
             return None
         capability, rule_id, op = entry["capability"], entry["id"], entry["op"]
         base_says = rules_of(self.show(self.base, cap_rel(capability, "spec.md"))).get(rule_id)
-        already = base_says is not None and op != "REMOVED" and base_says["text"] == entry["to"]
+        # A [designed] rule on the base is approved, not built: only a DESIGNED entry finds it delivered there.
+        already = base_says is not None and op != "REMOVED" and base_says["text"] == entry["to"] and base_says["designed"] == (op == "DESIGNED")
         where = "%s %s" % (op, rule_id)
-        if op in ("ADDED", "INFERRED"):
+        retired_by = None if base_says is not None else retired_of(self.show(self.base, cap_rel(capability, "history.md"))).get(rule_id, {}).get("by")
+        if op in ("ADDED", "INFERRED") or (op == "DESIGNED" and entry["from"] == "(none)"):
             if base_says is not None and not already:
                 self.hard.append("%s: already exists on %s as %r" % (where, self.base, base_says["text"]))
             if base_says is None and rule_id in retired_of(self.show(self.base, cap_rel(capability, "history.md"))):
@@ -1506,9 +2370,23 @@ class Check:
             says = base_says["text"] if base_says else None
             if already:
                 self.notes.append("%s: %s already delivered on %s with the same text" % (source, rule_id, self.base))
+            elif says is None and retired_by and op != "REMOVED":
+                self.hard.append("%s: branch started from %r but %s retired the rule (retired by %s); run capabilities.py rebase --change %s" % (where, entry["from"], self.base, retired_by, source))
             elif says != entry["from"]:
                 self.hard.append("%s: branch started from %r but %s now says %r; this change proposes %r" % (where, entry["from"], self.base, says, entry["to"]))
         return already
+
+    def was_designed(self, entry):
+        """Whether the rule a REMOVED retires was [designed]: in the catalog still, at the merge base, or by a DESIGNED of this branch."""
+        rule_id, rel = entry["id"], cap_rel(entry["capability"], "spec.md")
+        now = self.head_rules.get(entry["capability"], {}).get(rule_id)
+        if now is not None:
+            return now["designed"]
+        if self.merge_base:
+            before = rules_of(self.show(self.merge_base, rel)).get(rule_id)
+            if before is not None:
+                return before["designed"]
+        return any(other["op"] == "DESIGNED" and other["id"] == rule_id for entries in self.entries_by_source.values() for other in entries)
 
     def entry_applied(self, entry, source, already):
         capability, rule_id, op = entry["capability"], entry["id"], entry["op"]
@@ -1520,6 +2398,9 @@ class Check:
             return False
         if rule["inferred"] != (op == "INFERRED"):
             return False
+        # An IMPLEMENTED is applied once the mark is gone and the spec is the origin, never while the rule is still [designed].
+        if rule["designed"] != (op == "DESIGNED"):
+            return False
         return rule["tag"] == source or bool(already)
 
     def eval_change(self, change):
@@ -1530,10 +2411,14 @@ class Check:
             self.hard.append("%s: no spec.md or capability-delta.md" % source)
             self.states[source] = "invalid"
             return
+        if has_conflict(text):
+            self.hard.append("%s: %s" % (source, conflict_message([source_of(self.root, doc)], source)))
+            self.states[source] = "invalid"
+            return
         if self.delivered(source, source_of(self.root, doc), text, change):
             self.states[source] = "delivered"
             return
-        delta, errors = parse_delta(text)
+        delta, errors = parse_delta(text, source)
         if errors:
             self.hard.extend("%s: %s" % (source, error) for error in errors)
             self.states[source] = "invalid"
@@ -1560,20 +2445,28 @@ class Check:
             messages.append("%s: delta not reviewed for this spec (hook skipped or spec edited later)" % source)
         if tasks:
             messages.append("%s: %d open tasks" % (source, tasks))
-        elif tasks is None:
+        elif tasks is None and not is_design(delta):
             self.notes.append("%s: no tasks.md; readiness rests on the delta and test evidence" % source)
         for entry, done in applied:
             if not done:
                 now = self.head_rules.get(entry["capability"], {}).get(entry["id"])
+                if now is not None and now["designed"] and entry["op"] != "DESIGNED" and now["text"] == entry["to"]:
+                    messages.append("%s %s: the rule is still [designed] in the catalog; fold publishes it with its code and tests" % (entry["op"], entry["id"]))
+                    continue
                 messages.append("%s %s: catalog says %r, delta requires %r" % (entry["op"], entry["id"], now["text"] if now else "(absent)", entry["to"]))
         state = "reviewed" if reviewed else "drafted"
         if reviewed and all(done for _, done in applied):
             state = "prepared"
         problems = []
         for entry in delta["entries"]:
+            if entry["op"] == "DESIGNED" or (entry["op"] == "REMOVED" and self.was_designed(entry)):
+                # Approved, not built: a design record brings no evidence, and retiring an unbuilt rule needs none.
+                if entry["op"] == "REMOVED" and not design_capable(delta, source):
+                    problems.append("REMOVED %s: a [designed] rule is retired only by a design record; to leave it out of this spec, run capabilities.py defer" % entry["id"])
+                continue
             if entry["op"] == "REMOVED":
                 problems.extend(self.retirement_problems(entry, source, lock))
-            elif entry["op"] in ("ADDED", "MODIFIED"):
+            elif entry["op"] in ("ADDED", "MODIFIED", "IMPLEMENTED"):
                 row = self.head_status.get(entry["capability"], {}).get(entry["id"])
                 if row is None:
                     problems.append("%s: no Rule Status block" % entry["id"])
@@ -1622,14 +2515,35 @@ class Check:
         for rule_id, names in sorted(owners.items()):
             if len(names) > 1:
                 self.hard.append("%s: rule id used by several capabilities: %s" % (rule_id, ", ".join(names)))
-        rows = re.findall(r"^\| \[([a-z0-9-]+)\]", read(self.root / INDEX) or "", re.M)
+        index = read(self.root / INDEX) or ""
+        rows = re.findall(r"^\| \[([a-z0-9-]+)\]", index, re.M)
         for name in sorted({row for row in rows if rows.count(row) > 1}):
-            self.hard.append("index.md: duplicated capability " + name)
+            self.hard.append("index.md: duplicated capability %s; after a merge, run capabilities.py rebase --change <feature>, or index --rebuild" % name)
         for name in self.capabilities:
             if name not in rows and self.head_rules[name]:
                 self.hard.append("index.md: capability %s has rules and no row" % name)
         for name in sorted(set(rows) - set(self.capabilities)):
             self.hard.append("index.md: capability %s has a row and no directory" % name)
+        self.check_index_states(index)
+        if any(rule["designed"] for rules in self.head_rules.values() for rule in rules.values()) and catalog_format(index) < CATALOG_FORMAT:
+            self.hard.append("index.md: the catalog holds [designed] rules but not the format seal %s; run capabilities.py index --rebuild" % FORMAT_SEAL)
+        catalog = self.root / CATALOG
+        files = [source_of(self.root, path) for path in sorted(catalog.rglob("*.md")) if path.is_file()] if catalog.is_dir() else []
+        for rel in conflicted(self.root, files):
+            self.hard.append("%s: %s" % (rel, conflict_message([rel])))
+
+    def check_index_states(self, index):
+        """Each row says what its rules make it (2.1). A row left without rules and still consolidated is legacy, and stays."""
+        for line in index.splitlines():
+            match = INDEX_ROW.match(line)
+            if not match or match.group(1) not in self.head_rules:
+                continue
+            name, cells = match.group(1), index_row_cells(line)
+            said = cells[2] if len(cells) > 2 else ""
+            rules = self.head_rules[name]
+            expected = capability_state(rules, retired_of(read(self.root / cap_rel(name, "history.md"))))
+            if said != expected and not (not rules and said == "consolidated"):
+                self.hard.append("index.md: %s says %s but its rules make it %s; run capabilities.py index --rebuild" % (name, said or "nothing", expected))
 
     def check_provenance(self):
         """Every rule must be backed by the delta its tag points to."""
@@ -1656,6 +2570,8 @@ class Check:
                     return "origin %s sets %r but the catalog says %r" % (rule["tag"], entry.get("to"), rule["text"])
                 if rule["inferred"] != (entry["op"] == "INFERRED"):
                     return "origin %s does not match the [inferred] mark" % rule["tag"]
+                if rule["designed"] != (entry["op"] == "DESIGNED"):
+                    return "origin %s does not match the [designed] mark: only a DESIGNED entry sets it, and every other one clears it" % rule["tag"]
                 return None
         return "origin %s does not establish this rule" % rule["tag"]
 
@@ -1670,6 +2586,12 @@ class Check:
                     continue
                 if entry["to"] != after["text"] or after["tag"] != source:
                     continue
+                if after["designed"] != (entry["op"] == "DESIGNED"):
+                    continue
+                if entry["op"] == "DESIGNED" and (before is None or before["designed"]):
+                    return True
+                if before is not None and before["designed"] and entry["op"] == "IMPLEMENTED" and before["text"] == after["text"] and not after["inferred"]:
+                    return True
                 if before is None and entry["op"] in ("ADDED", "INFERRED") and after["inferred"] == (entry["op"] == "INFERRED"):
                     return True
                 if before is not None and entry["op"] == "MODIFIED" and not after["inferred"]:
@@ -1785,6 +2707,10 @@ class Check:
 
     def run(self, explicit):
         self.resolve_base()
+        if self.base:
+            problem = format_error(self.show(self.base, INDEX), "%s:%s" % (self.base, INDEX))
+            if problem:
+                raise CapError(problem)
         if (self.root / JOURNAL).exists():
             return emit({"mode": self.mode, "hard": ["fold interrupted or in progress: run recover"], "notes": [], "states": {}, "revalidated": []}, HARD)
         self.load_report()
@@ -1809,7 +2735,8 @@ class Check:
 
 def build_parser():
     parser = argparse.ArgumentParser(description="Capability catalog mechanics")
-    parser.add_argument("command", choices=["status", "locate", "clarify-context", "scaffold", "ensure", "review", "prepare", "apply", "recover", "check"])
+    parser.add_argument("command", choices=["status", "locate", "clarify-context", "scaffold", "ensure", "review", "prepare", "apply", "recover", "check", "publish-design", "delta-block", "rebase", "defer", "index"])
+    parser.add_argument("ids", nargs="*", help="defer: the rules to leave out of the delta")
     parser.add_argument("--root", default=".")
     parser.add_argument("--change", action="append", default=[])
     parser.add_argument("--capability")
@@ -1821,10 +2748,22 @@ def build_parser():
     parser.add_argument("--base")
     parser.add_argument("--report", action="extend", nargs="+", help="check: JUnit XML files or directories that hold them")
     parser.add_argument("--combined", action="store_true", help="evaluate a merge queue commit: changed anchors must be revalidated by this commit's tests")
+    parser.add_argument("--implement", action="extend", nargs="+", default=[], help="delta-block: the [designed] rules a spec builds")
+    parser.add_argument("--onto", help="rebase, defer: the base branch, instead of base_branch from the config")
+    parser.add_argument("--adopt", action="extend", nargs="+", default=[], help="rebase: the spec builds the base's text of these rules")
+    parser.add_argument("--keep", action="extend", nargs="+", default=[], help="rebase: the spec keeps its text of these rules, as MODIFIED")
+    parser.add_argument("--drop", action="extend", nargs="+", default=[], help="rebase: these rules leave the delta")
+    parser.add_argument("--reason", help="rebase, defer: why, when no rule is left in the delta")
+    parser.add_argument("--rebuild", action="store_true", help="index: regenerate the index from the capability directories")
     return parser
 
 
 def dispatch(args, root):
+    problem = format_error(read(root / INDEX))
+    if problem:
+        raise CapError(problem)
+    if args.ids and args.command != "defer":
+        raise CapError("%s takes no rule ids; only defer does" % args.command)
     if args.command == "status":
         return cmd_status(root, args.capability)
     if args.command == "locate":
@@ -1841,7 +2780,19 @@ def dispatch(args, root):
         if args.combined and args.mode != "ci":
             raise CapError("--combined requires --mode ci")
         return Check(root, args.mode, args.base, args.report, args.combined).run([root / change for change in args.change])
+    if args.command == "delta-block":
+        return cmd_delta_block(root, args.implement)
+    if args.command == "index":
+        return cmd_index(root, args.rebuild)
+    if args.command == "publish-design":
+        if not args.change:
+            raise CapError("publish-design requires --change, the design record")
+        return cmd_publish_design(root, root / args.change[0])
     change = resolve_change(root, args.change)
+    if args.command == "rebase":
+        return cmd_rebase(root, change, args.onto, args.adopt, args.keep, args.drop, args.reason)
+    if args.command == "defer":
+        return cmd_defer(root, change, args.ids, args.onto, args.reason)
     if args.command == "ensure":
         return cmd_ensure(root, change)
     if args.command == "review":
@@ -1864,7 +2815,8 @@ def main():
         return run_graph(sys.argv[2:])
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
-    args = build_parser().parse_args()
+    # Intermixed, so the rule ids of defer may come after the options: defer --change specs/001-x R-a R-b.
+    args = build_parser().parse_intermixed_args()
     root = Path(args.root).resolve()
     try:
         return dispatch(args, root)
