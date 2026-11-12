@@ -2,6 +2,16 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.6.0] - 2026-11-12
+
+### Changed
+
+- test(capabilities): drop bytecode caches after same-size edits in the adopt test
+- test(capabilities): drop three unused imports from the lifecycle tests
+- docs: add designed rules and merges to the lifecycle picture
+- feat(capabilities): design rules before they are built, and merge two branches
+- chore: begin 1.5.8.dev0 development
+
 ## [1.5.7] - 2026-11-09
 
 ### Changed
