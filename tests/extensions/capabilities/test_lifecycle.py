@@ -122,6 +122,16 @@ def s2_repo(tmp_path_factory):
     return path
 
 
+def test_a_commit_in_a_test_repo_starts_no_git_maintenance(tmp_path):
+    """copied() copies the session's repos: a maintenance still running there drops its lock mid-copy."""
+    repo = Repo(tmp_path)
+    repo.git("init", "-q", "-b", "main", ".")
+    repo.write("a.txt", "a\n")
+    repo.git("add", "-A")
+    traced = repo.git("commit", "-qm", "a", env={"GIT_TRACE": "1"}).stderr
+    assert "maintenance run" not in traced and "gc --auto" not in traced, traced
+
+
 @pytest.fixture
 def design(design_repo, tmp_path):
     return copied(design_repo, tmp_path)

@@ -123,8 +123,12 @@ class Repo:
     def git(self, *args, ok=True, env=None):
         full_env = dict(os.environ)
         full_env.update(env or {})
+        # No automatic maintenance. Recent git starts `git maintenance run --auto --detach`
+        # after a commit or a merge, and it creates and removes .git/objects/maintenance.lock
+        # in the background. A fixture repo copied with copytree meanwhile failed on macOS CI.
         done = subprocess.run(
-            ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", *args],
+            ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false",
+             "-c", "maintenance.auto=false", "-c", "gc.auto=0", *args],
             cwd=self.path, capture_output=True, encoding="utf-8", errors="replace", env=full_env,
         )
         if ok and done.returncode:
