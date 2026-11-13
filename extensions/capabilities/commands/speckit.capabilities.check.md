@@ -29,6 +29,6 @@ $ARGUMENTS
    | `delivered` | Already on the base; its delta is a sealed record | Nothing |
    | `no-rule-change` | `Capabilities: none` with a reason | Nothing |
 
-4. `hard` and `notes` also hold what `{SCRIPT} slices check` finds. A line that starts with `specs/_slices/` is about a slice map, and one that starts with a spec is about its `## Slice` section. A hard line means the maps and the specs disagree: a slice id used twice, a dependency that does not exist or comes later, a rule in two slices, two specs for one slice, or a spec that builds a rule of another slice. `speckit.capabilities.slice` is where a map is changed.
+4. `hard` and `notes` also hold what `{SCRIPT} slices check` finds. A line that starts with `specs/_slices/` is about a slice map, and one that starts with a spec is about its `## Slice` section or its size. A hard line means the maps and the specs disagree: a slice id used twice, a dependency that does not exist or comes later, a rule in two slices, two specs for one slice, or a spec that builds a rule of another slice. `speckit.capabilities.slice` is where a map is changed. A note that starts with `Slice size:` is a spec over the slice budget that is not delivered yet: `speckit.capabilities.size` proposes a split, or records why the spec stays as it is.
 
 Do not fix anything from this command.

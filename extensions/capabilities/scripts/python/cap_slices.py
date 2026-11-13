@@ -10,6 +10,9 @@ specs, their tasks and the catalog, so it cannot go stale.
 config are read with that script's parsers and not with copies of them. Standard library only and
 Python 3.9+.
 
+A slice has a size. ``measure`` counts what a spec holds against the budget of the project, and
+``accept`` records why a spec stays over it, next to the spec in ``slice-budget.json``.
+
 Exit codes, as in capabilities.py: 0 done, 1 ``check`` found a failure, 2 invalid input, and
 3 when ``show`` needs a decision: the slice already has a spec, or it waits for another slice.
 """
@@ -17,6 +20,7 @@ Exit codes, as in capabilities.py: 0 done, 1 ``check`` found a failure, 2 invali
 from __future__ import annotations
 
 import argparse
+import json
 import re
 from pathlib import Path
 
@@ -33,6 +37,13 @@ STANDALONE = re.compile(r"^standalone\s*[-—:]\s*(\S.*)$")
 REQUIRED = ("intent", "verify", "depends-on", "rules")
 OPTIONAL = ("in", "out", "kind", "dropped")
 NOTHING = {"none", "-", "—"}
+# The most one slice holds. The config changes a number with slice_max_<what>.
+BUDGET = {"stories": 1, "requirements": 10, "rules": 4, "tasks": 25}
+BUDGET_NAME = "slice-budget.json"
+BUDGET_FORMAT = 1
+STORY = re.compile(r"^### User Story \d+", re.M)
+TASK = re.compile(r"^\s*- \[[ xX]\] ", re.M)
+NAMES = {"stories": ("story", "stories"), "requirements": ("requirement", "requirements"), "rules": ("rule", "rules"), "tasks": ("task", "tasks")}
 
 
 def strip_comments(text):
@@ -335,7 +346,114 @@ def problems(project):
     touched = {project.rules[rule_id]["capability"] for rule_id in project.owner if rule_id in project.rules}
     for rule_id in project.unassigned(touched):
         notes.append("%s is [designed] and in no slice and not in ## Later" % rule_id)
+    size_hard, size_notes = sizes(project)
+    return hard + size_hard, notes + size_notes
+
+
+def sizes(project):
+    """(hard, notes) about the size of the specs that name a slice and are not delivered yet. What was delivered is not measured again."""
+    cap, hard, notes = project.cap, [], []
+    try:
+        limits = budget(cap, project.config)
+    except cap.CapError as error:
+        return [str(error)], []
+    for spec in project.specs:
+        if not spec["declared"] or spec["state"] == "delivered":
+            continue
+        try:
+            size = measure(cap, project.root, project.root / spec["spec"], limits)
+        except cap.CapError as error:
+            hard.append(str(error))
+            continue
+        if size["status"] == "over":
+            notes.append("%s: %s Split it, or record why with `slices accept`" % (spec["spec"], size["summary"]))
     return hard, notes
+
+
+def budget(cap, config):
+    """The most a slice holds: the defaults, with the numbers the config changes."""
+    limits = {}
+    for what, default in BUDGET.items():
+        value = config.get("slice_max_" + what) or ""
+        if not value:
+            limits[what] = default
+        elif re.fullmatch(r"[1-9]\d*", value):
+            limits[what] = int(value)
+        else:
+            raise cap.CapError("slice_max_%s in %s takes a whole number above 0: %s" % (what, cap.CONFIG, value))
+    return limits
+
+
+def counts(cap, change, source):
+    """What a spec holds: stories, requirements, scenarios and success criteria, the rules its delta changes, and its tasks once they are written."""
+    text = cap.read(change / cap.DOCS[0])
+    if text is None:
+        raise cap.CapError("no %s in %s" % (cap.DOCS[0], source))
+    plain = strip_comments(text)
+    ids = cap.spec_sections(plain)
+    delta = cap.parse_delta(cap.read(cap.change_doc(change)) or "", source)[0]
+    tasks = cap.read(change / "tasks.md")
+    return {
+        "stories": len(STORY.findall(plain)),
+        "requirements": sum(1 for key in ids if key.startswith("FR-")),
+        "scenarios": sum(1 for key in ids if key.startswith("US")),
+        "criteria": sum(1 for key in ids if key.startswith("SC-")),
+        "rules": len(delta["entries"]) if delta else 0,
+        "tasks": None if tasks is None else len(TASK.findall(strip_comments(tasks))),
+    }
+
+
+def accepted_of(cap, change, source):
+    """What the user accepted for a spec over the budget, or None. ``accept`` writes it; nobody edits it by hand."""
+    text = cap.read(change / BUDGET_NAME)
+    if text is None:
+        return None
+    try:
+        data = json.loads(text)
+        reason, numbers = data["reason"], data["accepted"]
+        fine = isinstance(reason, str) and bool(reason.strip()) and all(numbers[what] is None or type(numbers[what]) is int for what in BUDGET)
+    except (ValueError, KeyError, TypeError):
+        fine = False
+    if not fine:
+        raise cap.CapError("%s/%s cannot be read; write it again with `slices accept`" % (source, BUDGET_NAME))
+    return {"reason": cap.norm(reason), "counts": {what: numbers[what] for what in BUDGET}}
+
+
+def measure(cap, root, change, limits):
+    """A spec against the budget. Over the budget and accepted is settled until the spec grows past the numbers that were accepted."""
+    source = cap.source_of(root, change)
+    held = counts(cap, change, source)
+    accepted = accepted_of(cap, change, source)
+    over = []
+    for what, limit in limits.items():
+        if held[what] is not None and held[what] > limit:
+            item = {"what": what, "count": held[what], "max": limit}
+            if accepted and accepted["counts"][what] is not None:
+                item["accepted"] = accepted["counts"][what]
+            over.append(item)
+    settled = all("accepted" in item and item["count"] <= item["accepted"] for item in over)
+    status = "within" if not over else "accepted" if settled else "over"
+    return {"status": status, "spec": source, "counts": held, "budget": limits, "over": over, "accepted": accepted,
+            "summary": summary(held, limits, over, status, accepted)}
+
+
+def summary(held, limits, over, status, accepted):
+    """One line a person reads: the numbers, each with its limit, and where the spec stands."""
+    parts = []
+    for what, limit in limits.items():
+        if held[what] is None:
+            parts.append("%s not written (max %d)" % (what, limit))
+        else:
+            parts.append("%d %s (max %d)" % (held[what], NAMES[what][held[what] != 1], limit))
+    where = " and ".join(item["what"] for item in over)
+    if status == "within":
+        end = "Within the slice budget."
+    elif status == "accepted":
+        end = "Over the slice budget in %s; accepted: %s" % (where, accepted["reason"])
+    else:
+        grew = [item["what"] for item in over if "accepted" in item and item["count"] > item["accepted"]]
+        end = "Over the slice budget in %s.%s" % (where, " It grew past what was accepted in %s." % " and ".join(grew) if grew else "")
+    return "Slice size: %s. %s" % (", ".join(parts), end)
 
 
 def cycles(project):
@@ -430,6 +548,61 @@ def cmd_show(cap, project, slice_id):
     }, cap.OK if status == "ok" else cap.DECISION)
 
 
+def named_change(cap, project, given):
+    return cap.resolve_change(project.root, [given] if given else [])
+
+
+def declared_by(cap, project, change):
+    """What the spec says about its slice, for a caller that has to know whether a map already holds it."""
+    declared = parse_declaration(cap, cap.read(change / cap.DOCS[0]) or "")[0] or {"slice": None, "standalone": None}
+    found = project.by_id.get(declared["slice"])
+    return {"slice": declared["slice"], "standalone": declared["standalone"], "map": found[0]["map"] if found else None}
+
+
+def cmd_measure(cap, project, given):
+    change = named_change(cap, project, given)
+    return cap.emit(dict(measure(cap, project.root, change, budget(cap, project.config)), **declared_by(cap, project, change)))
+
+
+def cmd_accept(cap, project, given, reason):
+    reason = cap.norm(reason or "")
+    if not reason:
+        raise cap.CapError("accept takes --reason: why this spec stays over the slice budget")
+    change = named_change(cap, project, given)
+    limits = budget(cap, project.config)
+    size = measure(cap, project.root, change, limits)
+    written = None
+    if size["status"] != "within":
+        written = "%s/%s" % (size["spec"], BUDGET_NAME)
+        cap.write_file(change / BUDGET_NAME, cap.dumps({"schema": BUDGET_FORMAT, "reason": reason, "accepted": {what: size["counts"][what] for what in BUDGET}}))
+        size = measure(cap, project.root, change, limits)
+    return cap.emit(dict(size, written=written, **declared_by(cap, project, change)))
+
+
+def of_spec(cap, root, change):
+    """For clarify: the slice a spec builds, what the other slices of its map own, and its size. None for a spec from before slices."""
+    declared, errors = parse_declaration(cap, cap.read(change / cap.DOCS[0]) or "")
+    if declared is None:
+        return None
+    project = Project(cap, root)
+    found = project.by_id.get(declared["slice"])
+    siblings = [project.view(other) for other in found[0]["slices"] if other["id"] != declared["slice"] and not other["dropped"]] if found else []
+    try:
+        size = measure(cap, root, change, budget(cap, project.config))
+        size = {"status": size["status"], "summary": size["summary"]}
+    except cap.CapError as error:
+        size = {"status": "invalid", "summary": str(error)}
+    return {
+        "slice": declared["slice"],
+        "standalone": declared["standalone"],
+        "out": declared["out"],
+        "map": found[0]["map"] if found else None,
+        "siblings": [{"id": other["id"], "title": other["title"], "intent": other["intent"], "state": other["state"]} for other in siblings],
+        "errors": errors,
+        "size": size,
+    }
+
+
 def cmd_check(cap, project):
     hard, notes = problems(project)
     return cap.emit({"status": "invalid" if hard else "ok", "hard": hard, "notes": notes, "maps": [found["map"] for found in project.maps]}, cap.HARD if hard else cap.OK)
@@ -442,10 +615,12 @@ def report(cap, root):
 
 def build_parser():
     parser = argparse.ArgumentParser(prog="capabilities.py slices", description="The slices of the project")
-    parser.add_argument("command", choices=["status", "show", "check"])
+    parser.add_argument("command", choices=["status", "show", "check", "measure", "accept"])
     parser.add_argument("ids", nargs="*", help="show: the slice")
     parser.add_argument("--root", default=".")
     parser.add_argument("--map", help="status: one map, by name or by path")
+    parser.add_argument("--change", help="measure, accept: the spec directory, instead of the current feature")
+    parser.add_argument("--reason", help="accept: why the spec stays over the slice budget")
     return parser
 
 
@@ -461,6 +636,10 @@ def main(cap, argv):
         parser.error("%s takes no ids" % args.command)
     if args.map is not None and args.command != "status":
         parser.error("--map goes with status")
+    if args.change is not None and args.command not in ("measure", "accept"):
+        parser.error("--change goes with measure and accept")
+    if args.reason is not None and args.command != "accept":
+        parser.error("--reason goes with accept")
     try:
         problem = cap.format_error(cap.read(root / cap.INDEX))
         if problem:
@@ -470,6 +649,10 @@ def main(cap, argv):
             return cmd_status(cap, project, args.map)
         if args.command == "show":
             return cmd_show(cap, project, args.ids[0])
+        if args.command == "measure":
+            return cmd_measure(cap, project, args.change)
+        if args.command == "accept":
+            return cmd_accept(cap, project, args.change, args.reason)
         return cmd_check(cap, project)
     except cap.CapError as error:
         return cap.emit({"status": "invalid", "errors": [str(error)]}, cap.INVALID)

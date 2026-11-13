@@ -3,7 +3,7 @@ schema_version: "1.0"
 extension:
   id: capabilities
   name: "Capability Catalog"
-  version: "0.5.0"
+  version: "0.6.0"
   description: "Keeps the approved behaviour of each capability, its origin, its code and its tests discoverable across sessions."
   author: lema017
   repository: https://github.com/lema017/speckit-vs
@@ -21,6 +21,9 @@ provides:
     - name: speckit.capabilities.slice
       file: commands/speckit.capabilities.slice.md
       description: "Cut a request, or the designed rules of a capability, into slices of one spec each, and aim this run at one slice"
+    - name: speckit.capabilities.size
+      file: commands/speckit.capabilities.size.md
+      description: "Measure the spec against the slice budget, and propose a split when it is over"
     - name: speckit.capabilities.context
       file: commands/speckit.capabilities.context.md
       description: "Load the approved rules a request touches. Read-only; creates no branch."
@@ -45,7 +48,7 @@ provides:
   config:
     - name: "capabilities-config.yml"
       template: "config-template.yml"
-      description: "Feature roots and evidence options"
+      description: "Feature roots, evidence options and the slice budget"
       required: false
 
 hooks:
@@ -57,17 +60,27 @@ hooks:
       optional: false
       description: "Load approved rules before writing the spec"
   after_specify:
-    command: speckit.capabilities.review
-    optional: false
-    description: "Validate and seal the capability delta"
+    - command: speckit.capabilities.size
+      optional: false
+      description: "Measure the spec against the slice budget"
+    - command: speckit.capabilities.review
+      optional: false
+      description: "Validate and seal the capability delta"
   before_clarify:
     command: speckit.capabilities.clarify-context
     optional: false
     description: "Give clarify what the catalog and the graph already know"
   before_plan:
-    command: speckit.capabilities.review
+    - command: speckit.capabilities.size
+      optional: false
+      description: "Measure the spec again: clarifying it can make it grow"
+    - command: speckit.capabilities.review
+      optional: false
+      description: "Surface spec changes made after the delta was sealed"
+  after_tasks:
+    command: speckit.capabilities.size
     optional: false
-    description: "Surface spec changes made after the delta was sealed"
+    description: "Measure the tasks against the slice budget"
   after_implement:
     command: speckit.capabilities.fold
     optional: false

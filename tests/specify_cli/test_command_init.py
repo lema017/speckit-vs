@@ -544,6 +544,10 @@ def test_a_new_project_gets_the_default_extensions(tmp_path: Path):
     # Two hooks of its own before specify: the cut into slices, then the rules of the slice.
     assert _hook_order(project, "before_specify") == ["capabilities", "capabilities"]
     assert (project / ".claude/skills/speckit-capabilities-slice/SKILL.md").is_file()
+    # The size of the spec is measured before its delta is sealed, and again once the tasks exist.
+    assert _hook_order(project, "after_specify") == ["capabilities", "capabilities"]
+    assert _hook_order(project, "after_tasks") == ["capabilities"]
+    assert (project / ".claude/skills/speckit-capabilities-size/SKILL.md").is_file()
     template = (project / ".specify/extensions/capabilities/templates/spec-template.md").read_text(encoding="utf-8")
     assert "## Slice *(mandatory)*" in template and "## Capability Delta" in template
 
