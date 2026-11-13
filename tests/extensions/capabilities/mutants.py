@@ -399,6 +399,7 @@ SLICE_MUTANTS = [
     ("size-check-notes-what-was-accepted", '        if size["status"] == "over":\n            notes.append', '        if size["status"] != "within":\n            notes.append'),
     ("size-check-swallows-a-bad-budget", "    except cap.CapError as error:\n        return [str(error)], []", "    except cap.CapError:\n        return [], []"),
     ("size-check-swallows-a-bad-file", "        except cap.CapError as error:\n            hard.append(str(error))\n            continue", "        except cap.CapError:\n            continue"),
+    ("size-line-joins-with-and-only", 'return " and ".join(part for part in (", ".join(words[:-1]), words[-1]) if part) if words else ""', 'return " and ".join(words)'),
     ("size-grown-not-named", 'if "accepted" in item and item["count"] > item["accepted"]]', "if False]"),
     ("size-clarify-lists-dropped-siblings", 'if other["id"] != declared["slice"] and not other["dropped"]] if found else []', 'if other["id"] != declared["slice"]] if found else []'),
     ("size-change-on-any-command", '    if args.change is not None and args.command not in ("measure", "accept"):', "    if False:"),
