@@ -13,7 +13,7 @@ specs, and each of those runs through its own specify/plan/tasks/implement cycle
 > spec per slice and says which slice comes next. See
 > [One spec, one slice](capabilities.md#one-spec-one-slice). The manual roadmap on
 > this page is for a project without that extension.
-
+>
 > **When to reach for this.** Decomposition adds the most overhead of any strategy
 > in [Handling Complex Features](complex-features.md). Use it **only when the lighter
 > options there are insufficient** — first try limiting how many tasks run per
