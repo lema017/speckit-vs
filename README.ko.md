@@ -46,7 +46,7 @@ Linux, macOS, Windows 환경에서 **Python 3.11+**, **[uv](https://github.githu
 **CLI 설정**은 터미널에서 진행합니다. 아래 명령어를 실행해 Spec Kit을 설치하고 프로젝트를 만드세요:
 
 ```bash
-uv tool install specify-cli --from git+https://github.com/lema017/speckit-vs.git@v1.6.0
+uv tool install specify-cli --from git+https://github.com/lema017/speckit-vs.git@v1.6.1
 specify init my-project --integration copilot
 cd my-project
 ```

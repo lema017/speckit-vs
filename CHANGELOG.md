@@ -2,6 +2,21 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.6.1] - 2026-11-13
+
+### Changed
+
+- docs(sliced): register the catalog of this fork before installing the bundle
+- docs(how-to): keep the two notes of the roadmap guide in one quote
+- feat(workflows): build the slices of a map one after another
+- feat(progress): group the list of specs by slice map
+- fix(capabilities): send what a spec outgrew back to the slice that owns it
+- feat(capabilities): measure a spec against the slice budget
+- feat(capabilities): one spec builds one slice
+- feat(capabilities): fold takes Code and Anchors candidates from the graph
+- test(capabilities): start no git maintenance in the test repos
+- chore: begin 1.6.1.dev0 development
+
 ## [1.6.0] - 2026-11-12
 
 ### Changed

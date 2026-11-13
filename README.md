@@ -37,10 +37,10 @@ uv downloads Python 3.11 or later if your machine does not have it.
 
 <!-- Keep the tag in this section on the latest release. -->
 
-Install the latest release, `v1.6.0`:
+Install the latest release, `v1.6.1`:
 
 ```bash
-uv tool install specify-cli --from git+https://github.com/lema017/speckit-vs.git@v1.6.0
+uv tool install specify-cli --from git+https://github.com/lema017/speckit-vs.git@v1.6.1
 ```
 
 - **It takes a few minutes the first time.** It installs about 165 MB, most of it
@@ -56,8 +56,8 @@ Check that you installed this fork and not the original:
 uv tool list --show-version-specifiers
 ```
 
-Its `specify-cli` line should show `v1.6.0` and this repository's URL with the tag,
-`git+https://github.com/lema017/speckit-vs.git@v1.6.0`.
+Its `specify-cli` line should show `v1.6.1` and this repository's URL with the tag,
+`git+https://github.com/lema017/speckit-vs.git@v1.6.1`.
 
 Create a project with your agent's integration key, such as `claude`, `copilot`,
 `cursor-agent`, `gemini`, or `codex`. `specify integration list` shows all 43:
@@ -99,7 +99,7 @@ original Spec Kit. If your `specify` does not have `specify upgrade` yet, instal
 the new release once:
 
 ```bash
-uv tool install specify-cli --force --from git+https://github.com/lema017/speckit-vs.git@v1.6.0
+uv tool install specify-cli --force --from git+https://github.com/lema017/speckit-vs.git@v1.6.1
 ```
 
 Then run `specify upgrade` from each project's directory. See
