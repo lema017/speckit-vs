@@ -149,7 +149,7 @@ One story is the size of a slice. Three more numbers back it up, because a story
 | Key in `capabilities-config.yml` | Default | What is counted |
 |---|---|---|
 | `slice_max_stories` | 1 | `### User Story N` headings in the spec |
-| `slice_max_requirements` | 10 | `FR-###` requirements |
+| `slice_max_requirements` | 15 | `FR-###` requirements |
 | `slice_max_rules` | 4 | Rules in `## Capability Delta` |
 | `slice_max_tasks` | 25 | Tasks in `tasks.md`, done or open |
 
@@ -158,7 +158,7 @@ Scenarios and success criteria are counted and reported, with no limit.
 `speckit.capabilities.size` measures the spec after `specify`, again before `plan` because an interview can make a spec grow, and after `tasks`. Within the budget it prints one line:
 
 ```text
-Slice size: 1 story (max 1), 6 requirements (max 10), 1 rule (max 4), tasks not written (max 25). Within the slice budget.
+Slice size: 1 story (max 1), 6 requirements (max 15), 1 rule (max 4), tasks not written (max 25). Within the slice budget.
 ```
 
 Over the budget it proposes a split and waits for you:

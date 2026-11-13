@@ -23,7 +23,7 @@ LOCKOUT, OAUTH, ONE_ACCOUNT, RESET = "R-login-lockout", "R-login-oauth-providers
 ACCESO = "specs/001-acceso"
 BIG = "specs/002-grande"
 NO_RULES = "Capabilities: none — no cambia ninguna regla\n"
-BUDGET = {"stories": 1, "requirements": 10, "rules": 4, "tasks": 25}
+BUDGET = {"stories": 1, "requirements": 15, "rules": 4, "tasks": 25}
 
 
 @pytest.fixture(scope="session")
@@ -782,16 +782,16 @@ def accept(repo, reason, change=BIG):
 
 
 def test_measure_counts_what_a_spec_holds(design):
-    design.write(BIG + "/spec.md", sized(requirements=10, rules=4))
+    design.write(BIG + "/spec.md", sized(requirements=15, rules=4))
     out = size(design)
     assert out["status"] == "within" and out["over"] == [] and out["accepted"] is None
-    assert out["counts"] == {"stories": 1, "requirements": 10, "scenarios": 1, "criteria": 1, "rules": 4, "tasks": None}
+    assert out["counts"] == {"stories": 1, "requirements": 15, "scenarios": 1, "criteria": 1, "rules": 4, "tasks": None}
     assert out["budget"] == BUDGET
-    assert out["summary"] == "Slice size: 1 story (max 1), 10 requirements (max 10), 4 rules (max 4), tasks not written (max 25). Within the slice budget."
+    assert out["summary"] == "Slice size: 1 story (max 1), 15 requirements (max 15), 4 rules (max 4), tasks not written (max 25). Within the slice budget."
     assert (out["spec"], out["slice"], out["standalone"], out["map"]) == (BIG, None, "Entrar a la cuenta", None)
 
 
-@pytest.mark.parametrize("held, what, count", [({"stories": 2}, "stories", 2), ({"requirements": 11}, "requirements", 11), ({"rules": 5}, "rules", 5)])
+@pytest.mark.parametrize("held, what, count", [({"stories": 2}, "stories", 2), ({"requirements": 16}, "requirements", 16), ({"rules": 5}, "rules", 5)])
 def test_one_more_than_the_budget_is_over(design, held, what, count):
     design.write(BIG + "/spec.md", sized(**held))
     out = size(design)
@@ -800,11 +800,11 @@ def test_one_more_than_the_budget_is_over(design, held, what, count):
 
 
 def test_the_line_names_everything_that_is_over(design):
-    design.write(BIG + "/spec.md", sized(stories=2, requirements=11, rules=5))
+    design.write(BIG + "/spec.md", sized(stories=2, requirements=16, rules=5))
     design.write(BIG + "/tasks.md", tasks(26))
     assert size(design)["summary"].endswith(" Over the slice budget in stories, requirements, rules and tasks.")
     accept(design, "Todo va junto.")
-    design.write(BIG + "/spec.md", sized(stories=3, requirements=12, rules=6))
+    design.write(BIG + "/spec.md", sized(stories=3, requirements=17, rules=6))
     assert size(design)["summary"].endswith(" It grew past what was accepted in stories, requirements and rules.")
 
 
@@ -881,11 +881,11 @@ def test_a_slice_is_measured_only_when_one_spec_builds_it(design):
 
 
 def test_the_config_changes_the_budget(design):
-    design.write(BIG + "/spec.md", sized(stories=2, requirements=12))
+    design.write(BIG + "/spec.md", sized(stories=2, requirements=17))
     assert size(design)["status"] == "over"
-    design.config(slice_max_stories=2, slice_max_requirements=12)
+    design.config(slice_max_stories=2, slice_max_requirements=17)
     out = size(design)
-    assert out["status"] == "within" and out["budget"] == {"stories": 2, "requirements": 12, "rules": 4, "tasks": 25}
+    assert out["status"] == "within" and out["budget"] == {"stories": 2, "requirements": 17, "rules": 4, "tasks": 25}
 
 
 @pytest.mark.parametrize("value", ["0", "-1", "many", "2.5"])
@@ -908,26 +908,26 @@ def test_the_config_template_holds_the_budget_the_script_uses(design):
 
 
 def test_accept_records_why_a_spec_stays_over_the_budget(design):
-    design.write(BIG + "/spec.md", sized(stories=3, requirements=12))
+    design.write(BIG + "/spec.md", sized(stories=3, requirements=17))
     before = design.read(BIG + "/spec.md")
     rc, out = accept(design, "  Las tres historias\n comparten una pantalla. ")
     assert rc == 0 and out["status"] == "accepted" and out["written"] == BIG + "/slice-budget.json", out
-    numbers = {"stories": 3, "requirements": 12, "rules": 0, "tasks": None}
+    numbers = {"stories": 3, "requirements": 17, "rules": 0, "tasks": None}
     assert json.loads(design.read(BIG + "/slice-budget.json")) == {"schema": 1, "reason": "Las tres historias comparten una pantalla.", "accepted": numbers}
     assert design.read(BIG + "/spec.md") == before, "the spec is not touched, so its seal holds"
     out = size(design)
     assert out["status"] == "accepted" and out["accepted"] == {"reason": "Las tres historias comparten una pantalla.", "counts": numbers}
-    assert out["over"] == [{"what": "stories", "count": 3, "max": 1, "accepted": 3}, {"what": "requirements", "count": 12, "max": 10, "accepted": 12}]
+    assert out["over"] == [{"what": "stories", "count": 3, "max": 1, "accepted": 3}, {"what": "requirements", "count": 17, "max": 15, "accepted": 17}]
     assert out["summary"].endswith(" Over the slice budget in stories and requirements; accepted: Las tres historias comparten una pantalla.")
 
 
 def test_a_spec_that_grows_past_what_was_accepted_is_over_again(design):
     design.write(BIG + "/spec.md", sized(stories=2))
     assert accept(design, "Dos pasos de un mismo flujo.")[1]["status"] == "accepted"
-    design.write(BIG + "/spec.md", sized(stories=2, requirements=11))
+    design.write(BIG + "/spec.md", sized(stories=2, requirements=16))
     out = size(design)
     assert out["status"] == "over"
-    assert out["over"] == [{"what": "stories", "count": 2, "max": 1, "accepted": 2}, {"what": "requirements", "count": 11, "max": 10, "accepted": 1}]
+    assert out["over"] == [{"what": "stories", "count": 2, "max": 1, "accepted": 2}, {"what": "requirements", "count": 16, "max": 15, "accepted": 1}]
     assert out["summary"].endswith(" Over the slice budget in stories and requirements. It grew past what was accepted in requirements.")
     design.write(BIG + "/spec.md", sized(stories=2))
     assert size(design)["status"] == "accepted", "back to what was accepted"
@@ -970,7 +970,7 @@ def test_a_budget_file_written_by_hand_is_refused(design, text):
 def test_check_notes_a_spec_over_the_budget_until_its_size_is_accepted(design):
     login(design)
     design.write(BIG + "/spec.md", sized(stories=2, value=REGISTRO))
-    line = "%s: Slice size: 2 stories (max 1), 1 requirement (max 10), 0 rules (max 4), tasks not written (max 25). Over the slice budget in stories. Split it, or record why with `slices accept`" % BIG
+    line = "%s: Slice size: 2 stories (max 1), 1 requirement (max 15), 0 rules (max 4), tasks not written (max 25). Over the slice budget in stories. Split it, or record why with `slices accept`" % BIG
     assert notes(design, BIG) == [line]
     assert check(design)[0] == 0, "a size is a note, never a failure"
     assert status(design)["check"] == {"hard": 0, "notes": 1}

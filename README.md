@@ -380,7 +380,7 @@ Ask for more than one slice and the cut comes before the spec:
   the others own, so the interview does not ask about them.
 - **`/speckit.specify next`** writes the spec of the next slice. The state of a slice
   is read from its spec, its tasks and the catalog, so the map cannot go stale.
-- **A slice has a size:** one story, and by default at most 10 requirements, 4 rules
+- **A slice has a size:** one story, and by default at most 15 requirements, 4 rules
   and 25 tasks. After `specify`, before `plan` and after `tasks` the spec is measured.
   Over the budget you get a proposal to split it, and you decide: split it, or go on
   with a reason that is recorded next to the spec.

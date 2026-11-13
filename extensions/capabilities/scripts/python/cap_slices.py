@@ -43,7 +43,7 @@ REQUIRED = ("intent", "verify", "depends-on", "rules")
 OPTIONAL = ("in", "out", "kind", "dropped")
 NOTHING = {"none", "-", "—"}
 # The most one slice holds. The config changes a number with slice_max_<what>.
-BUDGET = {"stories": 1, "requirements": 10, "rules": 4, "tasks": 25}
+BUDGET = {"stories": 1, "requirements": 15, "rules": 4, "tasks": 25}
 BUDGET_NAME = "slice-budget.json"
 BUDGET_FORMAT = 1
 MAP_ENV = "SPECKIT_SLICE_MAP"

@@ -396,7 +396,7 @@ def test_a_project_from_before_gets_the_hook_and_keeps_its_config(tmp_path):
     (project / "specs/001-x").mkdir(parents=True)
     (project / "specs/001-x/spec.md").write_text(spec_text("Capabilities: none — nada\n"), encoding="utf-8")
     rc, out = script_run(project, "slices", "measure", "--change", "specs/001-x")
-    assert rc == 0 and out["budget"] == {"stories": 1, "requirements": 10, "rules": 4, "tasks": 25} and out["status"] == "within", out
+    assert rc == 0 and out["budget"] == {"stories": 1, "requirements": 15, "rules": 4, "tasks": 25} and out["status"] == "within", out
 
 
 @requires_bash
