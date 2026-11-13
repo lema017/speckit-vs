@@ -125,6 +125,8 @@ The template also asks for one user story instead of three. A spec written befor
 | `slices status [--map <name>]` | Every map with its slices and their state, the `next` slice of each map, the specs that are `standalone`, and the `[designed]` rules no slice builds |
 | `slices show <id>` | One slice with its siblings, the state of what it depends on, its rules with their text, and the `IMPLEMENTED` blocks of exactly those rules. `aim` is the block that tells the run what to build and what other slices own. Exit code 3 when the slice already has a spec, or waits for a slice that is not delivered |
 | `slices check` | Whether the maps and the specs agree. Exit code 1 when they do not. `check` includes it |
+| `slices measure [--change <dir>]` | What a spec holds against the slice budget: `within`, `over` or `accepted`, with the numbers and one line to read |
+| `slices accept --reason "<why>" [--change <dir>]` | Records why a spec stays over the budget, with the numbers that were accepted, in `slice-budget.json` next to the spec |
 
 `check` fails when:
 
@@ -137,14 +139,41 @@ The template also asks for one user story instead of three. A spec written befor
 
 It leaves a note for an `enabler` slice, for a `[designed]` rule of a capability the maps touch that is in no slice and not in `## Later`, and for a rule of a slice that its spec does not build.
 
+### The slice budget
+
+One story is the size of a slice. Three more numbers back it up, because a story can also grow:
+
+| Key in `capabilities-config.yml` | Default | What is counted |
+|---|---|---|
+| `slice_max_stories` | 1 | `### User Story N` headings in the spec |
+| `slice_max_requirements` | 10 | `FR-###` requirements |
+| `slice_max_rules` | 4 | Rules in `## Capability Delta` |
+| `slice_max_tasks` | 25 | Tasks in `tasks.md`, done or open |
+
+Scenarios and success criteria are counted and reported, with no limit.
+
+`speckit.capabilities.size` measures the spec after `specify`, again before `plan` because an interview can make a spec grow, and after `tasks`. Within the budget it prints one line:
+
+```text
+Slice size: 1 story (max 1), 6 requirements (max 10), 1 rule (max 4), tasks not written (max 25). Within the slice budget.
+```
+
+Over the budget it proposes a split and waits for you:
+
+- **Split.** The parts that leave become new slices of the map, and the spec keeps one. Their rules leave the delta with `defer`, so a `[designed]` rule goes back to designed. A spec that was `standalone` gets a map.
+- **Go on.** Your reason and the numbers are recorded in `slice-budget.json`, next to the spec. The spec is not edited, so its seal holds. If the spec grows past those numbers, the command asks again.
+
+A spec is never split without your yes. `check` leaves a note for a spec over the budget that is not delivered and whose size was not accepted. It measures only specs that have a `## Slice` section.
+
 ## Hooks
 
 | Event | Command | Writes |
 |---|---|---|
 | `before_specify` | `slice`, then `context` | `slice` writes a slice map, only after you approve a cut. `context` writes nothing. Neither creates a branch |
-| `after_specify` | `review` | The delta section if missing, and its lock |
+| `after_specify` | `size`, then `review` | `size` writes only after you decide: a split, or `slice-budget.json`. `review` writes the delta section if missing, and its lock |
 | `before_clarify` | `clarify-context` | Nothing. It tells both `clarify` and `clarify-deep` what is settled, what to ask, and what the change reaches |
-| `before_plan` | `review` | The lock, only after you decide |
+| `before_plan` | `size`, then `review` | As after `specify`. `review` writes the lock, only after you decide |
+| `after_tasks` | `size` | As after `specify`, with the tasks counted |
 | `after_implement` | `fold` | Catalog and lock |
 | `after_converge` | `fold` | Catalog and lock |
 
@@ -156,9 +185,10 @@ Prompts run hooks in install order, so install `capabilities` before `git` if yo
 |---|---|---|
 | `speckit.capabilities.bootstrap` | Proposes a capability map for a project that already has code and waits for your approval. Then lists the chosen capabilities as `planned` and consolidates them through a record | The catalog, only after you approve. Rules stay `[inferred]` until you validate them with `--validate` |
 | `speckit.capabilities.slice` | Cuts a request, or the `[designed]` rules of a capability, into slices of one spec each, and waits for your approval. With a slice id or `next`, it says what that slice builds and what other slices own | A slice map under `specs/_slices/`, only after you approve |
+| `speckit.capabilities.size` | Measures the spec of the current feature against the slice budget. Over the budget, it proposes a split and waits for you | Nothing until you decide. Then the split, or `slice-budget.json` |
 | `speckit.capabilities.locate` | Answers where a behaviour lives, which change set it and which tests cover it, from the catalog first. Says when part of the answer comes from the code | Nothing of yours. The graph leaves its own untracked files (see below) |
 
-The script has subcommands for them: `scaffold --capability <name> --covers "<one line>"` and `locate [--capability <name>]`. `clarify-context [--change <dir>]` gives the hook the feature, its parsed delta and every capability, and ends with exit code 0 when there is no feature, because `clarify` reports that itself.
+The script has subcommands for them: `scaffold --capability <name> --covers "<one line>"` and `locate [--capability <name>]`. `clarify-context [--change <dir>]` gives the hook the feature, its parsed delta, every capability, and in `slice` what other slices own and the size of the spec. It ends with exit code 0 when there is no feature, because `clarify` reports that itself.
 
 ## Two branches on one capability
 
@@ -324,7 +354,9 @@ A report that names no time zone, or no time, is judged by when the file was wri
 - `rebase` rebuilds one change per capability. If the branch also folded another change into the same capabilities, it refuses with exit code 2: merge them one at a time.
 - `check` takes any `spec.md` that carries the delta marker as a change, also one that git does not track yet.
 - `fold` on a feature that was already delivered rewrites its lock, and `check` rejects it with the way out: restore the lock with `git checkout`, and declare a new change to change a rule. It fails closed, but `fold` does not stop you first, because it does not know the base.
-- Whether a request is one slice or several is the agent's judgement, and so is keeping the spec inside its slice. `check` catches a spec that builds a designed rule of another slice; it does not catch a spec that grew.
+- Whether a request is one slice or several is the agent's judgement, and so is keeping the spec inside its slice. `check` catches a spec that builds a designed rule of another slice, and notes a spec over the budget. It does not catch a spec that covers what another slice owns while it stays inside the budget.
+- The budget counts, it does not judge. Ten short requirements and ten long ones count the same, and the tasks of a slice include its setup. A first slice of a new capability often carries more rules than the budget: accept it with the reason.
+- A split after `plan` or `tasks` leaves them written for the whole spec: run them again.
 - The state of a slice comes from the working tree. A slice whose spec is on a branch that is not merged shows as `pending` here.
 - When the cut is made in the same run as `specify`, a hook that already created a branch named it from the whole request. Give `specify` a slice id and the names match.
 - The `init` step of a workflow has no way to opt out of the default install. Use `specify extension remove capabilities` afterwards.

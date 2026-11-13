@@ -17,3 +17,10 @@ allow_partial_features: false
 # The branch that `rebase` and `defer` rebuild the catalog from when you do not
 # pass --onto. Empty means main. Example: origin/develop
 base_branch:
+
+# The slice budget: the most one spec holds. A spec over it gets a proposal to
+# split it, and you decide. Whole numbers above 0.
+slice_max_stories: 1
+slice_max_requirements: 10
+slice_max_rules: 4
+slice_max_tasks: 25

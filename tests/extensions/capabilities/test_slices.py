@@ -7,9 +7,12 @@ rules, cut into four slices.
 
 from __future__ import annotations
 
+import json
+import re
+
 import pytest
 
-from .conftest import CAT, INDEX, MARK, delta_block, removed
+from .conftest import CAT, CONFIG, EXT_DIR as EXT, INDEX, MARK, added, delta_block, removed
 from .test_lifecycle import ACCESO_CODE, DESIGN, build_design, copied, delta_record, designed, fixture, record
 
 MAP = "specs/_slices/login.md"
@@ -17,7 +20,9 @@ MAP_MARK = "<!-- slice-map:v1 -->"
 CLAVE, SOCIAL, RECUPERAR, REGISTRO = "D-login-clave", "D-login-social", "D-login-recuperar", "D-login-registro"
 LOCKOUT, OAUTH, ONE_ACCOUNT, RESET = "R-login-lockout", "R-login-oauth-providers", "R-login-one-account-per-email", "R-login-reset-expiry"
 ACCESO = "specs/001-acceso"
+BIG = "specs/002-grande"
 NO_RULES = "Capabilities: none — no cambia ninguna regla\n"
+BUDGET = {"stories": 1, "requirements": 10, "rules": 4, "tasks": 25}
 
 
 @pytest.fixture(scope="session")
@@ -565,6 +570,9 @@ def test_show_rejects_a_slice_that_cannot_be_built(design, slice_id, needle):
     (("show", CLAVE, SOCIAL), "show takes one slice id"),
     (("status", CLAVE), "status takes no ids"),
     (("check", "--map", "login"), "--map goes with status"),
+    (("measure", CLAVE), "measure takes no ids"),
+    (("status", "--change", BIG), "--change goes with measure and accept"),
+    (("measure", "--reason", "porque sí"), "--reason goes with accept"),
     (("split",), "invalid choice"),
 ])
 def test_a_wrong_invocation_is_refused(design, args, needle):
@@ -604,3 +612,228 @@ def test_a_design_record_is_not_a_spec_that_names_a_slice(design):
     assert MARK in design.read(DESIGN + "/capability-delta.md")
     design.write(DESIGN + "/spec.md", spec("D-login-otra"))
     assert hard(design, "D-login-otra") == []
+
+
+# ---------------------------------------------------------------- size: a spec against the slice budget
+
+
+def sized(stories=1, requirements=1, rules=0, value="standalone — Entrar a la cuenta"):
+    """A spec with this many stories, requirements and added rules. ``value`` is what its ## Slice says; None is a spec from before slices."""
+    text = "# Feature\n\n%s" % ("" if value is None else declared(value))
+    for number in range(1, stories + 1):
+        text += "### User Story %d - Parte %d\n\n**Acceptance Scenarios**:\n\n1. **Given** a, **Then** b.\n\n" % (number, number)
+    text += "## Requirements\n\n%s\n" % "".join("- **FR-%03d**: System MUST x%d.\n" % (number, number) for number in range(1, requirements + 1))
+    text += "## Success Criteria\n\n- **SC-001**: Se ve en menos de un minuto.\n\n"
+    return text + delta_block("\n".join(added("R-login-extra-%d" % number, "Regla extra %d." % number) for number in range(1, rules + 1)) or NO_RULES)
+
+
+def tasks(total, done=0):
+    return "# Tasks\n\n- una nota que no es una tarea\n%s" % "".join("- [%s] T%03d Hacer %d\n" % ("x" if number <= done else " ", number, number) for number in range(1, total + 1))
+
+
+def size(repo, change=BIG):
+    rc, out = repo.cap("slices", "measure", "--change", change)
+    assert rc == 0, out
+    return out
+
+
+def accept(repo, reason, change=BIG):
+    return repo.cap("slices", "accept", "--change", change, "--reason", reason)
+
+
+def test_measure_counts_what_a_spec_holds(design):
+    design.write(BIG + "/spec.md", sized(requirements=10, rules=4))
+    out = size(design)
+    assert out["status"] == "within" and out["over"] == [] and out["accepted"] is None
+    assert out["counts"] == {"stories": 1, "requirements": 10, "scenarios": 1, "criteria": 1, "rules": 4, "tasks": None}
+    assert out["budget"] == BUDGET
+    assert out["summary"] == "Slice size: 1 story (max 1), 10 requirements (max 10), 4 rules (max 4), tasks not written (max 25). Within the slice budget."
+    assert (out["spec"], out["slice"], out["standalone"], out["map"]) == (BIG, None, "Entrar a la cuenta", None)
+
+
+@pytest.mark.parametrize("held, what, count", [({"stories": 2}, "stories", 2), ({"requirements": 11}, "requirements", 11), ({"rules": 5}, "rules", 5)])
+def test_one_more_than_the_budget_is_over(design, held, what, count):
+    design.write(BIG + "/spec.md", sized(**held))
+    out = size(design)
+    assert out["status"] == "over" and out["over"] == [{"what": what, "count": count, "max": BUDGET[what]}]
+    assert out["summary"].endswith(" Over the slice budget in %s." % what)
+
+
+def test_tasks_count_once_they_are_written(design):
+    design.write(BIG + "/spec.md", sized())
+    design.write(BIG + "/tasks.md", tasks(25, done=3))
+    out = size(design)
+    assert out["counts"]["tasks"] == 25 and out["status"] == "within", "done and open tasks count, a plain bullet does not"
+    design.write(BIG + "/tasks.md", tasks(26, done=26))
+    out = size(design)
+    assert out["over"] == [{"what": "tasks", "count": 26, "max": 25}] and "26 tasks (max 25)" in out["summary"]
+
+
+def test_what_is_commented_out_is_not_counted(design):
+    example = "<!--\n### User Story 9 - Ejemplo\n\n- **FR-099**: System MUST ejemplo.\n-->\n\n## Requirements"
+    design.write(BIG + "/spec.md", sized().replace("## Requirements", example))
+    design.write(BIG + "/tasks.md", "<!--\n- [ ] T000 Ejemplo\n-->\n- [ ] T001 Hacer\n")
+    counts = size(design)["counts"]
+    assert (counts["stories"], counts["requirements"], counts["tasks"]) == (1, 1, 1)
+
+
+def test_measure_says_which_map_holds_the_spec(design):
+    login(design)
+    design.write(BIG + "/spec.md", sized(value=REGISTRO))
+    out = size(design)
+    assert (out["slice"], out["standalone"], out["map"]) == (REGISTRO, None, MAP)
+
+
+def test_measure_needs_a_spec(design):
+    rc, out = design.cap("slices", "measure", "--change", "specs/404-nada")
+    assert rc == 2 and out == {"status": "invalid", "errors": ["no spec.md in specs/404-nada"]}
+
+
+def test_the_config_changes_the_budget(design):
+    design.write(BIG + "/spec.md", sized(stories=2, requirements=12))
+    assert size(design)["status"] == "over"
+    design.config(slice_max_stories=2, slice_max_requirements=12)
+    out = size(design)
+    assert out["status"] == "within" and out["budget"] == {"stories": 2, "requirements": 12, "rules": 4, "tasks": 25}
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "many", "2.5"])
+def test_a_budget_that_is_not_a_number_is_refused(design, value):
+    design.write(BIG + "/spec.md", sized())
+    design.config(slice_max_rules=value)
+    problem = "slice_max_rules in %s takes a whole number above 0: %s" % (CONFIG, value)
+    rc, out = design.cap("slices", "measure", "--change", BIG)
+    assert rc == 2 and out["errors"] == [problem]
+    rc, out = check(design)
+    assert rc == 1 and out["hard"] == [problem], "check says it once, whatever the number of specs"
+
+
+def test_the_config_template_holds_the_budget_the_script_uses(design):
+    template = (EXT / "config-template.yml").read_text(encoding="utf-8")
+    assert {what: int(value) for what, value in re.findall(r"^slice_max_([a-z]+): (\d+)$", template, re.M)} == BUDGET
+    design.write(BIG + "/spec.md", sized())
+    design.write(CONFIG, template)
+    assert size(design)["budget"] == BUDGET
+
+
+def test_accept_records_why_a_spec_stays_over_the_budget(design):
+    design.write(BIG + "/spec.md", sized(stories=3, requirements=12))
+    before = design.read(BIG + "/spec.md")
+    rc, out = accept(design, "  Las tres historias\n comparten una pantalla. ")
+    assert rc == 0 and out["status"] == "accepted" and out["written"] == BIG + "/slice-budget.json", out
+    numbers = {"stories": 3, "requirements": 12, "rules": 0, "tasks": None}
+    assert json.loads(design.read(BIG + "/slice-budget.json")) == {"schema": 1, "reason": "Las tres historias comparten una pantalla.", "accepted": numbers}
+    assert design.read(BIG + "/spec.md") == before, "the spec is not touched, so its seal holds"
+    out = size(design)
+    assert out["status"] == "accepted" and out["accepted"] == {"reason": "Las tres historias comparten una pantalla.", "counts": numbers}
+    assert out["over"] == [{"what": "stories", "count": 3, "max": 1, "accepted": 3}, {"what": "requirements", "count": 12, "max": 10, "accepted": 12}]
+    assert out["summary"].endswith(" Over the slice budget in stories and requirements; accepted: Las tres historias comparten una pantalla.")
+
+
+def test_a_spec_that_grows_past_what_was_accepted_is_over_again(design):
+    design.write(BIG + "/spec.md", sized(stories=2))
+    assert accept(design, "Dos pasos de un mismo flujo.")[1]["status"] == "accepted"
+    design.write(BIG + "/spec.md", sized(stories=2, requirements=11))
+    out = size(design)
+    assert out["status"] == "over"
+    assert out["over"] == [{"what": "stories", "count": 2, "max": 1, "accepted": 2}, {"what": "requirements", "count": 11, "max": 10, "accepted": 1}]
+    assert out["summary"].endswith(" Over the slice budget in stories and requirements. It grew past what was accepted in requirements.")
+    design.write(BIG + "/spec.md", sized(stories=2))
+    assert size(design)["status"] == "accepted", "back to what was accepted"
+    design.write(BIG + "/tasks.md", tasks(26))
+    out = size(design)
+    assert out["status"] == "over" and {"what": "tasks", "count": 26, "max": 25} in out["over"], "the tasks did not exist when the size was accepted"
+    assert accept(design, "Dos pasos de un mismo flujo, con sus tareas.")[1]["status"] == "accepted"
+    assert json.loads(design.read(BIG + "/slice-budget.json"))["accepted"]["tasks"] == 26
+
+
+def test_accept_needs_a_reason_and_a_spec_over_the_budget(design):
+    design.write(BIG + "/spec.md", sized(stories=2))
+    for args in ((), ("--reason", "  ")):
+        rc, out = design.cap("slices", "accept", "--change", BIG, *args)
+        assert rc == 2 and out["errors"] == ["accept takes --reason: why this spec stays over the slice budget"]
+    assert not (design.path / BIG / "slice-budget.json").exists()
+    design.write(BIG + "/spec.md", sized())
+    rc, out = accept(design, "por si acaso")
+    assert rc == 0 and out["status"] == "within" and out["written"] is None
+    assert not (design.path / BIG / "slice-budget.json").exists(), "nothing to accept when the spec is within the budget"
+
+
+@pytest.mark.parametrize("text", [
+    "{",
+    "[]",
+    '{"reason": "x"}',
+    '{"reason": " ", "accepted": {"stories": 2, "requirements": 1, "rules": 0, "tasks": null}}',
+    '{"reason": "x", "accepted": {"stories": "2", "requirements": 1, "rules": 0, "tasks": null}}',
+    '{"reason": "x", "accepted": {"stories": 2}}',
+])
+def test_a_budget_file_written_by_hand_is_refused(design, text):
+    design.write(BIG + "/spec.md", sized(stories=2))
+    design.write(BIG + "/slice-budget.json", text)
+    problem = "%s/slice-budget.json cannot be read; write it again with `slices accept`" % BIG
+    rc, out = design.cap("slices", "measure", "--change", BIG)
+    assert rc == 2 and out["errors"] == [problem]
+    assert hard(design, "slice-budget.json") == [problem]
+
+
+def test_check_notes_a_spec_over_the_budget_until_its_size_is_accepted(design):
+    login(design)
+    design.write(BIG + "/spec.md", sized(stories=2, value=REGISTRO))
+    line = "%s: Slice size: 2 stories (max 1), 1 requirement (max 10), 0 rules (max 4), tasks not written (max 25). Over the slice budget in stories. Split it, or record why with `slices accept`" % BIG
+    assert notes(design, BIG) == [line]
+    assert check(design)[0] == 0, "a size is a note, never a failure"
+    assert status(design)["check"] == {"hard": 0, "notes": 1}
+    assert line in design.cap("check", "--mode", "dev")[1]["notes"], "the catalog's own check carries it"
+    accept(design, "Registro y bienvenida se prueban juntos.")
+    assert notes(design, BIG) == []
+
+
+def test_check_measures_only_specs_that_name_a_slice_and_are_not_delivered(design):
+    # A spec from before slices that builds a designed rule: the slices know it, and still do not measure it.
+    built = design.cap("delta-block", "--implement", LOCKOUT)[1]["text"].replace("FR-###", "FR-001")
+    design.write(BIG + "/spec.md", sized(stories=3, value=None).replace(NO_RULES, built))
+    rc, out = check(design)
+    assert rc == 0 and out["hard"] == [], out
+    assert notes(design, BIG) == [], "a spec from before slices is left alone"
+    assert size(design)["status"] == "over", "measure still answers when asked"
+    design.write(BIG + "/spec.md", sized(stories=3))
+    design.write(BIG + "/tasks.md", tasks(2, done=1))
+    assert len(notes(design, BIG)) == 1
+    design.write(BIG + "/tasks.md", tasks(2, done=2))
+    assert slices_state(design, BIG) == "delivered"
+    assert notes(design, BIG) == [], "what was delivered is not measured again"
+
+
+def slices_state(repo, change):
+    return {item["spec"]: item["state"] for item in status(repo)["standalone"]}[change]
+
+
+def test_clarify_context_says_what_other_slices_own(design):
+    login(design)
+    design.write(BIG + "/spec.md", sized(stories=2, value=REGISTRO).replace("- Out: none", "- Out: Entrar con usuario y clave (%s)" % CLAVE))
+    rc, out = design.cap("clarify-context", "--change", BIG)
+    assert rc == 0, out
+    found = out["slice"]
+    assert (found["slice"], found["standalone"], found["map"], found["errors"]) == (REGISTRO, None, MAP, [])
+    assert found["out"] == "Entrar con usuario y clave (%s)" % CLAVE
+    assert [(item["id"], item["title"], item["state"]) for item in found["siblings"]] == [
+        (CLAVE, "Entrar con usuario y clave", "pending"), (SOCIAL, "Entrar con Google, Facebook o GitHub", "pending"), (RECUPERAR, "Recuperar la clave", "pending")]
+    assert found["siblings"][0]["intent"] == "Una persona entra a su cuenta."
+    assert found["size"] == {"status": "over", "summary": size(design)["summary"]}
+
+
+def test_clarify_context_leaves_dropped_slices_out(design):
+    put(design, block(CLAVE), block(SOCIAL, "Entrar con Google", more={"Dropped": "no se hará"}), block(REGISTRO, "Crear una cuenta"))
+    design.write(BIG + "/spec.md", sized(value=CLAVE))
+    assert [item["id"] for item in design.cap("clarify-context", "--change", BIG)[1]["slice"]["siblings"]] == [REGISTRO]
+
+
+def test_clarify_context_of_a_spec_on_its_own_or_from_before_slices(design):
+    design.write(BIG + "/spec.md", sized())
+    found = design.cap("clarify-context", "--change", BIG)[1]["slice"]
+    assert (found["slice"], found["standalone"], found["map"], found["siblings"]) == (None, "Entrar a la cuenta", None, [])
+    assert found["size"]["status"] == "within"
+    design.write(BIG + "/spec.md", sized(value=None))
+    assert design.cap("clarify-context", "--change", BIG)[1]["slice"] is None
+    design.write(BIG + "/spec.md", sized(value="[slice id]"))
+    assert design.cap("clarify-context", "--change", BIG)[1]["slice"]["errors"] == ["## Slice still holds the placeholder of the template"]

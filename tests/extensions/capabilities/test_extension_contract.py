@@ -19,7 +19,7 @@ from tests.conftest import requires_bash
 
 from .conftest import EXT_DIR, MARK, ROOT, SCRIPT, modified, spec_text
 
-COMMANDS = {"slice", "context", "clarify-context", "review", "fold", "check", "bootstrap", "locate"}
+COMMANDS = {"slice", "size", "context", "clarify-context", "review", "fold", "check", "bootstrap", "locate"}
 OLD_SENTENCE = "If a `before_specify` hook ran successfully in the Pre-Execution Checks above, it will have created/switched to a git branch"
 NEW_SENTENCE = "If a `before_specify` hook's output contains `BRANCH_NAME` and `FEATURE_NUM`, that hook created or switched to a git branch."
 NO_INVENT = "A hook that does not output them created no branch: do not infer or invent these values."
@@ -45,8 +45,10 @@ def test_hooks_are_mandatory_and_unconditional():
         # The cut comes first: context then loads the rules of the one slice the run is aimed at.
         "before_specify": ["slice", "context"],
         "before_clarify": ["clarify-context"],
-        "after_specify": ["review"],
-        "before_plan": ["review"],
+        # The size comes before the seal: a split changes the delta that review then seals.
+        "after_specify": ["size", "review"],
+        "before_plan": ["size", "review"],
+        "after_tasks": ["size"],
         "after_implement": ["fold"],
         "after_converge": ["fold"],
     }
@@ -156,6 +158,38 @@ def test_fold_and_check_commands_report_the_slices():
     assert "{SCRIPT} slices status" in fold and "which slice is delivered and which one comes next" in fold
     check = (EXT_DIR / "commands" / "speckit.capabilities.check.md").read_text(encoding="utf-8")
     assert "{SCRIPT} slices check" in check
+    assert "A note that starts with `Slice size:` is a spec over the slice budget that is not delivered yet" in check
+
+
+def test_size_command_never_splits_a_spec_alone():
+    text = (EXT_DIR / "commands" / "speckit.capabilities.size.md").read_text(encoding="utf-8")
+    assert "CAPABILITIES SIZE" in text
+    assert "**A spec is never split without the user's yes.** Until the user chooses, this command writes nothing." in text
+    assert "If you cannot ask the user, report the numbers and the split you would propose, say that nothing was changed, and finish" in text
+    assert "Do not edit `capabilities-config.yml`, and do not write `slice-budget.json` by hand" in text
+    assert "Do not make the spec fit by merging requirements, deleting scenarios or hiding text." in text
+    assert "**Stop and ask**: split as proposed, change the split, or go on as it is. Going on needs the user's reason, in their words." in text
+    assert "Do not create or switch a branch. Do not install anything and do not commit." in text
+
+
+def test_size_command_splits_with_what_the_script_answers():
+    text = (EXT_DIR / "commands" / "speckit.capabilities.size.md").read_text(encoding="utf-8")
+    for call in ("slices measure", 'slices accept --reason "<the user\'s reason>"', 'defer <ids> --reason "moved to <slice id>"', "slices check"):
+        assert "{SCRIPT} %s" % call in text
+    assert text.index("**The map.**") < text.index("**The delta.**") < text.index("**The spec.**"), "defer reads the delta before the spec loses what it links"
+    assert "Keep the ids of what stays: do not renumber." in text
+    assert "say that `plan` and `tasks` must run again for the spec that is left" in text
+    assert "This is the one case in which the block of a slice that has a spec is edited. Its id does not change." in text
+    assert "If the status is still `over`, say so and go back to step 3." in text
+
+
+def test_clarify_context_command_leaves_other_slices_out_of_the_interview():
+    text = (EXT_DIR / "commands" / "speckit.capabilities.clarify-context.md").read_text(encoding="utf-8")
+    assert "What another slice owns is not built in this spec, so the interview does not ask about it." in text
+    assert "name the slice that owns it and ask whether that part moves here" in text
+    assert "Owned by other slices: do not ask these, and do not specify them here" in text
+    assert "If `slice` is null too, finish." in text, "a project without a catalog still hears what other slices own"
+    assert "say that `speckit.capabilities.size` proposes a split" in text
 
 
 def test_review_command_never_decides_a_change_of_meaning_alone():
@@ -279,7 +313,7 @@ def installed_project(tmp_path_factory) -> Path:
 @requires_bash
 def test_install_registers_hooks_commands_and_config(installed_project: Path):
     hooks = yaml.safe_load((installed_project / ".specify" / "extensions.yml").read_text(encoding="utf-8"))["hooks"]
-    for event, commands in (("before_specify", ["slice", "context"]), ("before_clarify", ["clarify-context"]), ("after_specify", ["review"]), ("before_plan", ["review"]), ("after_implement", ["fold"]), ("after_converge", ["fold"])):
+    for event, commands in (("before_specify", ["slice", "context"]), ("before_clarify", ["clarify-context"]), ("after_specify", ["size", "review"]), ("before_plan", ["size", "review"]), ("after_tasks", ["size"]), ("after_implement", ["fold"]), ("after_converge", ["fold"])):
         registered = [hook for hook in hooks[event] if hook["extension"] == "capabilities"]
         assert [hook["command"] for hook in registered] == ["speckit.capabilities.%s" % command for command in commands]
         assert all(hook["optional"] is False for hook in registered)
@@ -295,6 +329,10 @@ def test_install_registers_hooks_commands_and_config(installed_project: Path):
     cut = (installed_project / ".claude/skills/speckit-capabilities-slice/SKILL.md").read_text(encoding="utf-8")
     assert "{SCRIPT}" not in cut
     assert ".specify/extensions/capabilities/scripts/python/capabilities.py slices show <id>" in cut
+    size = (installed_project / ".claude/skills/speckit-capabilities-size/SKILL.md").read_text(encoding="utf-8")
+    assert "{SCRIPT}" not in size
+    assert ".specify/extensions/capabilities/scripts/python/capabilities.py slices measure" in size
+    assert ".specify/extensions/capabilities/scripts/python/capabilities.py slices accept --reason" in size
 
 
 @requires_bash
@@ -329,13 +367,18 @@ def test_a_project_from_before_gets_the_hook_and_keeps_its_config(tmp_path):
     specify(project, "init", "--here", "--force", "--non-interactive", "--ignore-agent-tools", "--integration", "claude", "--script", "sh", "--no-default-extensions")
     specify(project, "extension", "add", "capabilities")
     config = project / ".specify/extensions/capabilities/capabilities-config.yml"
-    mine = config.read_bytes() + b"# a choice of this project\n"
+    # A config from before the slice budget, with a line of this project.
+    mine = b"".join(line for line in config.read_bytes().splitlines(keepends=True) if not line.startswith(b"slice_max_")) + b"# a choice of this project\n"
     config.write_bytes(mine)
     registry = project / ".specify/extensions.yml"
     data = yaml.safe_load(registry.read_text(encoding="utf-8"))
     data["hooks"]["before_clarify"] = [hook for hook in data["hooks"]["before_clarify"] if hook["extension"] != "capabilities"]
-    # As 0.4.0 left it: context alone before specify.
+    # As 0.4.0 left it: context alone before specify, review alone around the spec, nothing after tasks.
     data["hooks"]["before_specify"] = [hook for hook in data["hooks"]["before_specify"] if hook["command"] != "speckit.capabilities.slice"]
+    for event in ("after_specify", "before_plan", "after_tasks"):
+        data["hooks"][event] = [hook for hook in data["hooks"].get(event, []) if hook["command"] != "speckit.capabilities.size"]
+    data["hooks"] = {event: hooks for event, hooks in data["hooks"].items() if hooks}
+    assert "after_tasks" not in data["hooks"]
     registry.write_text(yaml.safe_dump(data), encoding="utf-8")
 
     specify(project, "extension", "add", "capabilities", "--force")
@@ -344,6 +387,14 @@ def test_a_project_from_before_gets_the_hook_and_keeps_its_config(tmp_path):
     hooks = yaml.safe_load(registry.read_text(encoding="utf-8"))["hooks"]
     assert [hook["command"] for hook in hooks["before_clarify"] if hook["extension"] == "capabilities"] == ["speckit.capabilities.clarify-context"]
     assert [hook["command"] for hook in hooks["before_specify"] if hook["extension"] == "capabilities"] == ["speckit.capabilities.slice", "speckit.capabilities.context"]
+    for event in ("after_specify", "before_plan"):
+        assert [hook["command"] for hook in hooks[event] if hook["extension"] == "capabilities"] == ["speckit.capabilities.size", "speckit.capabilities.review"]
+    assert [hook["command"] for hook in hooks["after_tasks"] if hook["extension"] == "capabilities"] == ["speckit.capabilities.size"]
+    # The config of the project is kept as it was, and the script has the budget it does not name.
+    (project / "specs/001-x").mkdir(parents=True)
+    (project / "specs/001-x/spec.md").write_text(spec_text("Capabilities: none — nada\n"), encoding="utf-8")
+    rc, out = script_run(project, "slices", "measure", "--change", "specs/001-x")
+    assert rc == 0 and out["budget"] == {"stories": 1, "requirements": 10, "rules": 4, "tasks": 25} and out["status"] == "within", out
 
 
 @requires_bash

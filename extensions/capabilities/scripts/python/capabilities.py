@@ -1407,7 +1407,7 @@ def cmd_clarify_context(root, given):
 
     Ends well without a feature: clarify runs its own check right after this and reports it.
     """
-    feature, spec, delta, errors = None, None, None, []
+    feature, spec, delta, errors, slice_of = None, None, None, [], None
     try:
         change = resolve_change(root, given)
         feature = source_of(root, change)
@@ -1417,9 +1417,11 @@ def cmd_clarify_context(root, given):
     if text is not None:
         spec = "%s/%s" % (feature, DOCS[0])
         delta, errors = parse_delta(text)
+        # What other slices own is not for this interview to ask.
+        slice_of = load_slices().of_spec(sys.modules[__name__], root, change)
     if delta is not None:
         delta = {key: value for key, value in delta.items() if key != "raw"}
-    return emit(dict(catalog_summary(root), feature=feature, spec=spec, delta=delta, delta_errors=errors))
+    return emit(dict(catalog_summary(root), feature=feature, spec=spec, delta=delta, delta_errors=errors, slice=slice_of))
 
 
 def cmd_locate(root, capability):

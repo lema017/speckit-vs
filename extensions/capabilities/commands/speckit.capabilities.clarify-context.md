@@ -20,6 +20,7 @@ $ARGUMENTS
 - Do not settle anything for the user. A conflict or a rule that is not confirmed is a question, never an answer.
 - A rule with `inferred: true`, or with a `state` other than `conforming`, is never a settled fact. Nobody approved the first; the second does not match the code, or nobody verified it.
 - A rule listed in `designed` is a business decision already taken, and it has no code yet. It is a settled fact: do not ask it. Proposing to change it is a `⚠️ Business decision` and needs the PO's own words.
+- What another slice owns is not built in this spec, so the interview does not ask about it. If an answer shows that this spec cannot be built without part of it, that is a `⚠️ Business decision`: name the slice that owns it and ask whether that part moves here. Moving it changes the slice map, and the user decides.
 - Copy the text of a rule literally, whatever language it is in.
 - Say where each line comes from: the catalog, the graph or the code. The graph says where code is and what connects to it, never what the requirement is.
 
@@ -27,7 +28,7 @@ $ARGUMENTS
 
 1. Run `{SCRIPT} graph status` from the repository root and parse its JSON. If `available` is false, **stop**: say that Graphify is part of this fork and is missing, show the `install` command from that output without running it, and say that the clarification must not continue until it is installed.
 2. Run `{SCRIPT} clarify-context` and parse its JSON. If `feature` or `spec` is null, say so in one line and finish: the command that called this one reports it.
-3. If `capabilities` and `planned` are both empty, say in one line that the catalog has nothing for this spec yet, and finish.
+3. If `capabilities` and `planned` are both empty, say in one line that the catalog has nothing for this spec yet. If `slice` is null too, finish. Otherwise report only the heading, `Feature`, `Slice`, `Size` and `Owned by other slices`, in the format of step 9, and finish.
 4. If `journal_pending` is true, warn that an interrupted fold can leave the catalog out of date and must be recovered with `speckit.capabilities.fold`.
 5. Read the spec at `spec`. Choose the capabilities to open, as the union of:
    - those named by `capability` in `delta.entries`;
@@ -46,6 +47,11 @@ $ARGUMENTS
    CAPABILITIES CLARIFY CONTEXT (read-only)
    Feature: <feature>
    Graph: <ok and the version | no-code | not used, and why>
+   Slice: <slice.slice, from slice.map | standalone: slice.standalone>
+   Size: <slice.size.summary>
+
+   Owned by other slices: do not ask these, and do not specify them here
+   - <title> (<slice id>, <state>): <intent>
 
    Settled facts: do not ask these
    - <rule id> (<capability>, <state>, <origin>): "<literal text>"
@@ -66,4 +72,5 @@ $ARGUMENTS
    {SCRIPT} graph affected <anchor>
    ```
 
-10. Report only rules the spec touches, not everything you opened. Settled facts are answers: the interview does not ask them. Conflicts, rules not confirmed and reach beyond the delta are for the interview to ask. If an answer later changes an approved rule, do not touch its `From`: `speckit.capabilities.review` surfaces it before the plan.
+10. `Slice`, `Size` and `Owned by other slices` come from `slice`, and are left out when it is null: the spec is from before slices. List each of `slice.siblings`; if there are none and `slice.out` is not `none`, copy `slice.out` as one line. If `slice.size.status` is `over`, say that `speckit.capabilities.size` proposes a split, and that it runs again before the plan because an interview can make a spec grow.
+11. Report only rules the spec touches, not everything you opened. Settled facts are answers: the interview does not ask them. Conflicts, rules not confirmed and reach beyond the delta are for the interview to ask. If an answer later changes an approved rule, do not touch its `From`: `speckit.capabilities.review` surfaces it before the plan.
