@@ -541,8 +541,11 @@ def test_a_new_project_gets_the_default_extensions(tmp_path: Path):
     assert _installed(project) == ["capabilities"]
     assert "Install extension: capabilities" in output
     assert (project / ".claude/skills/speckit-capabilities-locate/SKILL.md").is_file()
-    assert _hook_order(project, "before_specify") == ["capabilities"]
-    assert "## Capability Delta" in (project / ".specify/extensions/capabilities/templates/spec-template.md").read_text(encoding="utf-8")
+    # Two hooks of its own before specify: the cut into slices, then the rules of the slice.
+    assert _hook_order(project, "before_specify") == ["capabilities", "capabilities"]
+    assert (project / ".claude/skills/speckit-capabilities-slice/SKILL.md").is_file()
+    template = (project / ".specify/extensions/capabilities/templates/spec-template.md").read_text(encoding="utf-8")
+    assert "## Slice *(mandatory)*" in template and "## Capability Delta" in template
 
 
 def test_the_default_runs_before_what_the_user_asks_for(tmp_path: Path):

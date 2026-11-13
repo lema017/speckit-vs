@@ -3,7 +3,7 @@ schema_version: "1.0"
 extension:
   id: capabilities
   name: "Capability Catalog"
-  version: "0.4.0"
+  version: "0.5.0"
   description: "Keeps the approved behaviour of each capability, its origin, its code and its tests discoverable across sessions."
   author: lema017
   repository: https://github.com/lema017/speckit-vs
@@ -16,8 +16,11 @@ provides:
   templates:
     - name: spec-template
       file: templates/spec-template.md
-      description: "Core spec template plus the mandatory Capability Delta section"
+      description: "Core spec template for one slice, plus the mandatory Slice and Capability Delta sections"
   commands:
+    - name: speckit.capabilities.slice
+      file: commands/speckit.capabilities.slice.md
+      description: "Cut a request, or the designed rules of a capability, into slices of one spec each, and aim this run at one slice"
     - name: speckit.capabilities.context
       file: commands/speckit.capabilities.context.md
       description: "Load the approved rules a request touches. Read-only; creates no branch."
@@ -47,9 +50,12 @@ provides:
 
 hooks:
   before_specify:
-    command: speckit.capabilities.context
-    optional: false
-    description: "Load approved rules before writing the spec"
+    - command: speckit.capabilities.slice
+      optional: false
+      description: "Aim the spec at one slice, and propose the cut when the request holds several"
+    - command: speckit.capabilities.context
+      optional: false
+      description: "Load approved rules before writing the spec"
   after_specify:
     command: speckit.capabilities.review
     optional: false

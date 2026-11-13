@@ -19,7 +19,7 @@ from tests.conftest import requires_bash
 
 from .conftest import EXT_DIR, MARK, ROOT, SCRIPT, modified, spec_text
 
-COMMANDS = {"context", "clarify-context", "review", "fold", "check", "bootstrap", "locate"}
+COMMANDS = {"slice", "context", "clarify-context", "review", "fold", "check", "bootstrap", "locate"}
 OLD_SENTENCE = "If a `before_specify` hook ran successfully in the Pre-Execution Checks above, it will have created/switched to a git branch"
 NEW_SENTENCE = "If a `before_specify` hook's output contains `BRANCH_NAME` and `FEATURE_NUM`, that hook created or switched to a git branch."
 NO_INVENT = "A hook that does not output them created no branch: do not infer or invent these values."
@@ -39,16 +39,21 @@ def test_manifest_is_valid_and_lists_every_command():
 
 
 def test_hooks_are_mandatory_and_unconditional():
-    hooks = manifest_data()["hooks"]
-    assert hooks["before_specify"]["command"] == "speckit.capabilities.context"
-    assert hooks["before_clarify"]["command"] == "speckit.capabilities.clarify-context"
-    assert hooks["after_specify"]["command"] == "speckit.capabilities.review"
-    assert hooks["before_plan"]["command"] == "speckit.capabilities.review"
-    assert hooks["after_implement"]["command"] == "speckit.capabilities.fold"
-    assert hooks["after_converge"]["command"] == "speckit.capabilities.fold"
-    for hook in hooks.values():
-        assert hook["optional"] is False
-        assert "condition" not in hook, "prompts skip hooks that have a condition"
+    hooks = {event: entries if isinstance(entries, list) else [entries] for event, entries in manifest_data()["hooks"].items()}
+    commands = {event: [hook["command"].replace("speckit.capabilities.", "") for hook in entries] for event, entries in hooks.items()}
+    assert commands == {
+        # The cut comes first: context then loads the rules of the one slice the run is aimed at.
+        "before_specify": ["slice", "context"],
+        "before_clarify": ["clarify-context"],
+        "after_specify": ["review"],
+        "before_plan": ["review"],
+        "after_implement": ["fold"],
+        "after_converge": ["fold"],
+    }
+    for entries in hooks.values():
+        for hook in entries:
+            assert hook["optional"] is False
+            assert "condition" not in hook, "prompts skip hooks that have a condition"
 
 
 def test_catalog_and_packaging_agree_with_the_manifest():
@@ -60,13 +65,42 @@ def test_catalog_and_packaging_agree_with_the_manifest():
     assert _locate_bundled_extension("capabilities") == EXT_DIR
 
 
-def test_extension_template_is_the_core_template_plus_the_addendum():
+def test_extension_template_is_the_core_template_for_one_slice_plus_the_addendum():
+    """The copy differs from the core in two places only, so a change upstream anywhere else still shows here."""
+    stories = "## User Scenarios & Testing *(mandatory)*\n"
     core = (ROOT / "templates" / "spec-template.md").read_text(encoding="utf-8")
     own = (EXT_DIR / "templates" / "spec-template.md").read_text(encoding="utf-8")
     head, _, addendum = own.partition("## Capability Delta")
-    assert head.rstrip("\n") == core.rstrip("\n"), "the copy drifted from templates/spec-template.md"
     assert addendum.startswith(" *(mandatory)*")
     assert MARK in addendum
+
+    core_top, core_rest = core.split(stories)
+    own_top, own_rest = head.split(stories)
+    # 1. The Slice section, between the header and the stories.
+    assert own_top.startswith(core_top), "the header drifted from templates/spec-template.md"
+    assert own_top[len(core_top):].startswith("## Slice *(mandatory)*\n")
+
+    def story_one(text):
+        start = text.index("### User Story 1")
+        return text[start:text.index("\n---\n", start)]
+
+    def from_edge_cases(text):
+        return text[text.index("### Edge Cases"):].rstrip("\n")
+
+    # 2. One story: the first block is the core's, and the second and third are gone.
+    assert story_one(own_rest) == story_one(core_rest), "the first story drifted from templates/spec-template.md"
+    assert "### User Story 2" in core and "### User Story 2" not in own and "### User Story 3" not in own
+    assert "Add more user stories" not in own
+    assert "This spec is ONE slice, so it holds ONE user story" in own_rest
+    assert from_edge_cases(own_rest) == from_edge_cases(core_rest), "the copy drifted from templates/spec-template.md"
+
+
+def test_template_slice_section_is_a_placeholder_until_the_spec_fills_it():
+    template = (EXT_DIR / "templates" / "spec-template.md").read_text(encoding="utf-8")
+    body = re.sub(r"<!--.*?-->", "", template, flags=re.S)
+    assert re.findall(r"^- Slice: (.)", body, re.M) == ["["], "one Slice line outside comments, and it is the placeholder"
+    assert "- Slice: standalone — <what a person can do and check when this spec is done>" in template
+    assert template.index("## Slice *(mandatory)*") < template.index("## User Scenarios") < template.index("## Capability Delta")
 
 
 def test_template_examples_do_not_count_as_a_delta():
@@ -87,6 +121,41 @@ def test_context_command_is_read_only_and_invents_no_branch():
     assert "No branch was created. This output contains no BRANCH_NAME and no FEATURE_NUM." in text
     assert "Do not run `check-prerequisites`" in text
     assert "Do not write any file yourself" in text
+    assert "If `SLICE FOR THIS RUN` appears earlier in this run, printed by `speckit.capabilities.slice` or in the answer of `slices show`, the request is that slice" in text
+    assert "add no other `designed` rule" in text
+
+
+def test_slice_command_writes_only_an_approved_map_and_invents_no_branch():
+    text = (EXT_DIR / "commands" / "speckit.capabilities.slice.md").read_text(encoding="utf-8")
+    assert "No branch was created. This output contains no BRANCH_NAME and no FEATURE_NUM." in text
+    assert "The only file you write is a slice map under `specs/_slices/`, and only after the user approves the cut." in text
+    assert "A request is not approval of a cut" in text
+    assert "If you cannot ask the user, show the proposal, say that nothing was saved and no spec was written, and stop." in text
+    assert "Do not run `check-prerequisites`" in text
+    assert "Never edit or remove a slice that has a spec, and never reuse an id" in text
+    assert "**stop and ask**: approve the cut, change it, or build everything in one spec" in text
+
+
+def test_slice_command_aims_the_run_with_what_the_script_answers():
+    text = (EXT_DIR / "commands" / "speckit.capabilities.slice.md").read_text(encoding="utf-8")
+    for call in ("slices status", "slices show <id>", "slices check", "status --capability <name>", "publish-design --change <record>"):
+        assert "{SCRIPT} %s" % call in text
+    assert text.count("SLICE FOR THIS RUN") == 2, "one block for a slice of a map, one for a request that is a slice on its own"
+    assert "Print the `aim` of the answer of `slices show`, verbatim." in text, "the script writes the block of a slice of a map"
+    assert "If no map has one, take the first slice whose state is `pending`" in text, "`next` when no slice is ready"
+    assert "If no slice is `pending`, say that every slice has a spec, and stop." in text
+    assert "For the rest of this run the feature description is this slice" in text
+    assert "It builds no other `[designed]` rule" in text
+    # The example in the command is a map the script accepts as it is written.
+    example = text[text.index("   # Slices: login"):text.index("   - An id is")]
+    assert "<!-- slice-map:v1 -->" in example and "### D-login-clave " in example and "## Later" in example
+
+
+def test_fold_and_check_commands_report_the_slices():
+    fold = (EXT_DIR / "commands" / "speckit.capabilities.fold.md").read_text(encoding="utf-8")
+    assert "{SCRIPT} slices status" in fold and "which slice is delivered and which one comes next" in fold
+    check = (EXT_DIR / "commands" / "speckit.capabilities.check.md").read_text(encoding="utf-8")
+    assert "{SCRIPT} slices check" in check
 
 
 def test_review_command_never_decides_a_change_of_meaning_alone():
@@ -130,8 +199,9 @@ def test_ci_example_uses_the_combined_check_and_says_what_it_does_not_do():
     assert not (ROOT / ".github" / "workflows" / "capabilities-check.yml").exists()
 
 
-def test_script_uses_only_the_standard_library_and_parses_as_python_3_9():
-    source = SCRIPT.read_text(encoding="utf-8")
+@pytest.mark.parametrize("name", ["capabilities.py", "cap_slices.py"])
+def test_script_uses_only_the_standard_library_and_parses_as_python_3_9(name):
+    source = SCRIPT.with_name(name).read_text(encoding="utf-8")
     tree = ast.parse(source, feature_version=(3, 9))
     names = set()
     for node in ast.walk(tree):
@@ -209,11 +279,10 @@ def installed_project(tmp_path_factory) -> Path:
 @requires_bash
 def test_install_registers_hooks_commands_and_config(installed_project: Path):
     hooks = yaml.safe_load((installed_project / ".specify" / "extensions.yml").read_text(encoding="utf-8"))["hooks"]
-    for event, command in (("before_specify", "context"), ("before_clarify", "clarify-context"), ("after_specify", "review"), ("before_plan", "review"), ("after_implement", "fold"), ("after_converge", "fold")):
+    for event, commands in (("before_specify", ["slice", "context"]), ("before_clarify", ["clarify-context"]), ("after_specify", ["review"]), ("before_plan", ["review"]), ("after_implement", ["fold"]), ("after_converge", ["fold"])):
         registered = [hook for hook in hooks[event] if hook["extension"] == "capabilities"]
-        assert len(registered) == 1
-        assert registered[0]["command"] == "speckit.capabilities.%s" % command
-        assert registered[0]["optional"] is False
+        assert [hook["command"] for hook in registered] == ["speckit.capabilities.%s" % command for command in commands]
+        assert all(hook["optional"] is False for hook in registered)
     assert (installed_project / ".specify/extensions/capabilities/capabilities-config.yml").is_file()
     skill = installed_project / ".claude/skills/speckit-capabilities-review/SKILL.md"
     text = skill.read_text(encoding="utf-8")
@@ -223,6 +292,17 @@ def test_install_registers_hooks_commands_and_config(installed_project: Path):
     context = (installed_project / ".claude/skills/speckit-capabilities-context/SKILL.md").read_text(encoding="utf-8")
     assert "{SCRIPT}" not in context
     assert ".specify/extensions/capabilities/scripts/python/capabilities.py status --capability" in context
+    cut = (installed_project / ".claude/skills/speckit-capabilities-slice/SKILL.md").read_text(encoding="utf-8")
+    assert "{SCRIPT}" not in cut
+    assert ".specify/extensions/capabilities/scripts/python/capabilities.py slices show <id>" in cut
+
+
+@requires_bash
+def test_the_installed_copy_reads_the_slices(installed_project: Path):
+    """cap_slices.py travels with the extension, and the installed script finds it beside itself."""
+    rc, out = script_run(installed_project, "slices", "status")
+    assert rc == 0 and out["maps"] == [], out
+    assert script_run(installed_project, "slices", "check") == (0, {"status": "ok", "hard": [], "notes": [], "maps": []})
 
 
 @requires_bash
@@ -254,13 +334,16 @@ def test_a_project_from_before_gets_the_hook_and_keeps_its_config(tmp_path):
     registry = project / ".specify/extensions.yml"
     data = yaml.safe_load(registry.read_text(encoding="utf-8"))
     data["hooks"]["before_clarify"] = [hook for hook in data["hooks"]["before_clarify"] if hook["extension"] != "capabilities"]
+    # As 0.4.0 left it: context alone before specify.
+    data["hooks"]["before_specify"] = [hook for hook in data["hooks"]["before_specify"] if hook["command"] != "speckit.capabilities.slice"]
     registry.write_text(yaml.safe_dump(data), encoding="utf-8")
 
     specify(project, "extension", "add", "capabilities", "--force")
 
     assert config.read_bytes() == mine
-    hooks = yaml.safe_load(registry.read_text(encoding="utf-8"))["hooks"]["before_clarify"]
-    assert [hook["command"] for hook in hooks if hook["extension"] == "capabilities"] == ["speckit.capabilities.clarify-context"]
+    hooks = yaml.safe_load(registry.read_text(encoding="utf-8"))["hooks"]
+    assert [hook["command"] for hook in hooks["before_clarify"] if hook["extension"] == "capabilities"] == ["speckit.capabilities.clarify-context"]
+    assert [hook["command"] for hook in hooks["before_specify"] if hook["extension"] == "capabilities"] == ["speckit.capabilities.slice", "speckit.capabilities.context"]
 
 
 @requires_bash
@@ -387,9 +470,10 @@ def test_locate_goes_to_the_catalog_then_the_graph_then_the_code_and_the_graph_n
 
 def test_only_the_gate_touches_graphify():
     scripts = EXT_DIR / "scripts" / "python"
-    assert sorted(path.name for path in scripts.iterdir() if path.suffix == ".py") == ["cap_graph.py", "capabilities.py"]
-    main = (scripts / "capabilities.py").read_text(encoding="utf-8")
-    assert '"graphify"' not in main and "GRAPHIFY_" not in main
+    assert sorted(path.name for path in scripts.iterdir() if path.suffix == ".py") == ["cap_graph.py", "cap_slices.py", "capabilities.py"]
+    for name in ("capabilities.py", "cap_slices.py"):
+        main = (scripts / name).read_text(encoding="utf-8")
+        assert '"graphify"' not in main and "GRAPHIFY_" not in main
     for name in COMMANDS:
         text = (EXT_DIR / "commands" / ("speckit.capabilities.%s.md" % name)).read_text(encoding="utf-8")
         assert "graphify update" not in text and "graphify query" not in text and "graphify explain" not in text

@@ -20,6 +20,8 @@ specs/_capabilities/
 │   ├── implementation.md         # what the code does, its state, code and tests
 │   └── history.md                # changes and retired rules, append-only
 └── _changes/20261104-fix-expiry/ # rule changes and designs made outside specify
+specs/_slices/
+└── login.md                      # the slices of a request that was cut, in the order to build them
 ```
 
 - `spec.md` holds the approved requirement. `implementation.md` holds what was observed. If they differ, neither overwrites the other: the rule is `discrepant` and CI blocks.
@@ -54,11 +56,92 @@ python3 .specify/extensions/capabilities/scripts/python/capabilities.py publish-
 
 **Format seal.** With the first `[designed]` rule, `index.md` gets `<!-- capability-catalog: 2 -->` under its title. From 0.3.0, a script that finds a newer format stops and asks for `specify upgrade`. `check` fails when the catalog holds `[designed]` rules without the seal, and `index --rebuild` writes it. A catalog with no `[designed]` rule stays as it was.
 
+## One spec, one slice
+
+A spec builds one slice: one thing a person can do and check from end to end. A request that holds several is cut before the spec is written, so each spec is small enough to review, test and correct on its own.
+
+The cut is kept in a slice map, one file per request:
+
+```text
+specs/_slices/
+└── login.md        # the slices of one request, in the order to build them
+```
+
+```markdown
+# Slices: login
+
+<!-- slice-map:v1 -->
+
+### D-login-clave Entrar con usuario y clave
+- Intent: Una persona registrada entra con su correo y su clave.
+- Verify: Entro con ana@ejemplo.com y su clave y veo mi cuenta. Con la clave mala veo el error.
+- Depends-On: none
+- Rules: R-login-lockout
+
+### D-login-social Entrar con Google, Facebook o GitHub
+- Intent: Una persona entra con un proveedor y cae en la misma cuenta.
+- Verify: Entro con Google y veo la cuenta que ya tenía con ese correo.
+- Depends-On: D-login-clave
+- Rules: R-login-oauth-providers, R-login-one-account-per-email
+
+## Later
+
+- R-login-reset-expiry: espera al correo transaccional
+```
+
+- `Intent`, `Verify`, `Depends-On` and `Rules` are required, one line each. `In`, `Out`, `Kind: enabler — <reason>` and `Dropped: <reason>` are optional.
+- `Verify` is what a person does and sees. A layer has no such sentence, so it is not a slice.
+- A slice depends only on slices above it in its map, or on slices of another map.
+- `Rules` names the `[designed]` rules the slice builds. A rule is in one slice, or under `## Later` with the reason.
+- An id is never reused. A slice that will not be built keeps its block and gets `Dropped`.
+
+A spec names its slice in its `## Slice` section, which the spec template now carries. A request that was one slice on its own says so:
+
+```markdown
+## Slice *(mandatory)*
+
+- Slice: D-login-social
+- Out: Recuperar la clave (D-login-recuperar); Crear una cuenta (D-login-registro)
+```
+
+```markdown
+- Slice: standalone — Borro una campaña y ya no aparece en la lista
+```
+
+The template also asks for one user story instead of three. A spec written before 0.5.0 has no `## Slice` section and is left alone.
+
+**The state is read, never written**, so a map cannot go stale:
+
+| State | When |
+|---|---|
+| `pending` | No spec names the slice |
+| `specified` | A spec names it |
+| `building` | That spec has `tasks.md` |
+| `delivered` | Its tasks are closed and, when the spec changes rules, its delta is folded |
+| `dropped` | The block says `Dropped` |
+
+| Subcommand | What it gives |
+|---|---|
+| `slices status [--map <name>]` | Every map with its slices and their state, the `next` slice of each map, the specs that are `standalone`, and the `[designed]` rules no slice builds |
+| `slices show <id>` | One slice with its siblings, the state of what it depends on, its rules with their text, and the `IMPLEMENTED` blocks of exactly those rules. `aim` is the block that tells the run what to build and what other slices own. Exit code 3 when the slice already has a spec, or waits for a slice that is not delivered |
+| `slices check` | Whether the maps and the specs agree. Exit code 1 when they do not. `check` includes it |
+
+`check` fails when:
+
+- a map has no marker, has conflict markers, or a block that is not `### D-<name> <title>` with its fields;
+- a slice id is used twice;
+- a slice depends on one that does not exist, was dropped, comes later in the same map, or leads back to itself;
+- a slice or `## Later` names a rule the catalog never had, a rule is in two slices, or in a slice and in `## Later`;
+- a spec names a slice no map defines or one that was dropped, or two specs name the same slice;
+- a spec builds, with `IMPLEMENTED`, a rule that belongs to another slice.
+
+It leaves a note for an `enabler` slice, for a `[designed]` rule of a capability the maps touch that is in no slice and not in `## Later`, and for a rule of a slice that its spec does not build.
+
 ## Hooks
 
 | Event | Command | Writes |
 |---|---|---|
-| `before_specify` | `context` | Nothing, and creates no branch |
+| `before_specify` | `slice`, then `context` | `slice` writes a slice map, only after you approve a cut. `context` writes nothing. Neither creates a branch |
 | `after_specify` | `review` | The delta section if missing, and its lock |
 | `before_clarify` | `clarify-context` | Nothing. It tells both `clarify` and `clarify-deep` what is settled, what to ask, and what the change reaches |
 | `before_plan` | `review` | The lock, only after you decide |
@@ -72,6 +155,7 @@ Prompts run hooks in install order, so install `capabilities` before `git` if yo
 | Command | What it does | Writes |
 |---|---|---|
 | `speckit.capabilities.bootstrap` | Proposes a capability map for a project that already has code and waits for your approval. Then lists the chosen capabilities as `planned` and consolidates them through a record | The catalog, only after you approve. Rules stay `[inferred]` until you validate them with `--validate` |
+| `speckit.capabilities.slice` | Cuts a request, or the `[designed]` rules of a capability, into slices of one spec each, and waits for your approval. With a slice id or `next`, it says what that slice builds and what other slices own | A slice map under `specs/_slices/`, only after you approve |
 | `speckit.capabilities.locate` | Answers where a behaviour lives, which change set it and which tests cover it, from the catalog first. Says when part of the answer comes from the code | Nothing of yours. The graph leaves its own untracked files (see below) |
 
 The script has subcommands for them: `scaffold --capability <name> --covers "<one line>"` and `locate [--capability <name>]`. `clarify-context [--change <dir>]` gives the hook the feature, its parsed delta and every capability, and ends with exit code 0 when there is no feature, because `clarify` reports that itself.
@@ -240,6 +324,9 @@ A report that names no time zone, or no time, is judged by when the file was wri
 - `rebase` rebuilds one change per capability. If the branch also folded another change into the same capabilities, it refuses with exit code 2: merge them one at a time.
 - `check` takes any `spec.md` that carries the delta marker as a change, also one that git does not track yet.
 - `fold` on a feature that was already delivered rewrites its lock, and `check` rejects it with the way out: restore the lock with `git checkout`, and declare a new change to change a rule. It fails closed, but `fold` does not stop you first, because it does not know the base.
+- Whether a request is one slice or several is the agent's judgement, and so is keeping the spec inside its slice. `check` catches a spec that builds a designed rule of another slice; it does not catch a spec that grew.
+- The state of a slice comes from the working tree. A slice whose spec is on a branch that is not merged shows as `pending` here.
+- When the cut is made in the same run as `specify`, a hook that already created a branch named it from the whole request. Give `specify` a slice id and the names match.
 - The `init` step of a workflow has no way to opt out of the default install. Use `specify extension remove capabilities` afterwards.
 
 `.specify/capabilities/` is local working state and is git-ignored. Delete it only when no fold is running and `recover` reports `clean`.
