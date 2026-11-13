@@ -125,8 +125,9 @@ The template also asks for one user story instead of three. A spec written befor
 | `slices status [--map <name>]` | Every map with its slices and their state, the `next` slice of each map, the specs that are `standalone`, and the `[designed]` rules no slice builds |
 | `slices show <id>` | One slice with its siblings, the state of what it depends on, its rules with their text, and the `IMPLEMENTED` blocks of exactly those rules. `aim` is the block that tells the run what to build and what other slices own. Exit code 3 when the slice already has a spec, or waits for a slice that is not delivered |
 | `slices check` | Whether the maps and the specs agree. Exit code 1 when they do not. `check` includes it |
-| `slices measure [--change <dir>]` | What a spec holds against the slice budget: `within`, `over` or `accepted`, with the numbers and one line to read |
-| `slices accept --reason "<why>" [--change <dir>]` | Records why a spec stays over the budget, with the numbers that were accepted, in `slice-budget.json` next to the spec |
+| `slices next [--map <name>]` | The slice to build now, or why there is none: `ready`, `waiting`, `in-progress` or `done`, with one line to read. A loop asks it once per round. It also takes the map from the environment variable `SPECKIT_SLICE_MAP`. Exit code 3 when several maps have a slice to build and none is named |
+| `slices measure [--change <dir> \| --slice <id>]` | What a spec holds against the slice budget: `within`, `over` or `accepted`, with the numbers and one line to read. `--slice` measures the spec that builds that slice; a loop names it in the environment variable `SPECKIT_SLICE`. Exit code 2 when no spec builds the slice, or two do |
+| `slices accept --reason "<why>" [--change <dir> \| --slice <id>]` | Records why a spec stays over the budget, with the numbers that were accepted, in `slice-budget.json` next to the spec. It finds the spec as `measure` does |
 
 `check` fails when:
 
@@ -136,6 +137,8 @@ The template also asks for one user story instead of three. A spec written befor
 - a slice or `## Later` names a rule the catalog never had, a rule is in two slices, or in a slice and in `## Later`;
 - a spec names a slice no map defines or one that was dropped, or two specs name the same slice;
 - a spec builds, with `IMPLEMENTED`, a rule that belongs to another slice.
+
+The `sliced` workflow builds the slices of a map one after another. It asks `slices next` once per round, waits at a gate before each slice, and ends when every slice is delivered. It measures each slice after `specify` and after `tasks`: over the budget, a gate asks whether to go on, and an approval is recorded with `slices accept`. Install it with `specify bundle add sliced` and run it with `specify workflow run sliced --input map=<name>`.
 
 It leaves a note for an `enabler` slice, for a `[designed]` rule of a capability the maps touch that is in no slice and not in `## Later`, and for a rule of a slice that its spec does not build.
 

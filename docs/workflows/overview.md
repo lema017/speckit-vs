@@ -51,6 +51,7 @@ specify workflow run ./workflow.yml --input spec="Build a kanban board"
 | `speckit` | Full SDD delivery cycle with specification and plan review gates | `spec` |
 | `bugfix` | Bug assessment, fixing, and validation | `report` |
 | `assess` | Idea intake, research, definition, shaping, and decision | `idea` |
+| `sliced` | The slices of a slice map, built one after another, with an approval gate for each | `map` |
 
 Use `specify workflow info <id>` for metadata, inputs, and the step graph.
 The `speckit` workflow declares `spec` and optional `integration`, not a `scope`

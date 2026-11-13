@@ -387,6 +387,11 @@ Ask for more than one slice and the cut comes before the spec:
 - **Rules designed ahead** are given to slices too: each `[designed]` rule goes to the
   one slice that builds it.
 
+- **The `sliced` workflow** builds the slices of a map one after another, with a gate
+  before each one and a gate when a slice is over its budget:
+  `specify bundle add sliced`, then
+  `specify workflow run sliced --input map=login`.
+
 A request that is already one slice goes straight to its spec. The
 [capabilities guide](docs/how-to/capabilities.md#one-spec-one-slice) has the map
 format and what `check` verifies.

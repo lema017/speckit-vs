@@ -46,6 +46,28 @@
       },
       "tags": ["assessment", "discovery", "triage", "product"],
       "verified": true
+    },
+    "sliced": {
+      "id": "sliced",
+      "name": "Slice by Slice",
+      "version": "1.0.0",
+      "role": "developer",
+      "description": "Builds the pending slices of a slice map in order: an approval gate per slice, then specify, a spec review gate, plan, tasks and implement.",
+      "author": "lema017",
+      "license": "MIT",
+      "download_url": "https://raw.githubusercontent.com/lema017/speckit-vs/main/bundles/sliced/bundle.yml",
+      "repository": "https://github.com/lema017/speckit-vs",
+      "requires": {
+        "speckit_version": ">=1.6.0"
+      },
+      "provides": {
+        "extensions": 0,
+        "presets": 0,
+        "steps": 0,
+        "workflows": 1
+      },
+      "tags": ["sdd", "slices", "workflow"],
+      "verified": true
     }
   }
 }

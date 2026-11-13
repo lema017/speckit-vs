@@ -111,7 +111,7 @@ def test_firstparty_workflow_catalog_entries_match_shipped_yamls():
 
 
 def test_firstparty_manifest_pins_match_shipped_versions():
-    for bundle_id in ("bugfix", "assess"):
+    for bundle_id in ("bugfix", "assess", "sliced"):
         manifest = _read_yaml(REPO_ROOT / "bundles" / bundle_id / "bundle.yml")
         provides = manifest.get("provides", {})
 

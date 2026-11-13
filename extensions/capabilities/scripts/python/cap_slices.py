@@ -13,6 +13,10 @@ Python 3.9+.
 A slice has a size. ``measure`` counts what a spec holds against the budget of the project, and
 ``accept`` records why a spec stays over it, next to the spec in ``slice-budget.json``.
 
+``next`` answers one question for a loop that builds slice after slice: which slice comes now, or
+why none does. It takes the map from ``--map`` or from the environment variable
+``SPECKIT_SLICE_MAP``, so a caller passes it with no shell quoting.
+
 Exit codes, as in capabilities.py: 0 done, 1 ``check`` found a failure, 2 invalid input, and
 3 when ``show`` needs a decision: the slice already has a spec, or it waits for another slice.
 """
@@ -21,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 from pathlib import Path
 
@@ -41,6 +46,8 @@ NOTHING = {"none", "-", "—"}
 BUDGET = {"stories": 1, "requirements": 10, "rules": 4, "tasks": 25}
 BUDGET_NAME = "slice-budget.json"
 BUDGET_FORMAT = 1
+MAP_ENV = "SPECKIT_SLICE_MAP"
+SLICE_ENV = "SPECKIT_SLICE"
 STORY = re.compile(r"^### User Story \d+", re.M)
 TASK = re.compile(r"^\s*- \[[ xX]\] ", re.M)
 NAMES = {"stories": ("story", "stories"), "requirements": ("requirement", "requirements"), "rules": ("rule", "rules"), "tasks": ("task", "tasks")}
@@ -526,6 +533,48 @@ def aim(view, siblings, depends, rules, write):
     return "\n".join(lines) + "\n"
 
 
+def cmd_next(cap, project, wanted):
+    """The slice to build now, or why there is none. One answer per round of a loop that walks a map."""
+    hard = problems(project)[0]
+    if hard:
+        return cap.emit({"status": "invalid", "hard": hard}, cap.HARD)
+    if not project.maps:
+        raise cap.CapError("no slice map under %s: speckit.capabilities.slice writes one" % MAPS)
+    maps = [found for found in project.maps if wanted in (found["name"], found["map"])] if wanted else project.maps
+    if wanted and not maps:
+        raise cap.CapError("slice map not found: %s" % wanted)
+    rows = [(found, [project.view(item) for item in found["slices"]]) for found in maps]
+    ready = [(found, views, [view for view in views if view["ready"]]) for found, views in rows]
+    open_maps = [(found, views, first) for found, views, first in ready if first]
+    if len(open_maps) > 1:
+        names = [found["name"] for found, _, _ in open_maps]
+        return cap.emit({"status": "ambiguous", "maps": names, "errors": ["several maps have a next slice: %s; name one with --map" % ", ".join(names)]}, cap.DECISION)
+    views = [view for _, found_views in rows for view in found_views if view["state"] != "dropped"]
+    counts = {"total": len(views), "delivered": sum(1 for view in views if view["state"] == "delivered")}
+    if open_maps:
+        found, _, first = open_maps[0]
+        chosen = first[0]
+        return cap.emit(dict(counts, status="ok", reason="ready", map=found["map"], name=found["name"], next=chosen["id"], slice=chosen,
+                             summary="%s: %d of %d slices delivered. Next: %s %s." % (found["name"], counts["delivered"], counts["total"], chosen["id"], chosen["title"])))
+    pending = [{"id": view["id"], "waiting_for": view["waiting_for"]} for view in views if view["state"] == "pending"]
+    started = [{"id": view["id"], "state": view["state"], "spec": view["spec"]} for view in views if view["state"] in ("specified", "building")]
+    reason = "waiting" if pending else "in-progress" if started else "done"
+    name = maps[0]["name"] if len(maps) == 1 else "all maps"
+    if reason == "done":
+        tail = "Every slice is delivered."
+    elif reason == "waiting":
+        def blocker(dep):
+            # Every dependency is a slice of some map: a map that names one that is not was refused above.
+            return "%s (%s)" % (dep, project.state(project.by_id[dep][1]))
+
+        tail = "No slice is ready: %s." % "; ".join("%s waits for %s" % (item["id"], ", ".join(blocker(dep) for dep in item["waiting_for"])) for item in pending)
+    else:
+        tail = "No slice is left to start: %s." % ", ".join("%s is %s" % (item["id"], item["state"]) for item in started)
+    return cap.emit(dict(counts, status="none", map=maps[0]["map"] if len(maps) == 1 else None, name=maps[0]["name"] if len(maps) == 1 else None,
+                         next=None, slice=None, reason=reason, pending=pending, in_progress=started,
+                         summary="%s: %d of %d slices delivered. %s" % (name, counts["delivered"], counts["total"], tail)))
+
+
 def cmd_show(cap, project, slice_id):
     if slice_id not in project.by_id:
         raise cap.CapError("slice not found: %s" % slice_id)
@@ -553,8 +602,17 @@ def cmd_show(cap, project, slice_id):
     }, cap.OK if status == "ok" else cap.DECISION)
 
 
-def named_change(cap, project, given):
-    return cap.resolve_change(project.root, [given] if given else [])
+def named_change(cap, project, given, slice_id=None):
+    """The spec to measure: the one that was named, the one that builds the slice that was named, or the current feature."""
+    if slice_id is None:
+        return cap.resolve_change(project.root, [given] if given else [])
+    if slice_id not in project.by_id:
+        raise cap.CapError("no slice map defines %s" % slice_id)
+    claims = project.claims.get(slice_id) or []
+    if len(claims) != 1:
+        raise cap.CapError("%s build %s: one slice takes one spec" % (listing([spec["spec"] for spec in claims]), slice_id) if claims
+                           else "no spec builds %s yet" % slice_id)
+    return project.root / claims[0]["spec"]
 
 
 def declared_by(cap, project, change):
@@ -564,16 +622,16 @@ def declared_by(cap, project, change):
     return {"slice": declared["slice"], "standalone": declared["standalone"], "map": found[0]["map"] if found else None}
 
 
-def cmd_measure(cap, project, given):
-    change = named_change(cap, project, given)
+def cmd_measure(cap, project, given, slice_id=None):
+    change = named_change(cap, project, given, slice_id)
     return cap.emit(dict(measure(cap, project.root, change, budget(cap, project.config)), **declared_by(cap, project, change)))
 
 
-def cmd_accept(cap, project, given, reason):
+def cmd_accept(cap, project, given, reason, slice_id=None):
     reason = cap.norm(reason or "")
     if not reason:
         raise cap.CapError("accept takes --reason: why this spec stays over the slice budget")
-    change = named_change(cap, project, given)
+    change = named_change(cap, project, given, slice_id)
     limits = budget(cap, project.config)
     size = measure(cap, project.root, change, limits)
     written = None
@@ -620,11 +678,12 @@ def report(cap, root):
 
 def build_parser():
     parser = argparse.ArgumentParser(prog="capabilities.py slices", description="The slices of the project")
-    parser.add_argument("command", choices=["status", "show", "check", "measure", "accept"])
+    parser.add_argument("command", choices=["status", "show", "check", "measure", "accept", "next"])
     parser.add_argument("ids", nargs="*", help="show: the slice")
     parser.add_argument("--root", default=".")
-    parser.add_argument("--map", help="status: one map, by name or by path")
+    parser.add_argument("--map", help="status, next: one map, by name or by path. next also reads it from %s" % MAP_ENV)
     parser.add_argument("--change", help="measure, accept: the spec directory, instead of the current feature")
+    parser.add_argument("--slice", help="measure, accept: the spec that builds this slice, instead of the current feature. Also read from %s" % SLICE_ENV)
     parser.add_argument("--reason", help="accept: why the spec stays over the slice budget")
     return parser
 
@@ -639,10 +698,14 @@ def main(cap, argv):
         parser.error("show takes one slice id")
     if args.command != "show" and args.ids:
         parser.error("%s takes no ids" % args.command)
-    if args.map is not None and args.command != "status":
-        parser.error("--map goes with status")
+    if args.map is not None and args.command not in ("status", "next"):
+        parser.error("--map goes with status and next")
     if args.change is not None and args.command not in ("measure", "accept"):
         parser.error("--change goes with measure and accept")
+    if args.slice is not None and args.command not in ("measure", "accept"):
+        parser.error("--slice goes with measure and accept")
+    if args.slice is not None and args.change is not None:
+        parser.error("name the spec with --change or its slice with --slice, not both")
     if args.reason is not None and args.command != "accept":
         parser.error("--reason goes with accept")
     try:
@@ -654,10 +717,15 @@ def main(cap, argv):
             return cmd_status(cap, project, args.map)
         if args.command == "show":
             return cmd_show(cap, project, args.ids[0])
+        if args.command == "next":
+            # An empty variable is no map: a caller that has none to name leaves it empty.
+            return cmd_next(cap, project, args.map or os.environ.get(MAP_ENV) or None)
+        # A caller that walks a map knows the slice and not the feature directory. A spec that was named wins over the variable.
+        slice_id = args.slice or (None if args.change else os.environ.get(SLICE_ENV) or None)
         if args.command == "measure":
-            return cmd_measure(cap, project, args.change)
+            return cmd_measure(cap, project, args.change, slice_id)
         if args.command == "accept":
-            return cmd_accept(cap, project, args.change, args.reason)
+            return cmd_accept(cap, project, args.change, args.reason, slice_id)
         return cmd_check(cap, project)
     except cap.CapError as error:
         return cap.emit({"status": "invalid", "errors": [str(error)]}, cap.INVALID)

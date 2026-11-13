@@ -570,10 +570,15 @@ def test_show_rejects_a_slice_that_cannot_be_built(design, slice_id, needle):
     (("show",), "show takes one slice id"),
     (("show", CLAVE, SOCIAL), "show takes one slice id"),
     (("status", CLAVE), "status takes no ids"),
-    (("check", "--map", "login"), "--map goes with status"),
+    (("check", "--map", "login"), "--map goes with status and next"),
+    (("next", CLAVE), "next takes no ids"),
     (("measure", CLAVE), "measure takes no ids"),
     (("status", "--change", BIG), "--change goes with measure and accept"),
     (("measure", "--reason", "porque sí"), "--reason goes with accept"),
+    (("status", "--slice", CLAVE), "--slice goes with measure and accept"),
+    (("next", "--slice", CLAVE), "--slice goes with measure and accept"),
+    (("measure", "--slice", CLAVE, "--change", BIG), "name the spec with --change or its slice with --slice, not both"),
+    (("accept", "--slice", CLAVE, "--change", BIG, "--reason", "porque sí"), "name the spec with --change or its slice with --slice, not both"),
     (("split",), "invalid choice"),
 ])
 def test_a_wrong_invocation_is_refused(design, args, needle):
@@ -613,6 +618,100 @@ def test_a_design_record_is_not_a_spec_that_names_a_slice(design):
     assert MARK in design.read(DESIGN + "/capability-delta.md")
     design.write(DESIGN + "/spec.md", spec("D-login-otra"))
     assert hard(design, "D-login-otra") == []
+
+
+# ---------------------------------------------------------------- next: the slice to build now, for a loop that walks a map
+
+
+def upcoming(repo, *args, env=None):
+    return repo.cap("slices", "next", *args, env=env)
+
+
+def one_slice(repo, value=CLAVE, done=False):
+    """A map with one slice and the spec that builds it. The spec changes no rule, so closed tasks deliver it."""
+    put(repo, block(CLAVE, "Entrar con usuario y clave"))
+    repo.write(BIG + "/spec.md", sized(value=value))
+    if done:
+        repo.write(BIG + "/tasks.md", tasks(2, done=2))
+
+
+def test_next_names_the_first_slice_that_waits_for_nothing(design):
+    login(design)
+    rc, out = upcoming(design)
+    assert rc == 0, out
+    assert (out["status"], out["reason"], out["next"], out["name"], out["map"]) == ("ok", "ready", CLAVE, "login", MAP)
+    assert (out["slice"]["id"], out["slice"]["title"], out["slice"]["verify"]) == (CLAVE, "Entrar con usuario y clave", "Entro y veo mi cuenta.")
+    assert (out["total"], out["delivered"]) == (4, 0)
+    assert out["summary"] == "login: 0 of 4 slices delivered. Next: %s Entrar con usuario y clave." % CLAVE
+
+
+def test_next_moves_on_as_slices_are_delivered(design):
+    login(design)
+    acceso(design)
+    rc, out = upcoming(design)
+    assert rc == 0 and (out["status"], out["reason"], out["next"], out["slice"]) == ("none", "waiting", None, None), out
+    assert out["in_progress"] == [{"id": CLAVE, "state": "specified", "spec": ACCESO}]
+    assert out["pending"] == [{"id": SOCIAL, "waiting_for": [CLAVE]}, {"id": RECUPERAR, "waiting_for": [CLAVE]}, {"id": REGISTRO, "waiting_for": [CLAVE]}]
+    assert out["summary"] == "login: 0 of 4 slices delivered. No slice is ready: %s waits for %s (specified); %s waits for %s (specified); %s waits for %s (specified)." % (
+        SOCIAL, CLAVE, RECUPERAR, CLAVE, REGISTRO, CLAVE)
+    deliver(design)
+    out = upcoming(design)[1]
+    assert (out["status"], out["next"], out["delivered"]) == ("ok", SOCIAL, 1)
+    assert out["summary"].startswith("login: 1 of 4 slices delivered. Next: %s " % SOCIAL)
+
+
+def test_next_says_when_a_started_slice_is_all_that_is_left(design):
+    one_slice(design)
+    out = upcoming(design)[1]
+    assert (out["status"], out["reason"], out["pending"]) == ("none", "in-progress", [])
+    assert out["in_progress"] == [{"id": CLAVE, "state": "specified", "spec": BIG}]
+    assert out["summary"] == "login: 0 of 1 slices delivered. No slice is left to start: %s is specified." % CLAVE
+
+
+def test_next_says_when_the_map_is_done_and_counts_no_dropped_slice(design):
+    one_slice(design, done=True)
+    design.write(MAP, design.read(MAP) + "\n" + block(SOCIAL, "Entrar con Google", more={"Dropped": "no se hará"}))
+    rc, out = upcoming(design)
+    assert rc == 0 and (out["status"], out["reason"], out["next"]) == ("none", "done", None), out
+    assert (out["total"], out["delivered"], out["pending"], out["in_progress"]) == (1, 1, [], [])
+    assert out["summary"] == "login: 1 of 1 slices delivered. Every slice is delivered."
+
+
+def test_next_refuses_to_walk_maps_that_disagree(design):
+    put(design, block(CLAVE, depends="D-otro-lado"))
+    rc, out = design.cap("slices", "status")
+    assert out["check"]["hard"] == 1
+    rc, out = upcoming(design)
+    assert rc == 1 and out["status"] == "invalid" and "D-otro-lado" in out["hard"][0], "the maps are fixed before any slice is built"
+
+
+def test_next_takes_the_map_from_the_option_or_from_the_environment(design):
+    login(design)
+    put(design, block("D-otro-uno", "Otra cosa"), name="otro")
+    rc, out = upcoming(design)
+    assert rc == 3 and out["status"] == "ambiguous" and out["maps"] == ["login", "otro"], out
+    assert out["errors"] == ["several maps have a next slice: login, otro; name one with --map"]
+    assert upcoming(design, "--map", "otro")[1]["next"] == "D-otro-uno"
+    assert upcoming(design, "--map", "specs/_slices/otro.md")[1]["next"] == "D-otro-uno"
+    assert upcoming(design, env={"SPECKIT_SLICE_MAP": "otro"})[1]["next"] == "D-otro-uno"
+    assert upcoming(design, "--map", "login", env={"SPECKIT_SLICE_MAP": "otro"})[1]["next"] == CLAVE, "the option wins"
+    assert upcoming(design, env={"SPECKIT_SLICE_MAP": ""})[0] == 3, "an empty variable names no map"
+    for args, env in ((("--map", "nada"), None), ((), {"SPECKIT_SLICE_MAP": "nada"})):
+        rc, out = upcoming(design, *args, env=env)
+        assert rc == 2 and out == {"status": "invalid", "errors": ["slice map not found: nada"]}
+
+
+def test_next_over_every_map_when_none_is_named_and_none_is_ready(design):
+    one_slice(design)
+    put(design, block("D-otro-uno", "Otra cosa", depends=CLAVE), name="otro")
+    rc, out = upcoming(design)
+    assert rc == 0 and (out["status"], out["reason"], out["name"], out["map"]) == ("none", "waiting", None, None), out
+    assert out["summary"] == "all maps: 0 of 2 slices delivered. No slice is ready: D-otro-uno waits for %s (specified)." % CLAVE
+
+
+def test_next_needs_a_slice_map(design):
+    rc, out = upcoming(design)
+    assert rc == 2 and out == {"status": "invalid", "errors": ["no slice map under specs/_slices: speckit.capabilities.slice writes one"]}
 
 
 # ---------------------------------------------------------------- the progress page reads the maps on its own
@@ -737,6 +836,48 @@ def test_measure_says_which_map_holds_the_spec(design):
 def test_measure_needs_a_spec(design):
     rc, out = design.cap("slices", "measure", "--change", "specs/404-nada")
     assert rc == 2 and out == {"status": "invalid", "errors": ["no spec.md in specs/404-nada"]}
+
+
+def test_measure_and_accept_find_the_spec_by_its_slice(design):
+    login(design)
+    acceso(design)
+    design.write(BIG + "/spec.md", sized(stories=2, value=REGISTRO))
+    by_change = size(design)
+    assert by_change["status"] == "over" and by_change["spec"] == BIG
+    assert design.cap("slices", "measure", "--slice", REGISTRO) == (0, by_change)
+    assert design.cap("slices", "measure", env={"SPECKIT_SLICE": REGISTRO}) == (0, by_change), "a walk names the slice in the environment"
+    rc, out = design.cap("slices", "accept", "--reason", "Va junto.", env={"SPECKIT_SLICE": REGISTRO})
+    assert rc == 0 and (out["status"], out["written"]) == ("accepted", BIG + "/slice-budget.json")
+    assert json.loads((design.path / BIG / "slice-budget.json").read_text(encoding="utf-8"))["reason"] == "Va junto."
+    assert not (design.path / ACCESO / "slice-budget.json").exists(), "only the spec of that slice is touched"
+    rc, out = design.cap("slices", "accept", "--slice", REGISTRO, "--reason", "Sigue junto.")
+    assert rc == 0 and out["accepted"]["reason"] == "Sigue junto."
+
+
+def test_what_is_named_on_the_command_line_wins_over_the_slice_in_the_environment(design):
+    login(design)
+    acceso(design)
+    design.write(BIG + "/spec.md", sized(value=REGISTRO))
+    env = {"SPECKIT_SLICE": CLAVE}
+    assert design.cap("slices", "measure", env=env)[1]["spec"] == ACCESO
+    assert design.cap("slices", "measure", "--change", BIG, env=env)[1]["spec"] == BIG
+    assert design.cap("slices", "measure", "--slice", REGISTRO, env=env)[1]["spec"] == BIG
+    assert design.cap("slices", "measure", "--change", BIG, env={"SPECKIT_SLICE": "D-login-nada"})[0] == 0
+
+
+def test_a_slice_is_measured_only_when_one_spec_builds_it(design):
+    login(design)
+    for command in (("measure",), ("accept", "--reason", "Va junto.")):
+        rc, out = design.cap("slices", *command, "--slice", "D-login-nada")
+        assert rc == 2 and out == {"status": "invalid", "errors": ["no slice map defines D-login-nada"]}
+        rc, out = design.cap("slices", *command, env={"SPECKIT_SLICE": REGISTRO})
+        assert rc == 2 and out == {"status": "invalid", "errors": ["no spec builds %s yet" % REGISTRO]}
+    design.write(BIG + "/spec.md", sized(stories=2, value=REGISTRO))
+    design.write("specs/003-otra/spec.md", sized(stories=2, value=REGISTRO))
+    for command in (("measure",), ("accept", "--reason", "Va junto.")):
+        rc, out = design.cap("slices", *command, "--slice", REGISTRO)
+        assert rc == 2 and out["errors"] == ["%s and specs/003-otra build %s: one slice takes one spec" % (BIG, REGISTRO)]
+    assert not list(design.path.glob("specs/*/slice-budget.json")), "nothing is accepted for a slice that two specs claim"
 
 
 def test_the_config_changes_the_budget(design):

@@ -59,6 +59,7 @@ through the install-allowed `builtin://default` source. Its entries are marked
 | --- | --- | --- |
 | `bugfix` | `bug` extension and `bugfix` workflow | Guided assess, assessment gate, fix, and test |
 | `assess` | `assess` extension and `assess` workflow | Idea triage before Spec-Driven Development |
+| `sliced` | `sliced` workflow | Build the slices of a slice map one after another |
 
 ```bash
 specify bundle add assess

@@ -32,6 +32,16 @@
       "url": "https://raw.githubusercontent.com/github/spec-kit/main/workflows/assess/workflow.yml",
       "tags": ["assessment", "discovery", "triage", "product"],
       "bundled": true
+    },
+    "sliced": {
+      "id": "sliced",
+      "name": "Slice by Slice",
+      "description": "Builds the pending slices of a slice map in order: an approval gate per slice, then specify → spec review gate → plan → tasks → implement",
+      "author": "lema017",
+      "version": "1.0.0",
+      "url": "https://raw.githubusercontent.com/lema017/speckit-vs/main/workflows/sliced/workflow.yml",
+      "tags": ["sdd", "slices", "capabilities"],
+      "bundled": true
     }
   }
 }
