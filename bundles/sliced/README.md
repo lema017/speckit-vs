@@ -28,8 +28,11 @@ A bundle of this fork that installs the workflow that builds the slices of a sli
 ## Install
 
 ```bash
+specify bundle catalog add https://raw.githubusercontent.com/lema017/speckit-vs/main/bundles/catalog.json --id fork
 specify bundle add sliced
 ```
+
+The first command is needed once per project. `specify` reads its default bundle catalog from `github/spec-kit`, which does not list this bundle, so the project has to know the catalog of this fork. Bundles that both catalogs list still come from the default one.
 
 ## Run the workflow
 

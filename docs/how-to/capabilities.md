@@ -84,9 +84,12 @@ A request that is already one slice goes straight to its spec, with one line tha
 To build the slices of a map one after another, with a gate before each one, install and run the `sliced` workflow:
 
 ```bash
+specify bundle catalog add https://raw.githubusercontent.com/lema017/speckit-vs/main/bundles/catalog.json --id fork
 specify bundle add sliced
 specify workflow run sliced --input map=login
 ```
+
+The first command tells the project about the bundle catalog of this fork, once. The default catalog is the one of `github/spec-kit`, which does not list `sliced`.
 
 Each round asks the project which slice comes now, waits for your approval, and runs `specify`, a spec review gate, `plan`, `tasks` and `implement` for it. It ends when every slice is delivered. If a slice is started and not delivered, the slices that depend on it wait: the run says which, and looks again when you approve.
 
