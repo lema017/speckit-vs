@@ -20,7 +20,7 @@ With `--script ps` the extension is not installed unless you ask for it with `--
 
 You use Spec Kit as usual. The extension adds hooks to the flow:
 
-1. **`/speckit.specify`** loads the rules the request touches before writing the spec, and asks the spec to declare a `## Capability Delta`:
+1. **`/speckit.specify`** first decides whether the request is one slice: one thing a person can do and check from end to end. If it holds several, it proposes the cut, waits for your approval and writes the spec of one slice only (see [One spec, one slice](#one-spec-one-slice)). Then it loads the rules that slice touches, and asks the spec to declare a `## Capability Delta`:
 
    ```markdown
    ### MODIFIED R-session-expiry
@@ -47,7 +47,52 @@ specs/_capabilities/
 │   ├── spec.md                   # approved rules
 │   ├── implementation.md         # what the code does, its state, code and tests
 │   └── history.md                # changes and retired rules, append-only
-└── _changes/20261104-fix-expiry/ # rule changes made outside specify
+└── _changes/20261104-fix-expiry/ # rule changes and designs made outside specify
+specs/_slices/
+└── login.md                      # the slices of a request that was cut
+```
+
+## One spec, one slice
+
+A spec that covers a whole area, such as "login", takes long to review and to build, and you find out late that it was not what you wanted. So one spec builds one slice: sign in with a password is one spec, sign in with a social account is another, recovering the password is a third.
+
+Ask for the whole thing as usual:
+
+```text
+/speckit.specify Login completo: usuario y clave, redes sociales, recuperar clave y registro
+```
+
+Before any spec is written, you get the cut to approve, change, or refuse:
+
+| Slice | What a person checks | Depends on |
+|---|---|---|
+| `D-login-clave` Entrar con usuario y clave | Entro con mi correo y mi clave y veo mi cuenta | none |
+| `D-login-social` Entrar con Google, Facebook o GitHub | Entro con Google y veo la cuenta que ya tenía | `D-login-clave` |
+| `D-login-recuperar` Recuperar la clave | Pido el enlace, cambio la clave y entro | `D-login-clave` |
+| `D-login-registro` Crear una cuenta | Me registro y entro | `D-login-clave` |
+
+With your approval the cut is saved in `specs/_slices/login.md`, and this run writes the spec of the first slice only. The spec says which slice it is and what the others own, so the interview does not ask about them and the plan does not build them. When that slice is built, `fold` tells you which one comes next:
+
+```text
+/speckit.specify next
+```
+
+Before that slice is built, `next` names the first slice that still has no spec, says which slice it waits for, and asks whether to go on.
+
+A request that is already one slice goes straight to its spec, with one line that says so.
+
+**From a design.** When the rules were approved before the code (`[designed]`), cut them the same way:
+
+```text
+/speckit.capabilities.slice login
+```
+
+Each designed rule goes to the one slice that builds it, or is left for later with a reason. `/speckit.specify D-login-clave` then builds exactly the rules of that slice, and the rest stay designed.
+
+To see where everything stands, with the state of each slice read from the specs:
+
+```bash
+python3 .specify/extensions/capabilities/scripts/python/capabilities.py slices status
 ```
 
 ## Ask where something lives

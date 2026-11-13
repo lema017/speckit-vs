@@ -27,6 +27,7 @@ $ARGUMENTS
 - Do not write any file yourself. The feature directory does not exist yet. The graph keeps its own files, `graphify-out/` and `.graphifyignore`.
 - Do not install anything.
 - Do not run `check-prerequisites`: before the directory exists it can return the previous feature.
+- If `SLICE FOR THIS RUN` appears earlier in this run, printed by `speckit.capabilities.slice` or in the answer of `slices show`, the request is that slice and not the whole text the user typed: pick capabilities and report rules for the slice only.
 
 ## Steps
 
@@ -47,4 +48,4 @@ $ARGUMENTS
    - rules marked `designed`: the business approved them and nobody built them yet. They are not current behaviour, so do not look for them in the code.
    Say which capabilities only the graph revealed.
 9. Tell the next step that the spec must declare a `## Capability Delta` that names those IDs and copies their current text literally into `From`.
-10. If the request builds `designed` rules, run `{SCRIPT} delta-block --implement <ids>` and hand its `text` to the next step: one `### IMPLEMENTED` block per rule, with the catalog's text in `From` and `To`. The spec replaces `FR-###` in `Links` with its own requirements and acceptance criteria, and changes nothing else in the block. A spec that builds a `designed` rule with other text declares `MODIFIED` instead, and that is a business decision.
+10. If `SLICE FOR THIS RUN` listed rules to build, those are the `designed` rules this spec builds, and its `IMPLEMENTED` blocks are already printed: hand them to the next step and add no other `designed` rule, because the others belong to other slices. Otherwise, if the request builds `designed` rules, run `{SCRIPT} delta-block --implement <ids>` and hand its `text` to the next step: one `### IMPLEMENTED` block per rule, with the catalog's text in `From` and `To`. The spec replaces `FR-###` in `Links` with its own requirements and acceptance criteria, and changes nothing else in the block. A spec that builds a `designed` rule with other text declares `MODIFIED` instead, and that is a business decision.

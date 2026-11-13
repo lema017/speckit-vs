@@ -8,5 +8,7 @@ Before answering where a behaviour lives or why it is the way it is, and before 
 - If they differ, do not rewrite the requirement to match the code: report it.
 - A rule marked `[designed]` is approved and not built: do not look for it in the code and do not treat it as current behaviour.
 
+One spec builds one slice: one thing a person can do and check from end to end. `specs/_slices/` holds the slices of a larger request, and a spec names its slice under `## Slice`. Do not widen a spec to what another slice owns.
+
 If you change a rule outside a Spec Kit feature, declare its delta and run the `speckit.capabilities.fold` command.
 <!-- SPECKIT CAPABILITIES END -->

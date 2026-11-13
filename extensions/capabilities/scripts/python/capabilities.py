@@ -15,6 +15,7 @@ import argparse
 import contextlib
 import fnmatch
 import hashlib
+import importlib.util
 import json
 import os
 import posixpath
@@ -1489,6 +1490,11 @@ def find_rule(root, rule_id):
     return None, None
 
 
+def implemented_block(rule_id, capability, text):
+    """The block a spec copies to build a [designed] rule: the catalog's text in From and in To."""
+    return "### IMPLEMENTED %s\n- Capability: %s\n- From: %s\n- To: %s\n- Links: FR-###" % (rule_id, capability, text, text)
+
+
 def cmd_delta_block(root, ids):
     """The IMPLEMENTED blocks of [designed] rules, with the catalog's text, for a spec to copy."""
     if not ids:
@@ -1501,8 +1507,7 @@ def cmd_delta_block(root, ids):
         elif not rule["designed"]:
             errors.append("%s: the rule is not [designed]; a spec changes an implemented rule with MODIFIED" % rule_id)
         else:
-            block = "### IMPLEMENTED %s\n- Capability: %s\n- From: %s\n- To: %s\n- Links: FR-###" % (rule_id, capability, rule["text"], rule["text"])
-            found.append({"rule": rule_id, "capability": capability, "block": block})
+            found.append({"rule": rule_id, "capability": capability, "block": implemented_block(rule_id, capability, rule["text"])})
     if errors:
         return emit({"status": "invalid", "errors": errors}, INVALID)
     return emit({
@@ -2705,6 +2710,12 @@ class Check:
         if changed:
             self.notes.append("this change edits the extension that evaluates it, and CI runs this copy; review it: %s" % ", ".join(changed))
 
+    def check_slices(self):
+        """The slice maps and the specs that name a slice must agree. What they hold is a person's call, so the rest is a note."""
+        hard, notes = load_slices().report(sys.modules[__name__], self.root)
+        self.hard.extend(hard)
+        self.notes.extend(notes)
+
     def run(self, explicit):
         self.resolve_base()
         if self.base:
@@ -2723,6 +2734,7 @@ class Check:
             self.eval_change(change)
         self.check_catalog_shape()
         self.check_provenance()
+        self.check_slices()
         if self.merge_base:
             self.check_reverse()
             self.check_history()
@@ -2810,11 +2822,21 @@ def run_graph(args):
     return subprocess.run([sys.executable, "-I", "-S", str(gate), *args], check=False).returncode
 
 
+def load_slices():
+    """The slices have their own file. It is loaded from here and gets this module, so it reads the catalog with these parsers."""
+    spec = importlib.util.spec_from_file_location("cap_slices", str(Path(__file__).resolve().with_name("cap_slices.py")))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def main():
     if sys.argv[1:2] == ["graph"]:
         return run_graph(sys.argv[2:])
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
+    if sys.argv[1:2] == ["slices"]:
+        return load_slices().main(sys.modules[__name__], sys.argv[2:])
     # Intermixed, so the rule ids of defer may come after the options: defer --change specs/001-x R-a R-b.
     args = build_parser().parse_intermixed_args()
     root = Path(args.root).resolve()

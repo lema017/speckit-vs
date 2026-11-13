@@ -8,19 +8,30 @@
 
 **Input**: User description: "$ARGUMENTS"
 
+## Slice *(mandatory)*
+
+<!--
+  ACTION REQUIRED: One spec builds one slice: one thing a person can do and check from end to end.
+  If "SLICE FOR THIS RUN" appears earlier in this run, copy its two lines here in place of the two below.
+  If this spec is a slice on its own, name the one outcome:
+
+      - Slice: standalone — <what a person can do and check when this spec is done>
+
+  Out lists what the request also asked for and other slices build. Write "none" when there is nothing.
+-->
+
+- Slice: [slice id from specs/_slices/, or: standalone — <what a person can do and check>]
+- Out: [what other slices build, each with its slice id, or: none]
+
 ## User Scenarios & Testing *(mandatory)*
 
 <!--
-  IMPORTANT: User stories should be PRIORITIZED as user journeys ordered by importance.
-  Each user story/journey must be INDEPENDENTLY TESTABLE - meaning if you implement just ONE of them,
-  you should still have a viable MVP (Minimum Viable Product) that delivers value.
+  IMPORTANT: This spec is ONE slice, so it holds ONE user story: a journey a person can test and
+  see working on its own. If the request holds more, the others belong to other slices: name them in
+  "Out" under "## Slice" and do not write them here.
 
-  Assign priorities (P1, P2, P3, etc.) to each story, where P1 is the most critical.
-  Think of each story as a standalone slice of functionality that can be:
-  - Developed independently
-  - Tested independently
-  - Deployed independently
-  - Demonstrated to users independently
+  Write a second story only when it cannot be delivered or tested apart from the first, and say why
+  in its "Why this priority" line.
 -->
 
 ### User Story 1 - [Brief Title] (Priority: P1)
@@ -37,36 +48,6 @@
 2. **Given** [initial state], **When** [action], **Then** [expected outcome]
 
 ---
-
-### User Story 2 - [Brief Title] (Priority: P2)
-
-[Describe this user journey in plain language]
-
-**Why this priority**: [Explain the value and why it has this priority level]
-
-**Independent Test**: [Describe how this can be tested independently]
-
-**Acceptance Scenarios**:
-
-1. **Given** [initial state], **When** [action], **Then** [expected outcome]
-
----
-
-### User Story 3 - [Brief Title] (Priority: P3)
-
-[Describe this user journey in plain language]
-
-**Why this priority**: [Explain the value and why it has this priority level]
-
-**Independent Test**: [Describe how this can be tested independently]
-
-**Acceptance Scenarios**:
-
-1. **Given** [initial state], **When** [action], **Then** [expected outcome]
-
----
-
-[Add more user stories as needed, each with an assigned priority]
 
 ### Edge Cases
 

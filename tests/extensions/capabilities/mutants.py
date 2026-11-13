@@ -298,6 +298,88 @@ CLARIFY_MUTANTS = [
 GATE_DOOR_MUTANTS = [
     ("graph-exit-code-lost", "str(gate), *args], check=False).returncode", "str(gate), *args], check=False).returncode and 0"),
 ]
+# The slices: the maps, what a spec says about its slice, and the state read from the project.
+# Each one is checked with test_slices.py alone.
+SLICE_MODULES = ["test_slices.py"]
+SLICE_MUTANTS = [
+    # The shape of a map.
+    ("slices-conflict-markers-read", '    if cap.has_conflict(text):\n        errors.append("merge conflict markers', '    if False:\n        errors.append("merge conflict markers'),
+    ("slices-newer-map-read", "    if max(versions) > MAP_FORMAT:", "    if False:"),
+    ("slices-any-heading-is-a-slice", '            if not SLICE_ID.fullmatch(slice_id):\n                errors.append("heading is not a slice', '            if False:\n                errors.append("heading is not a slice'),
+    ("slices-map-comments-are-read", "    for line in strip_comments(text).splitlines():", "    for line in text.splitlines():"),
+    ("slices-later-line-unchecked", '            elif line.strip():\n                errors.append("line in ## Later', '            elif False:\n                errors.append("line in ## Later'),
+    ("slices-field-on-two-lines", '            if line.strip():\n                errors.append("%s: unexpected line, a field takes one line', '            if False:\n                errors.append("%s: unexpected line, a field takes one line'),
+    ("slices-unknown-field-accepted", "        if key not in REQUIRED + OPTIONAL:", "        if False:"),
+    ("slices-field-twice-accepted", '        elif key in current["fields"]:', "        elif False:"),
+    ("slices-required-field-optional", '        if not fields.get(key):\n            errors.append("%s: field %s is missing"', '        if False:\n            errors.append("%s: field %s is missing"'),
+    ("slices-title-optional", '    if not item["title"]:', "    if False:"),
+    ("slices-depends-takes-anything", '    errors.extend("%s: Depends-On takes slice ids or none: %s" % (slice_id, part) for part in wrong)', "    pass"),
+    ("slices-rules-takes-anything", '    errors.extend("%s: Rules takes rule ids or none: %s" % (slice_id, part) for part in wrong)', "    pass"),
+    ("slices-kind-takes-anything", '        else:\n            errors.append("%s: Kind takes', '        elif False:\n            errors.append("%s: Kind takes'),
+    # What a map names.
+    ("slices-id-reused", "            if slice_id in seen:\n", "            if False:\n"),
+    ("slices-depends-on-itself", '                if dep == slice_id:\n                    hard.append("%s: %s depends on itself"', '                if False:\n                    hard.append("%s: %s depends on itself"'),
+    ("slices-unknown-dependency", "                elif dep not in project.by_id:\n", "                elif False:\n"),
+    ("slices-dropped-dependency", '                elif project.by_id[dep][1]["dropped"] and not item["dropped"]:', "                elif False:"),
+    ("slices-forward-dependency", "                elif project.by_id[dep][0] is found and dep not in earlier:", "                elif False:"),
+    ("slices-cycles-off", "    hard.extend(cycles(project))", "    pass"),
+    ("slices-unknown-rule", '                if rule_id not in project.rules and rule_id not in project.retired:\n                    hard.append("%s: %s names', '                if False:\n                    hard.append("%s: %s names'),
+    ("slices-retired-rule-unknown", '                if rule_id not in project.rules and rule_id not in project.retired:\n                    hard.append("%s: %s names', '                if rule_id not in project.rules:\n                    hard.append("%s: %s names'),
+    ("slices-dropped-slice-checks-its-rules", '            if item["dropped"]:\n                continue\n            for rule_id in item["rules"]:', '            for rule_id in item["rules"]:'),
+    ("slices-dropped-slice-keeps-its-rules", '                if not item["dropped"]:\n                    for rule_id in item["rules"]:\n                        self.owner', '                if True:\n                    for rule_id in item["rules"]:\n                        self.owner'),
+    ("slices-later-unknown-rule", '            if entry["rule"] not in project.rules and entry["rule"] not in project.retired:', "            if False:"),
+    ("slices-later-and-a-slice", '            if entry["rule"] in project.owner:', "            if False:"),
+    ("slices-rule-in-two-slices", "        if len(owners) > 1:", "        if False:"),
+    ("slices-enabler-silent", '            if item["enabler"]:', "            if False:"),
+    ("slices-unassigned-everywhere", "    for rule_id in project.unassigned(touched):", "    for rule_id in project.unassigned():"),
+    ("slices-later-does-not-assign", " and rule_id not in later and ", " and "),
+    ("slices-built-rules-wait-for-a-slice", '            if rule["designed"] and rule_id not in self.owner', "            if rule_id not in self.owner"),
+    # What a spec says about its slice.
+    ("slices-declaration-reads-comments", 'raw = cap.section(strip_comments(text), "Slice")', 'raw = cap.section(text, "Slice")'),
+    ("slices-missing-line-accepted", '    if not value:\n        return declared, ["## Slice names no slice', '    if value is None and False:\n        return declared, ["## Slice names no slice'),
+    ("slices-placeholder-accepted", '    if value.startswith("["):', "    if False:"),
+    ("slices-any-value-is-a-slice", "    elif SLICE_ID.fullmatch(value):", "    elif True:"),
+    ("slices-declaration-errors-lost", '        hard.extend("%s: %s" % (spec["spec"], error) for error in spec["errors"])', "        pass"),
+    ("slices-spec-names-any-slice", "        if named and named not in project.by_id:", "        if False:"),
+    ("slices-spec-names-a-dropped-slice", '        elif named and project.by_id[named][1]["dropped"]:', "        elif False:"),
+    ("slices-spec-builds-any-rule", "            if owners and named not in owners:", "            if False:"),
+    ("slices-two-specs-one-slice", "        if len(claims) > 1:", "        if False:"),
+    ("slices-catalog-is-a-spec", 'if source.startswith((cap.CATALOG + "/", MAPS + "/")) or any(', "if any("),
+    ("slices-old-spec-that-builds-is-skipped", "            if declared is None and not built:\n", "            if declared is None:\n"),
+    ("slices-feature-roots-ignored", '        for pattern in self.config["feature_roots"]:', '        for pattern in ["specs"]:'),
+    # The state.
+    ("slices-delivered-without-the-fold", "        if tasks == 0 and (folded or not entries):", "        if tasks == 0:"),
+    ("slices-delivered-with-open-tasks", "        if tasks == 0 and (folded or not entries):", "        if folded or not entries:"),
+    ("slices-folded-without-tasks-is-specified", '            return "delivered" if folded else "specified"', '            return "specified"'),
+    ("slices-dropped-is-pending", '        if item["dropped"]:\n            return "dropped"', '        if False:\n            return "dropped"'),
+    ("slices-next-ignores-dependencies", '        waiting = [dep for dep in item["depends_on"] if dep not in self.by_id or self.state(self.by_id[dep][1]) != "delivered"]', "        waiting = []"),
+    ("slices-ready-with-a-spec", 'ready=state == "pending" and not waiting', "ready=not waiting"),
+    ("slices-issues-off", '                if rule and rule["designed"] and rule_id not in claims[0]["changes"]:', "                if False:"),
+    # show, status and the invocation.
+    ("slices-show-a-dropped-slice", '    if item["dropped"]:\n        raise cap.CapError("slice %s was dropped', '    if False:\n        raise cap.CapError("slice %s was dropped'),
+    ("slices-show-has-spec-is-ok", 'status = "has-spec" if view["spec"] else "blocked" if view["waiting_for"] else "ok"', 'status = "blocked" if view["waiting_for"] else "ok"'),
+    ("slices-show-blocked-is-ok", 'status = "has-spec" if view["spec"] else "blocked" if view["waiting_for"] else "ok"', 'status = "has-spec" if view["spec"] else "ok"'),
+    ("slices-show-exit-code-lost", 'cap.OK if status == "ok" else cap.DECISION)', "cap.OK)"),
+    ("slices-show-offers-built-rules", 'if rule_id in project.rules and project.rules[rule_id]["designed"]]', "if rule_id in project.rules]"),
+    ("slices-aim-drops-what-comes-in", '    if view["in"]:\n        lines.append("In: %s" % view["in"])', '    if False:\n        lines.append("In: %s" % view["in"])'),
+    ("slices-aim-forgets-the-siblings", 'ask about it or build it: %s" % siblings,', 'ask about it or build it: %s" % "none",'),
+    ("slices-aim-forgets-the-state-of-a-dependency", '", ".join("%s (%s)" % (dep["id"], dep["state"]) for dep in depends)', '", ".join(dep["id"] for dep in depends)'),
+    ("slices-aim-forgets-the-rules", '("".join("\\n- %s: %s" % (rule["id"], rule["text"]) for rule in rules) or " none")', '" none"'),
+    ("slices-aim-forgets-what-the-spec-writes", '        write.rstrip("\\n"),\n    ]', '        "",\n    ]'),
+    ("slices-show-lists-dropped-siblings", 'if other["id"] != slice_id and not other["dropped"]]', 'if other["id"] != slice_id]'),
+    ("slices-check-exit-code-lost", "cap.HARD if hard else cap.OK)", "cap.OK)"),
+    ("slices-unknown-map-is-empty", '        if not maps:\n            raise cap.CapError("slice map not found', '        if False:\n            raise cap.CapError("slice map not found'),
+    ("slices-newer-catalog-read", "        if problem:\n            raise cap.CapError(problem)", "        if False:\n            raise cap.CapError(problem)"),
+    ("slices-show-without-an-id", '    if args.command == "show" and len(args.ids) != 1:', '    if args.command == "show" and len(args.ids) < 1:'),
+    ("slices-status-takes-ids", '    if args.command != "show" and args.ids:', "    if False:"),
+    ("slices-map-option-anywhere", '    if args.map is not None and args.command != "status":', "    if False:"),
+]
+# In capabilities.py, also checked with test_slices.py alone.
+SLICE_DOOR_MUTANTS = [
+    ("check-skips-the-slices", "        self.check_slices()\n", "        pass\n"),
+    ("check-loses-the-slice-failures", "        self.hard.extend(hard)\n        self.notes.extend(notes)\n", "        self.notes.extend(notes)\n"),
+    ("check-loses-the-slice-notes", "        self.hard.extend(hard)\n        self.notes.extend(notes)\n", "        self.hard.extend(hard)\n"),
+]
 
 
 def main():
@@ -311,7 +393,14 @@ def main():
             if status != "killed":
                 survivors += 1
             print("%-36s %-8s %s" % (name, status, detail), flush=True)
-        for group, target, modules in ((GATE_MUTANTS, "cap_graph.py", GATE_MODULES), (GATE_DOOR_MUTANTS, "capabilities.py", GATE_MODULES), (CLARIFY_MUTANTS, "capabilities.py", CLARIFY_MODULES)):
+        groups = (
+            (GATE_MUTANTS, "cap_graph.py", GATE_MODULES),
+            (GATE_DOOR_MUTANTS, "capabilities.py", GATE_MODULES),
+            (CLARIFY_MUTANTS, "capabilities.py", CLARIFY_MODULES),
+            (SLICE_MUTANTS, "cap_slices.py", SLICE_MODULES),
+            (SLICE_DOOR_MUTANTS, "capabilities.py", SLICE_MODULES),
+        )
+        for group, target, modules in groups:
             for name, old, new in group:
                 if wanted and name not in wanted:
                     continue

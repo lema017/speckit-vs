@@ -90,6 +90,8 @@ $ARGUMENTS
 
 9. Run `{SCRIPT} check --mode dev --change <source>` and report the state. If a rule ends `discrepant` or `unverified` and it is not going to be fixed in this change, `{SCRIPT} defer <id>` takes it out of the delta: a `[designed]` rule goes back to designed, and the output names the requirements to mark out of scope. `prepared` means the catalog holds the requirement on this branch, even if a rule is `discrepant`. Only CI can report `ready`.
 
+10. If the spec names a slice under `## Slice`, run `{SCRIPT} slices status` and report the `state` of that slice and the `next` of its map, with its title: which slice is delivered and which one comes next. A slice is `delivered` when its tasks are closed and its delta is folded. If `check.hard` is not 0, run `{SCRIPT} slices check` and report `hard`. This step changes nothing.
+
 ## Do not
 
 Edit `spec.md`, `history.md` or `index.md` under the catalog by hand, touch `specs/NNN-*`, `README.md` or agent instruction files, or commit.
