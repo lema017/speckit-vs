@@ -1,0 +1,162 @@
+schema_version: "1.0"
+workflow:
+  id: "sliced"
+  name: "Slice by Slice"
+  version: "1.0.0"
+  author: "lema017"
+  description: "Builds the pending slices of a slice map in order: an approval gate per slice, then specify → spec review gate → plan → tasks → implement"
+
+requires:
+  # The slices come from the capabilities extension, 0.7.0 or later: its script
+  # answers `slices next` and measures the spec of a slice. `specify init`
+  # installs that extension by default.
+  speckit_version: ">=1.6.0"
+  integrations:
+    # An advisory, non-exhaustive hint, as in the `speckit` workflow: the four
+    # commands below are core commands that every integration provides.
+    any:
+      - "alquimia"
+      - "claude"
+      - "copilot"
+      - "gemini"
+      - "opencode"
+
+inputs:
+  map:
+    type: string
+    default: ""
+    prompt: "Slice map to walk: its name under specs/_slices/, such as login. Leave it empty when only one map has a slice to build"
+  integration:
+    type: string
+    default: "auto"
+    prompt: "Integration to use (e.g. claude, copilot, gemini; 'auto' uses the project's initialized integration)"
+
+steps:
+  # One round per slice. Each round asks the project which slice comes now, so
+  # the walk follows the map as it is, also when a slice was built by hand in
+  # between. The walk ends when every slice is delivered.
+  - id: walk
+    type: do-while
+    max_iterations: 60
+    condition: "{{ steps.next-slice.output.data.reason != 'done' }}"
+    steps:
+      - id: next-slice
+        type: shell
+        # The map name reaches the script through the environment, never as
+        # shell text.
+        strict: true
+        output_format: json
+        env:
+          SPECKIT_SLICE_MAP: "{{ inputs.map }}"
+        run: python3 .specify/extensions/capabilities/scripts/python/capabilities.py slices next
+
+      - id: build-slice
+        type: if
+        condition: "{{ steps.next-slice.output.data.reason == 'ready' }}"
+        then:
+          - id: approve-slice
+            type: gate
+            message: "{{ steps.next-slice.output.data.summary }} A person checks it by: {{ steps.next-slice.output.data.slice.verify }} Approve to write its spec and build it, or reject to stop here."
+            options: [approve, reject]
+            on_reject: abort
+
+          - id: specify
+            command: speckit.specify
+            integration: "{{ inputs.integration }}"
+            input:
+              args: "{{ steps.next-slice.output.data.next }}"
+
+          # The size step of the extension asks what to do with a spec over
+          # the slice budget, and inside a command step nobody is there to
+          # answer. So the walk measures the spec itself and asks at a gate.
+          # No spec for this slice fails the walk here, before anything is
+          # planned on another one.
+          - id: measure-spec
+            type: shell
+            strict: true
+            output_format: json
+            env:
+              SPECKIT_SLICE: "{{ steps.next-slice.output.data.next }}"
+            run: python3 .specify/extensions/capabilities/scripts/python/capabilities.py slices measure
+
+          - id: oversized-spec
+            type: if
+            condition: "{{ steps.measure-spec.output.data.status == 'over' }}"
+            then:
+              - id: review-oversized-spec
+                type: gate
+                message: "{{ steps.measure-spec.output.data.summary }} Review the spec of {{ steps.next-slice.output.data.next }}. Approve to plan and build it as it is: the walk records that its size was accepted at this gate. Reject to stop here and split it with speckit.capabilities.size."
+                options: [approve, reject]
+                on_reject: abort
+
+              # Recorded, so the size step does not ask again in plan.
+              - id: accept-spec-size
+                type: shell
+                strict: true
+                env:
+                  SPECKIT_SLICE: "{{ steps.next-slice.output.data.next }}"
+                run: python3 .specify/extensions/capabilities/scripts/python/capabilities.py slices accept --reason "Accepted at the spec review gate of the sliced workflow."
+            else:
+              - id: review-spec
+                type: gate
+                message: "Review the spec of {{ steps.next-slice.output.data.next }} before it is planned and built. {{ steps.measure-spec.output.data.summary }}"
+                options: [approve, reject]
+                on_reject: abort
+
+          - id: plan
+            command: speckit.plan
+            integration: "{{ inputs.integration }}"
+            input:
+              args: ""
+
+          - id: tasks
+            command: speckit.tasks
+            integration: "{{ inputs.integration }}"
+            input:
+              args: ""
+
+          # The tasks count against the budget too. A slice within it, or one
+          # whose size was accepted and did not grow, is built without asking.
+          - id: measure-tasks
+            type: shell
+            strict: true
+            output_format: json
+            env:
+              SPECKIT_SLICE: "{{ steps.next-slice.output.data.next }}"
+            run: python3 .specify/extensions/capabilities/scripts/python/capabilities.py slices measure
+
+          - id: oversized-tasks
+            type: if
+            condition: "{{ steps.measure-tasks.output.data.status == 'over' }}"
+            then:
+              - id: approve-oversized-tasks
+                type: gate
+                message: "{{ steps.measure-tasks.output.data.summary }} Approve to build {{ steps.next-slice.output.data.next }} as it is: the walk records that its size was accepted at this gate. Reject to stop here and split it with speckit.capabilities.size."
+                options: [approve, reject]
+                on_reject: abort
+
+              - id: accept-tasks-size
+                type: shell
+                strict: true
+                env:
+                  SPECKIT_SLICE: "{{ steps.next-slice.output.data.next }}"
+                run: python3 .specify/extensions/capabilities/scripts/python/capabilities.py slices accept --reason "Accepted at the tasks gate of the sliced workflow."
+
+          - id: implement
+            command: speckit.implement
+            integration: "{{ inputs.integration }}"
+            input:
+              args: ""
+
+      # A slice that was started and is not delivered holds back the ones that
+      # depend on it. The walk waits for a person instead of ending as if the
+      # map were done.
+      - id: nothing-ready
+        type: if
+        condition: "{{ steps.next-slice.output.data.reason in ['waiting', 'in-progress'] }}"
+        then:
+          - id: wait-for-delivery
+            type: gate
+            message: "{{ steps.next-slice.output.data.summary }} Finish what is in progress, then approve to look again, or reject to stop here."
+            options: [approve, reject]
+            on_reject: abort

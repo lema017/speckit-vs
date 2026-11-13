@@ -1,0 +1,22 @@
+schema_version: "1.0"
+
+bundle:
+  id: "sliced"
+  name: "Slice by Slice"
+  version: "1.0.0"
+  role: "developer"
+  description: "Builds the pending slices of a slice map in order: an approval gate per slice, then specify, a spec review gate, plan, tasks and implement."
+  author: "lema017"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=1.6.0"
+  tools: []
+  mcp: []
+
+provides:
+  workflows:
+    - id: "sliced"
+      version: "1.0.0"
+
+tags: ["sdd", "slices", "workflow"]

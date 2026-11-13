@@ -372,7 +372,21 @@ SLICE_MUTANTS = [
     ("slices-newer-catalog-read", "        if problem:\n            raise cap.CapError(problem)", "        if False:\n            raise cap.CapError(problem)"),
     ("slices-show-without-an-id", '    if args.command == "show" and len(args.ids) != 1:', '    if args.command == "show" and len(args.ids) < 1:'),
     ("slices-status-takes-ids", '    if args.command != "show" and args.ids:', "    if False:"),
-    ("slices-map-option-anywhere", '    if args.map is not None and args.command != "status":', "    if False:"),
+    ("slices-map-option-anywhere", '    if args.map is not None and args.command not in ("status", "next"):', "    if False:"),
+    # next: the slice to build now.
+    ("next-walks-maps-that-disagree", '    if hard:\n        return cap.emit({"status": "invalid", "hard": hard}, cap.HARD)', '    if False:\n        return cap.emit({"status": "invalid", "hard": hard}, cap.HARD)'),
+    ("next-without-a-map-says-done", '    if not project.maps:\n        raise cap.CapError("no slice map under', '    if False:\n        raise cap.CapError("no slice map under'),
+    ("next-unknown-map-says-done", "    if wanted and not maps:\n        raise cap.CapError", "    if False:\n        raise cap.CapError"),
+    ("next-map-by-name-only", 'maps = [found for found in project.maps if wanted in (found["name"], found["map"])] if wanted else project.maps', 'maps = [found for found in project.maps if wanted == found["name"]] if wanted else project.maps'),
+    ("next-picks-among-several-maps", "    if len(open_maps) > 1:", "    if False:"),
+    ("next-counts-dropped-slices", 'for view in found_views if view["state"] != "dropped"]', "for view in found_views]"),
+    ("next-ready-has-no-reason", 'status="ok", reason="ready",', 'status="ok", reason=None,'),
+    ("next-waiting-is-done", 'reason = "waiting" if pending else "in-progress" if started else "done"', 'reason = "in-progress" if started else "done"'),
+    ("next-started-is-done", 'reason = "waiting" if pending else "in-progress" if started else "done"', 'reason = "waiting" if pending else "done"'),
+    ("next-blocker-without-its-state", '            return "%s (%s)" % (dep, project.state(project.by_id[dep][1]))', "            return dep"),
+    ("next-ignores-the-environment", "args.map or os.environ.get(MAP_ENV) or None)", "args.map or None)"),
+    ("next-environment-wins", "args.map or os.environ.get(MAP_ENV) or None)", "os.environ.get(MAP_ENV) or args.map or None)"),
+    ("next-map-option-refused", '    if args.map is not None and args.command not in ("status", "next"):', '    if args.map is not None and args.command != "status":'),
     # The size of a spec.
     ("size-stories-not-counted", '"stories": len(STORY.findall(plain)),', '"stories": 1,'),
     ("size-criteria-counted-as-requirements", 'sum(1 for key in ids if key.startswith("FR-")),', 'sum(1 for key in ids if key.startswith(("FR-", "SC-"))),'),
@@ -404,6 +418,17 @@ SLICE_MUTANTS = [
     ("size-clarify-lists-dropped-siblings", 'if other["id"] != declared["slice"] and not other["dropped"]] if found else []', 'if other["id"] != declared["slice"]] if found else []'),
     ("size-change-on-any-command", '    if args.change is not None and args.command not in ("measure", "accept"):', "    if False:"),
     ("size-reason-on-any-command", '    if args.reason is not None and args.command != "accept":', "    if False:"),
+    # A spec found by the slice it builds, for a loop that walks a map.
+    ("size-slice-unknown-accepted", '    if slice_id not in project.by_id:\n        raise cap.CapError("no slice map defines', '    if False:\n        raise cap.CapError("no slice map defines'),
+    ("size-slice-two-specs-first-wins", "    if len(claims) != 1:", "    if not claims:"),
+    ("size-slice-without-a-spec-crashes", "    if len(claims) != 1:", "    if len(claims) > 1:"),
+    ("size-slice-ignores-the-environment", "slice_id = args.slice or (None if args.change else os.environ.get(SLICE_ENV) or None)", "slice_id = args.slice or None"),
+    ("size-slice-environment-wins-over-the-option", "slice_id = args.slice or (None if args.change else os.environ.get(SLICE_ENV) or None)", "slice_id = (None if args.change else os.environ.get(SLICE_ENV) or None) or args.slice"),
+    ("size-slice-environment-wins-over-a-named-spec", "slice_id = args.slice or (None if args.change else os.environ.get(SLICE_ENV) or None)", "slice_id = args.slice or os.environ.get(SLICE_ENV) or None"),
+    ("size-measure-ignores-the-slice", "return cmd_measure(cap, project, args.change, slice_id)", "return cmd_measure(cap, project, args.change)"),
+    ("size-accept-ignores-the-slice", "return cmd_accept(cap, project, args.change, args.reason, slice_id)", "return cmd_accept(cap, project, args.change, args.reason)"),
+    ("size-slice-on-any-command", '    if args.slice is not None and args.command not in ("measure", "accept"):', "    if False:"),
+    ("size-slice-with-a-named-spec", "    if args.slice is not None and args.change is not None:", "    if False:"),
 ]
 # In capabilities.py, also checked with test_slices.py alone.
 SLICE_DOOR_MUTANTS = [

@@ -11,6 +11,7 @@ the [workflow documentation](https://github.github.io/spec-kit/workflows/overvie
 | `speckit/workflow.yml` | Full SDD delivery cycle |
 | `bugfix/workflow.yml` | Bug assessment, fixing, and validation |
 | `assess/workflow.yml` | Idea assessment process |
+| `sliced/workflow.yml` | The slices of a slice map, built one after another |
 | `catalog.json` | First-party workflow catalog |
 | `catalog.community.json` | Community workflow catalog |
 | `step-catalog.json` | First-party custom-step catalog |
