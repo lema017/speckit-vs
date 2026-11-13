@@ -306,7 +306,7 @@ def test_it_builds_every_pending_slice_in_the_order_of_the_map(walk):
     assert len(walk.asked) == 4, "two gates for each slice, and none once the map is done"
     assert "shop: 0 of 2 slices delivered. Next: %s Add to the cart." % CART in walk.asked[0]
     assert "A person checks it by: I add a book and see it in the cart." in walk.asked[0]
-    assert "Review the spec of %s before it is planned and built. Slice size: 0 stories (max 1), 1 requirement (max 10), " % CART in walk.asked[1]
+    assert "Review the spec of %s before it is planned and built. Slice size: 0 stories (max 1), 1 requirement (max 15), " % CART in walk.asked[1]
     assert walk.asked[1].endswith("tasks not written (max 25). Within the slice budget.")
     assert "shop: 1 of 2 slices delivered. Next: %s Pay for the cart." % PAY in walk.asked[2]
     assert walk.accepted("001-shop-cart") is None and walk.accepted("002-shop-pay") is None

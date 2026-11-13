@@ -95,7 +95,7 @@ Each round asks the project which slice comes now, waits for your approval, and 
 
 The spec review gate shows the size of the slice. When a slice is over its budget, after `specify` or after `tasks`, the run stops at a gate with the numbers. Approve and it goes on with the slice as it is, and records next to the spec that its size was accepted at that gate. Reject and the run stops, so you can split the slice with `/speckit.capabilities.size`.
 
-A slice also has a size: one story, and by default at most 10 requirements, 4 rules and 25 tasks. After `specify`, before `plan` and after `tasks`, the spec is measured. Over the budget you get a proposal to split it, and you decide: split it, or go on with a reason that is recorded next to the spec. The numbers are in `capabilities-config.yml`.
+A slice also has a size: one story, and by default at most 15 requirements, 4 rules and 25 tasks. After `specify`, before `plan` and after `tasks`, the spec is measured. Over the budget you get a proposal to split it, and you decide: split it, or go on with a reason that is recorded next to the spec. The numbers are in `capabilities-config.yml`.
 
 **From a design.** When the rules were approved before the code (`[designed]`), cut them the same way:
 

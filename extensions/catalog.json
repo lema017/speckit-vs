@@ -51,7 +51,7 @@
     "capabilities": {
       "name": "Capability Catalog",
       "id": "capabilities",
-      "version": "0.7.1",
+      "version": "0.7.2",
       "description": "Keeps the approved behaviour of each capability, its origin, its code and its tests discoverable across sessions.",
       "author": "lema017",
       "repository": "https://github.com/lema017/speckit-vs",
