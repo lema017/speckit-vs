@@ -659,6 +659,15 @@ def test_one_more_than_the_budget_is_over(design, held, what, count):
     assert out["summary"].endswith(" Over the slice budget in %s." % what)
 
 
+def test_the_line_names_everything_that_is_over(design):
+    design.write(BIG + "/spec.md", sized(stories=2, requirements=11, rules=5))
+    design.write(BIG + "/tasks.md", tasks(26))
+    assert size(design)["summary"].endswith(" Over the slice budget in stories, requirements, rules and tasks.")
+    accept(design, "Todo va junto.")
+    design.write(BIG + "/spec.md", sized(stories=3, requirements=12, rules=6))
+    assert size(design)["summary"].endswith(" It grew past what was accepted in stories, requirements and rules.")
+
+
 def test_tasks_count_once_they_are_written(design):
     design.write(BIG + "/spec.md", sized())
     design.write(BIG + "/tasks.md", tasks(25, done=3))

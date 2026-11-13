@@ -437,6 +437,11 @@ def measure(cap, root, change, limits):
             "summary": summary(held, limits, over, status, accepted)}
 
 
+def listing(words):
+    """a | a and b | a, b and c"""
+    return " and ".join(part for part in (", ".join(words[:-1]), words[-1]) if part) if words else ""
+
+
 def summary(held, limits, over, status, accepted):
     """One line a person reads: the numbers, each with its limit, and where the spec stands."""
     parts = []
@@ -445,14 +450,14 @@ def summary(held, limits, over, status, accepted):
             parts.append("%s not written (max %d)" % (what, limit))
         else:
             parts.append("%d %s (max %d)" % (held[what], NAMES[what][held[what] != 1], limit))
-    where = " and ".join(item["what"] for item in over)
+    where = listing([item["what"] for item in over])
     if status == "within":
         end = "Within the slice budget."
     elif status == "accepted":
         end = "Over the slice budget in %s; accepted: %s" % (where, accepted["reason"])
     else:
         grew = [item["what"] for item in over if "accepted" in item and item["count"] > item["accepted"]]
-        end = "Over the slice budget in %s.%s" % (where, " It grew past what was accepted in %s." % " and ".join(grew) if grew else "")
+        end = "Over the slice budget in %s.%s" % (where, " It grew past what was accepted in %s." % listing(grew) if grew else "")
     return "Slice size: %s. %s" % (", ".join(parts), end)
 
 

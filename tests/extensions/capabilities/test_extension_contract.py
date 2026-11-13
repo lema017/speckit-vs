@@ -181,6 +181,8 @@ def test_size_command_splits_with_what_the_script_answers():
     assert "say that `plan` and `tasks` must run again for the spec that is left" in text
     assert "This is the one case in which the block of a slice that has a spec is edited. Its id does not change." in text
     assert "If the status is still `over`, say so and go back to step 3." in text
+    assert "A part that a `pending` slice of the map already owns goes back to that slice." in text, "a spec that grew into a sibling makes no second slice"
+    assert "A part that went back to a `pending` slice needs no new block" in text
 
 
 def test_clarify_context_command_leaves_other_slices_out_of_the_interview():
