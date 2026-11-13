@@ -2,6 +2,13 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.6.2] - 2026-11-13
+
+### Changed
+
+- feat(capabilities): a slice holds up to 15 requirements by default
+- chore: begin 1.6.2.dev0 development
+
 ## [1.6.1] - 2026-11-13
 
 ### Changed
