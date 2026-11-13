@@ -996,6 +996,161 @@ def write_atomic(path, text):
     write_atomic_bytes(path, text.encode("utf-8"))
 
 
+# A slice map is specs/_slices/<name>.md, written by the capabilities extension: the slices of a
+# larger request, in order. A spec names the slice it builds in its "## Slice" section, and the
+# list of specs groups them by map. The engine reads those files itself, by the rules of the
+# extension, so a redraw starts no other process.
+SLICE_MAPS_DIR = "_slices"
+SLICE_MAP_FORMAT = 1
+DELTA_LOCK = "capability-delta.lock.json"
+_SLICE_MAP_MARK = re.compile(r"<!-- slice-map:v(\d+) -->")
+_SLICE_ID = re.compile(r"D-[a-z0-9]+(?:-[a-z0-9]+)*")
+_SLICE_FIELD = re.compile(r"^- ([A-Za-z-]+): (.*)$")
+_DELTA_MARK = "<!-- capability-delta:v1 -->"
+_DELTA_ENTRY = re.compile(r"^### (?:ADDED|MODIFIED|REMOVED|INFERRED|VALIDATED|DESIGNED|IMPLEMENTED) R-[a-z0-9-]+\s*$", re.M)
+_CONFLICT_SIDE = re.compile(r"^(?:<{7}|>{7})(?: |$)", re.M)
+_HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
+
+
+def _section(text, title):
+    """The ``## <title>`` section of a document, up to the next ``## `` heading, or None."""
+    match = re.search(r"^## " + re.escape(title) + r".*$", text, re.M)
+    if not match:
+        return None
+    following = re.search(r"^## ", text[match.end():], re.M)
+    return text[match.start():(match.end() + following.start()) if following else len(text)]
+
+
+def read_slice_maps(root):
+    """Every slice map of the project, in file order, with its slices in the order they were written.
+
+    A map this engine cannot read is left out, and its specs are listed like any other spec: a
+    link, a map with no marker or of a newer format, or one with conflict markers.
+    """
+    directory = Path(root) / "specs" / SLICE_MAPS_DIR
+    try:
+        if directory.is_symlink() or not directory.is_dir():
+            return []
+        paths = sorted(directory.glob("*.md"), key=lambda item: item.name)
+    except OSError:
+        return []
+    maps = []
+    for path in paths:
+        text, truncated = read_limited(path, MAX_DOC_BYTES)
+        if not text or truncated or _CONFLICT_SIDE.search(text):
+            continue
+        versions = [int(number) for number in _SLICE_MAP_MARK.findall(text)]
+        if not versions or max(versions) > SLICE_MAP_FORMAT:
+            continue
+        found = {"name": path.stem, "request": "", "slices": []}
+        current, fields, top = None, set(), True
+        for line in _HTML_COMMENT.sub("", text).splitlines():
+            if line.startswith("### "):
+                slice_id, _, title = line[4:].strip().partition(" ")
+                current, fields = None, set()
+                if _SLICE_ID.fullmatch(slice_id):
+                    current = {"id": slice_id, "title": title.strip(), "dropped": False, "depends_on": []}
+                    found["slices"].append(current)
+                continue
+            if line.startswith("## "):
+                current, top = None, False
+                continue
+            if current is None:
+                if top and line.startswith("Request: "):
+                    found["request"] = " ".join(line[len("Request: "):].split())
+                continue
+            match = _SLICE_FIELD.match(line)
+            if not match or match.group(1).lower() in fields:
+                continue  # A field counts once, as its first line.
+            key, value = match.group(1).lower(), " ".join(match.group(2).split())
+            fields.add(key)
+            if key == "dropped":
+                current["dropped"] = bool(value)
+            elif key == "depends-on":
+                current["depends_on"] = [part.strip() for part in value.split(",") if _SLICE_ID.fullmatch(part.strip())]
+        if found["slices"]:
+            maps.append(found)
+    return maps
+
+
+def spec_slice(directory):
+    """(the slice a spec says it builds, or None; how far that spec is).
+
+    A spec is ``specified`` until it has tasks, then ``building``, and ``delivered`` once every task
+    is closed and, when the spec changes rules, its delta is folded into the catalog. The lock of
+    the spec records the fold.
+    """
+    spec = read_limited(directory / "spec.md", MAX_DOC_BYTES)[0] or ""
+    declared = None
+    section = _section(_HTML_COMMENT.sub("", spec), "Slice")
+    for line in section.splitlines()[1:] if section else ():
+        match = _SLICE_FIELD.match(line)
+        if match and match.group(1).lower() == "slice":
+            value = " ".join(match.group(2).split())
+            declared = value if _SLICE_ID.fullmatch(value) else None
+            break
+    lock = read_limited(directory / DELTA_LOCK, MAX_DOC_BYTES)[0]
+    try:
+        folded = bool(json.loads(lock).get("fold")) if lock else False
+    except (ValueError, AttributeError):
+        folded = False
+    tasks = read_limited(directory / "tasks.md", MAX_TASKS_BYTES)[0]
+    if tasks is None:
+        return declared, "delivered" if folded else "specified"
+    delta = _section(spec, "Capability Delta") if spec.count(_DELTA_MARK) == 1 and len(re.findall(r"^## Capability Delta", spec, re.M)) == 1 else None
+    changes_rules = bool(delta) and _DELTA_MARK in delta and bool(_DELTA_ENTRY.search(_HTML_COMMENT.sub("", delta)))
+    closed = not re.search(r"^\s*- \[ \]", tasks, re.M)
+    return declared, "delivered" if closed and (folded or not changes_rules) else "building"
+
+
+def slice_groups(maps, specs):
+    """The maps as the list of specs shows them. ``specs`` holds (spec id, declared slice, state), in the order of the list."""
+    claimed, known = {}, {}
+    for spec_id, declared, state in specs:
+        if declared:
+            claimed.setdefault(declared, (spec_id, state))  # One spec builds one slice: the first one counts.
+    for found in maps:
+        for item in found["slices"]:
+            known.setdefault(item["id"], item)
+
+    def state_of(item):
+        if item["dropped"]:
+            return "dropped"
+        return claimed[item["id"]][1] if item["id"] in claimed else "pending"
+
+    groups = []
+    for found in maps:
+        views = []
+        for item in found["slices"]:
+            views.append({
+                "id": item["id"],
+                "title": item["title"],
+                "state": state_of(item),
+                "spec": claimed[item["id"]][0] if item["id"] in claimed else None,
+                # A slice waits for the ones it depends on until they are delivered.
+                "waiting_for": [dep for dep in item["depends_on"] if dep not in known or state_of(known[dep]) != "delivered"],
+            })
+        counted = [view for view in views if view["state"] != "dropped"]
+        ready = [view["id"] for view in views if view["state"] == "pending" and not view["waiting_for"]]
+        groups.append({
+            "name": found["name"],
+            "request": found["request"],
+            "slices": views,
+            "total": len(counted),
+            "delivered": sum(1 for view in counted if view["state"] == "delivered"),
+            "next": ready[0] if ready else None,
+        })
+    return groups
+
+
+def project_slices(root):
+    """The slice maps of a project, each slice with its state and the spec that builds it. Reads files only."""
+    maps = read_slice_maps(root)
+    if not maps:
+        return []
+    return slice_groups(maps, [(path.name,) + spec_slice(path) for path in discover_features(Path(root))])
+
+
 def page_file_names(features):
     """One safe, unique file name per spec. index.html belongs to the list of specs."""
     names = {}
@@ -1012,7 +1167,7 @@ def page_file_names(features):
     return names
 
 
-def _summary(data, file_name, current):
+def _summary(data, file_name, current, declared=None):
     return {
         "id": data["id"],
         "title": data["title"],
@@ -1021,6 +1176,7 @@ def _summary(data, file_name, current):
         "generated": data["generated"],
         "attention": len(data["attention"]),
         "totals": data["totals"],
+        "slice": declared,
     }
 
 
@@ -1052,14 +1208,19 @@ def render_project(root, feature=None, now=None):
     current = current_feature_dir(root)
     current_key = current.resolve() if current is not None else None
     page = _load_template(PAGE_TEMPLATE)
+    maps = read_slice_maps(root)
     summaries = []
     pages = []
+    sliced = []
     for path in features:
         file_name = names[str(path)]
         draw = feature is None or feature.resolve() == path.resolve()
         data = build_feature(root, path, out_dir, now=now, include_documents=draw)
         is_current = current_key is not None and path.resolve() == current_key
-        summaries.append(_summary(data, file_name, is_current))
+        # Without a map no spec is read a second time.
+        declared, state = spec_slice(path) if maps else (None, None)
+        sliced.append((data["id"], declared, state))
+        summaries.append(_summary(data, file_name, is_current, declared))
         if draw:
             target = out_dir / file_name
             write_atomic(target, fill_template(page, data))
@@ -1068,6 +1229,7 @@ def render_project(root, feature=None, now=None):
     write_atomic(index, fill_template(_load_template(INDEX_TEMPLATE), {
         "generated": _stamp(now),
         "specs": summaries,
+        "maps": slice_groups(maps, sliced),
     }))
     if feature is None:
         _remove_orphan_pages(out_dir, set(names.values()) | {INDEX_TEMPLATE})

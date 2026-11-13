@@ -49,7 +49,7 @@ starting either path.
 8. `/speckit-implement`
 9. `/speckit-converge`
 
-Every project also gets this map as a picture in Spanish, `.specify/lifecycle.png`, and `specify init` ends by pointing to it. The picture adds the capabilities commands, marks the optional steps, and names every command as Claude Code invokes it. It also lists the catalog's script subcommands for when they apply: `publish-design` to approve rules before their code exists, `defer` to leave a designed rule for another spec, and `rebase` when two branches change the same capability.
+Every project also gets this map as a picture in Spanish, `.specify/lifecycle.png`, and `specify init` ends by pointing to it. The picture adds the capabilities commands, marks the optional steps, and names every command as Claude Code invokes it. It shows where a large request is cut into slices and how to go on to the next one. It also lists the catalog's script subcommands for when they apply: `publish-design` to approve rules before their code exists, `defer` to leave a designed rule for another spec, and `rebase` when two branches change the same capability.
 
 ### Install Specify
 
@@ -91,6 +91,8 @@ Creates the feature specification from a natural-language description. Focus on 
 ```text
 /speckit-specify Develop Taskify, a team productivity platform where predefined users create projects, assign tasks, comment, and move tasks across Kanban columns (To Do, In Progress, In Review, Done). Five users (one product manager, four engineers), three sample projects, no login for this first phase.
 ```
+
+One spec builds one slice: one thing a person can do and check. A request like this one holds several, so the agent first proposes how to cut it, waits for your approval and writes the spec of the first slice only. Run `/speckit-specify next` for each of the others when its turn comes. See [One spec, one slice](how-to/capabilities.md#one-spec-one-slice).
 
 <a id="step-3-speckitclarify--resolve-ambiguities"></a>
 

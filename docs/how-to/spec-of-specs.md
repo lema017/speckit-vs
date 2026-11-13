@@ -7,6 +7,13 @@ cycle without the model losing track mid-implementation, you can break it into a
 specs" approach: one up-front pass decomposes a massive feature into self-contained
 specs, and each of those runs through its own specify/plan/tasks/implement cycle.
 
+> **In this fork, start with slices.** The `capabilities` extension, installed by
+> default, makes this cut inside `/speckit.specify`: it proposes the slices, waits
+> for your approval, saves them as a slice map under `specs/_slices/`, writes one
+> spec per slice and says which slice comes next. See
+> [One spec, one slice](capabilities.md#one-spec-one-slice). The manual roadmap on
+> this page is for a project without that extension.
+
 > **When to reach for this.** Decomposition adds the most overhead of any strategy
 > in [Handling Complex Features](complex-features.md). Use it **only when the lighter
 > options there are insufficient** — first try limiting how many tasks run per

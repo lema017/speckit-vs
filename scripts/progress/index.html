@@ -27,14 +27,22 @@ a.spec:focus-visible{outline:2px solid var(--done);outline-offset:2px}
 .flag{color:var(--blocked);font-weight:600;margin-left:8px}
 .bar{height:6px;background:var(--track);border-radius:3px;overflow:hidden;margin-top:10px}
 .bar i{display:block;height:100%;background:var(--done)}
-.current{font-size:12px;border:1px solid var(--line);border-radius:999px;padding:0 8px;margin-left:8px;color:var(--soft);white-space:nowrap}
+.current,.state{font-size:12px;border:1px solid var(--line);border-radius:999px;padding:0 8px;margin-left:8px;color:var(--soft);white-space:nowrap}
+.state.delivered{color:var(--done);border-color:var(--done)}
+.state.next{color:var(--ink);border-color:var(--soft)}
+h2{font-size:17px;margin:28px 0 2px;overflow-wrap:anywhere}
+p.sub{margin:0;font-size:13px}
+p.request{margin:2px 0 0;font-size:13px;overflow-wrap:anywhere}
+.group .bar{margin:10px 0 12px}
+.slice{border:1px dashed var(--line);border-radius:10px;padding:14px 16px;margin-bottom:10px}
+.dropped .name{text-decoration:line-through;color:var(--soft)}
 .empty{color:var(--soft)}
 </style>
 </head>
 <body>
 <main>
 <h1>Spec Kit progress</h1>
-<p>Every spec in this project.</p>
+<p>Every spec in this project. Specs that build the slices of a larger request are grouped under it.</p>
 <div id="list"></div>
 </main>
 <script type="application/json" id="data">/*DATA*/null</script>
@@ -44,22 +52,58 @@ a.spec:focus-visible{outline:2px solid var(--done);outline-offset:2px}
   var D = JSON.parse(document.getElementById("data").textContent);
   var list = document.getElementById("list");
   function el(tag, cls, text) { var n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; }
-  D.specs.forEach(function (row) {
+  function plural(n, word) { return n + " " + word + (n === 1 ? "" : "s"); }
+  function bar(done, total) {
+    var b = el("div", "bar"), fill = el("i");
+    fill.style.width = (total ? Math.round(100 * done / total) : 0) + "%";
+    b.appendChild(fill);
+    return b;
+  }
+  // One spec. With a view, it is the spec of that slice of a map.
+  function card(row, view) {
     var a = el("a", "spec"), T = row.totals;
     a.href = encodeURIComponent(row.file);
     var top = el("div", "top"), left = el("div", "left");
     left.appendChild(el("span", "name", row.title));
     if (row.current) left.appendChild(el("span", "current", "current"));
-    left.appendChild(el("div", "id", row.id));
-    var count = el("div", "count", T.total ? T.done + " of " + T.total + (T.total === 1 ? " task" : " tasks") : "no tasks yet");
+    if (view) left.appendChild(el("span", "state " + view.state, view.state));
+    left.appendChild(el("div", "id", view ? row.id + ", slice " + view.id : row.id));
+    var count = el("div", "count", T.total ? T.done + " of " + plural(T.total, "task") : "no tasks yet");
     if (row.attention) count.appendChild(el("span", "flag", row.attention + " to check"));
     top.appendChild(left); top.appendChild(count); a.appendChild(top);
-    var bar = el("div", "bar"), fill = el("i");
-    fill.style.width = (T.total ? Math.round(100 * T.done / T.total) : 0) + "%";
-    bar.appendChild(fill); a.appendChild(bar);
-    list.appendChild(a);
+    a.appendChild(bar(T.done, T.total));
+    return a;
+  }
+  // A slice no spec builds yet, or one that was dropped.
+  function waiting(view, next) {
+    var dropped = view.state === "dropped";
+    var box = el("div", dropped ? "slice dropped" : "slice"), top = el("div", "top"), left = el("div", "left");
+    left.appendChild(el("span", "name", view.title));
+    left.appendChild(el("span", next ? "state next" : "state", dropped ? "dropped" : next ? "next" : "pending"));
+    left.appendChild(el("div", "id", view.id));
+    var note = dropped ? "" : view.waiting_for.length ? "waits for " + view.waiting_for.join(", ") : "no spec yet";
+    top.appendChild(left); top.appendChild(el("div", "count", note)); box.appendChild(top);
+    return box;
+  }
+  var maps = D.maps || [], byId = Object.create(null), shown = Object.create(null);
+  D.specs.forEach(function (row) { byId[row.id] = row; });
+  maps.forEach(function (map) {
+    var head = el("div", "group");
+    head.appendChild(el("h2", "", map.name));
+    head.appendChild(el("p", "sub", map.total ? map.delivered + " of " + plural(map.total, "slice") + " delivered" : "every slice was dropped"));
+    if (map.request) head.appendChild(el("p", "request", map.request));
+    head.appendChild(bar(map.delivered, map.total));
+    list.appendChild(head);
+    map.slices.forEach(function (view) {
+      var row = view.spec !== null && !shown[view.spec] ? byId[view.spec] : null;
+      if (row) { shown[row.id] = true; list.appendChild(card(row, view)); }
+      else list.appendChild(waiting(view, map.next === view.id));
+    });
   });
-  if (!D.specs.length) list.appendChild(el("div", "empty", "No specs yet."));
+  var rest = D.specs.filter(function (row) { return !shown[row.id]; });
+  if (maps.length && rest.length) list.appendChild(el("h2", "", "Other specs"));
+  rest.forEach(function (row) { list.appendChild(card(row, null)); });
+  if (!D.specs.length && !maps.length) list.appendChild(el("div", "empty", "No specs yet."));
   setInterval(function () { if (document.visibilityState === "visible") location.reload(); }, 15000);
 })();
 </script>

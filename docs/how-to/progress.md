@@ -23,6 +23,23 @@ The first time a command draws a spec's page, it opens in your browser. It opens
 
 The page reloads itself while it is open. `.specify/progress/index.html` lists every spec in the project.
 
+### The slices of a larger request
+
+When the project has slice maps, the list groups the specs by map. A slice map is the cut of a larger request into slices of one spec each, written by the `capabilities` extension under `specs/_slices/`. See [One spec, one slice](capabilities.md#one-spec-one-slice).
+
+![The list of specs with one slice map, login: one slice delivered, one being built, two that wait for it, one dropped, and one spec outside the map. The data is an example.](../images/progress-slices.png)
+
+Each group shows the request, how many of its slices are delivered, and the slices in the order of the map:
+
+| A slice shows as | When |
+| --- | --- |
+| The card of its spec, marked `specified`, `building` or `delivered` | A spec names the slice |
+| A dashed box marked `next` | No spec builds it yet, and it waits for nothing |
+| A dashed box marked `pending`, with what it waits for | No spec builds it yet, and a slice it depends on is not delivered |
+| A dashed box with its name struck through | The map says it was dropped |
+
+A slice is `delivered` when every task of its spec is closed and, if the spec changes rules, its delta is folded into the catalog. Specs that belong to no map come after the groups, under "Other specs". A project without slice maps gets the plain list.
+
 ## What the page shows
 
 - **Totals:** how many tasks are done, in progress, blocked, failed, skipped and pending.
@@ -130,3 +147,5 @@ Use your own integration key. The tasks already checked appear as done, with no 
 - **It has a small cost.** With Sonnet 5.5 on an 8-task project, in 3 pairs with and without the instructions, reporting cost $0.0164 more per run. The project is tiny, so the 19.6% it represents there may overstate a real one. That is an inference, as it was not measured on a larger project.
 - **A hook runs after every tool call.** When nothing changed, it adds about 54 ms at the 95th percentile on macOS with Python 3.13, and 71 ms with the Python 3.9 macOS includes. Most of that is Python starting. When it has to redraw, about 103 and 140 ms.
 - **It does not include extension commands or workflow runs.** Only the core commands have a step on the page.
+- **The list reads the slice maps on its own.** It uses the same rule as `slices status`, and a test compares the two. It differs in one case: a spec whose fold is recorded only in the catalog's history, and not in the lock of the spec, does not show as `delivered` here.
+- **A change to a slice map alone does not redraw the list.** It shows the next time any command or task report redraws a page.

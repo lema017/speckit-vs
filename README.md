@@ -166,6 +166,7 @@ and a check that can stop a pull request that disagrees with that record.
 | A new spec can contradict or change a rule that nobody remembered, or change again after you reviewed it | It loads the affected rules before writing the spec, which then declares each change with a literal `From` and `To`. Before planning, it compares the spec with the sealed delta and you decide | `context`, `review` |
 | Once a feature ships, nothing keeps track of a requirement and code that disagree | It records the requirement and what the code does separately, and neither overwrites the other | `fold` |
 | A new agent session has to search for where a behaviour lives, which change set it, and which test covers it | Each rule records its origin, code, and tests. `locate` answers from the catalog first and warns when a reference no longer exists. A code graph answers what a change affects | [Graphify](#graphify-a-code-graph-for-the-catalog) |
+| A request for a whole feature becomes one spec with several stories and dozens of requirements, which is slow to clarify and hard to check | It cuts the request into slices before the spec is written and waits for your approval. One spec builds one slice, and a spec that grows past a budget gets a proposal to split it | [One spec, one slice](#one-spec-one-slice) |
 | `/speckit.clarify` stops at five questions, even when decisions depend on each other | It interviews you in rounds until every open decision is settled. Before the first question, a hook gives it what the catalog and the code graph already know. It looks up other facts itself and asks you only for decisions, each with a recommended answer | [`/speckit.clarify-deep`](#clarify-until-the-decisions-are-settled) |
 | A pull request can change a recorded rule or its tested code without a spec, or two branches can change the same rule | It compares the pull request with the catalog and your test report, and fails if they do not agree | [`check`](#catch-drift-at-the-pull-request) |
 | Code written before Spec Kit has no recorded rules | It proposes a capability map from the code and waits for your approval. Rules stay `[inferred]` until you validate them | `/speckit.capabilities.bootstrap` |
@@ -356,6 +357,40 @@ Each answer says which part came from the graph or the code.
   A model has used it through the hook before clarify, in test projects of up to 126
   source files. See the limits below.
 
+### One spec, one slice
+
+A slice is one thing a person can do and check from end to end. One spec builds one
+slice, so a spec stays small enough to clarify, to build and to try out by hand.
+
+Ask for more than one slice and the cut comes before the spec:
+
+```text
+/speckit.specify Login completo: usuario y clave, redes sociales, recuperar clave y registro
+```
+
+| Slice | What a person checks | Depends on |
+| --- | --- | --- |
+| `D-login-registro` Crear una cuenta | Me registro y veo mi cuenta | — |
+| `D-login-clave` Entrar con usuario y clave | Entro con mi correo y mi clave | `D-login-registro` |
+| `D-login-recuperar` Recuperar la clave | Pido el enlace, cambio la clave y entro | `D-login-clave` |
+| `D-login-social` Entrar con Google, Facebook o GitHub | Entro con Google y veo la cuenta que ya tenía | `D-login-clave` |
+
+- **You approve the cut.** It is saved as a slice map in `specs/_slices/login.md`, and
+  that run writes the spec of the first slice only. The spec names its slice and what
+  the others own, so the interview does not ask about them.
+- **`/speckit.specify next`** writes the spec of the next slice. The state of a slice
+  is read from its spec, its tasks and the catalog, so the map cannot go stale.
+- **A slice has a size:** one story, and by default at most 10 requirements, 4 rules
+  and 25 tasks. After `specify`, before `plan` and after `tasks` the spec is measured.
+  Over the budget you get a proposal to split it, and you decide: split it, or go on
+  with a reason that is recorded next to the spec.
+- **Rules designed ahead** are given to slices too: each `[designed]` rule goes to the
+  one slice that builds it.
+
+A request that is already one slice goes straight to its spec. The
+[capabilities guide](docs/how-to/capabilities.md#one-spec-one-slice) has the map
+format and what `check` verifies.
+
 ### Clarify until the decisions are settled
 
 `/speckit.clarify` asks the questions with the most impact and stops at five.
@@ -413,7 +448,11 @@ Spec Kit gives agents instructions and does not run them, so the page keeps apar
 | In progress, blocked, notes | The model reports them through a script, in one call that also checks the box |
 | Who did it | Labelled on each report: seen by the harness, from the project setup, or declared by the agent |
 
-If a model skips a report, the totals stay right, and the page only lacks that detail. See the [guide](docs/how-to/progress.md) for the commands, what goes into Git, and how to turn off the parts that act on their own.
+If a model skips a report, the totals stay right, and the page only lacks that detail.
+
+The list of specs groups them by slice map: under each larger request it shows its slices in order, how many are delivered, which one is next, and which ones still have no spec.
+
+See the [guide](docs/how-to/progress.md) for the commands, what goes into Git, and how to turn off the parts that act on their own.
 
 ### What it does not solve
 
