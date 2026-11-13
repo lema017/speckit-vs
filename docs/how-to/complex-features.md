@@ -72,6 +72,11 @@ See [Spec of Specs](spec-of-specs.md) for the full procedure — how to run the
 roadmap pass, structure the roadmap artifact, link sub-specs back to it, and a worked
 example.
 
+With the `capabilities` extension, which this fork installs by default,
+`/speckit.specify` makes this cut itself and keeps each spec to one slice: one thing
+a person can do and check. In that setup a small spec is where you start, not a last
+resort. See [One spec, one slice](capabilities.md#one-spec-one-slice).
+
 ## Which Approach to Choose
 
 | Approach | Best for |

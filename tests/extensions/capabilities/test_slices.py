@@ -7,12 +7,13 @@ rules, cut into four slices.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 
 import pytest
 
-from .conftest import CAT, CONFIG, EXT_DIR as EXT, INDEX, MARK, added, delta_block, removed
+from .conftest import CAT, CONFIG, EXT_DIR as EXT, INDEX, MARK, ROOT, added, delta_block, removed
 from .test_lifecycle import ACCESO_CODE, DESIGN, build_design, copied, delta_record, designed, fixture, record
 
 MAP = "specs/_slices/login.md"
@@ -612,6 +613,46 @@ def test_a_design_record_is_not_a_spec_that_names_a_slice(design):
     assert MARK in design.read(DESIGN + "/capability-delta.md")
     design.write(DESIGN + "/spec.md", spec("D-login-otra"))
     assert hard(design, "D-login-otra") == []
+
+
+# ---------------------------------------------------------------- the progress page reads the maps on its own
+
+
+def page_slices(repo):
+    """What the list of specs of the progress page shows. Its engine reads the maps itself, to start no process on a redraw."""
+    location = importlib.util.spec_from_file_location("progress_engine_for_slices", str(ROOT / "scripts" / "progress" / "engine.py"))
+    engine = importlib.util.module_from_spec(location)
+    location.loader.exec_module(engine)
+    return [
+        (found["name"], found["next"], [(view["id"], view["state"], view["spec"] and "specs/" + view["spec"], view["waiting_for"]) for view in found["slices"]])
+        for found in engine.project_slices(repo.path)
+    ]
+
+
+def script_slices(repo):
+    return [
+        (found["name"], found["next"], [(item["id"], item["state"], item["spec"], item["waiting_for"]) for item in found["slices"]])
+        for found in status(repo)["maps"]
+    ]
+
+
+def test_the_progress_page_and_the_script_agree_on_every_state(design):
+    login(design)
+    assert page_slices(design) == script_slices(design) and script_slices(design)[0][1] == CLAVE
+    acceso(design)
+    assert page_slices(design) == script_slices(design) and slices(design)[CLAVE]["state"] == "specified"
+    design.write(ACCESO + "/tasks.md", "- [x] T001 Hecho\n- [ ] T002 Falta\n")
+    assert page_slices(design) == script_slices(design) and slices(design)[CLAVE]["state"] == "building"
+    design.write(ACCESO + "/tasks.md", "- [x] T001 Hecho\n- [x] T002 Hecho\n")
+    assert page_slices(design) == script_slices(design) and slices(design)[CLAVE]["state"] == "building", "tasks closed, delta not folded"
+    deliver(design)
+    assert page_slices(design) == script_slices(design) and slices(design)[CLAVE]["state"] == "delivered"
+    assert script_slices(design)[0][1] == SOCIAL
+    design.write(BIG + "/spec.md", sized(value=REGISTRO))
+    design.write(BIG + "/tasks.md", tasks(2, done=2))
+    assert page_slices(design) == script_slices(design) and slices(design)[REGISTRO]["state"] == "delivered", "no rules, so closed tasks deliver it"
+    put(design, block(CLAVE, rules=LOCKOUT), block(SOCIAL, "Entrar con Google", depends=CLAVE, more={"Dropped": "no se hará"}), block(RECUPERAR, depends=SOCIAL), name="otro")
+    assert page_slices(design) == script_slices(design)
 
 
 # ---------------------------------------------------------------- size: a spec against the slice budget
