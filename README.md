@@ -388,9 +388,14 @@ Ask for more than one slice and the cut comes before the spec:
   one slice that builds it.
 
 - **The `sliced` workflow** builds the slices of a map one after another, with a gate
-  before each one and a gate when a slice is over its budget:
-  `specify bundle add sliced`, then
-  `specify workflow run sliced --input map=login`.
+  before each one and a gate when a slice is over its budget. Tell the project about
+  the bundle catalog of this fork once, install the workflow, and run it:
+
+  ```bash
+  specify bundle catalog add https://raw.githubusercontent.com/lema017/speckit-vs/main/bundles/catalog.json --id fork
+  specify bundle add sliced
+  specify workflow run sliced --input map=login
+  ```
 
 A request that is already one slice goes straight to its spec. The
 [capabilities guide](docs/how-to/capabilities.md#one-spec-one-slice) has the map

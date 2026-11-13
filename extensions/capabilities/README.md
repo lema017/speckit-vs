@@ -138,7 +138,7 @@ The template also asks for one user story instead of three. A spec written befor
 - a spec names a slice no map defines or one that was dropped, or two specs name the same slice;
 - a spec builds, with `IMPLEMENTED`, a rule that belongs to another slice.
 
-The `sliced` workflow builds the slices of a map one after another. It asks `slices next` once per round, waits at a gate before each slice, and ends when every slice is delivered. It measures each slice after `specify` and after `tasks`: over the budget, a gate asks whether to go on, and an approval is recorded with `slices accept`. Install it with `specify bundle add sliced` and run it with `specify workflow run sliced --input map=<name>`.
+The `sliced` workflow builds the slices of a map one after another. It asks `slices next` once per round, waits at a gate before each slice, and ends when every slice is delivered. It measures each slice after `specify` and after `tasks`: over the budget, a gate asks whether to go on, and an approval is recorded with `slices accept`. Install it with `specify bundle add sliced`, after the project knows the bundle catalog of this fork (`specify bundle catalog add https://raw.githubusercontent.com/lema017/speckit-vs/main/bundles/catalog.json --id fork`), and run it with `specify workflow run sliced --input map=<name>`.
 
 It leaves a note for an `enabler` slice, for a `[designed]` rule of a capability the maps touch that is in no slice and not in `## Later`, and for a rule of a slice that its spec does not build.
 
