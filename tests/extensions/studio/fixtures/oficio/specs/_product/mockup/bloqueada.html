@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0e1116" media="(prefers-color-scheme: dark)">
+  <title>Cuenta bloqueada hasta las 10:15</title>
+  <link rel="stylesheet" href="_studio/theme.css">
+  <link rel="stylesheet" href="_studio/kit.css">
+  <script src="_studio/product.js"></script>
+  <script src="_studio/screens.js"></script>
+  <script src="_studio/runtime.js"></script>
+</head>
+<body data-screen="SCR-login-locked" data-area="acceso" data-layout="auth">
+  <div class="app">
+    <div class="auth">
+      <main class="card">
+        <div class="brand"><span class="brand-mark" aria-hidden="true">O</span><span translate="no">Oficio</span></div>
+        <div class="status-icon" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
+        <div data-ref="ST-1 R-login-lockout">
+          <h1>Tu cuenta está bloqueada hasta las&nbsp;10:15</h1>
+          <p class="lead">Hubo 5 intentos fallidos seguidos. Por seguridad, la bloqueamos 15&nbsp;minutos.</p>
+          <p class="notice" role="timer"><strong>Faltan 12 minutos.</strong> <span>Puedes cerrar esta página y volver luego.</span></p>
+        </div>
+        <div class="stack">
+          <a class="btn btn-primary" href="recuperar.html">Restablecer contraseña</a>
+          <a class="btn" href="entrar.html">Volver a la entrada</a>
+        </div>
+        <p class="foot">Si no fuiste tú, restablece tu contraseña.</p>
+      </main>
+    </div>
+  </div>
+</body>
+</html>

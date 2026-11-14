@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="speckit-studio">
+<title>Directions</title>
+<link rel="stylesheet" href="kit.css">
+<style>
+  /* The page around the looks is Studio's, and takes none of their colors. */
+  :root { --page: #eef0f3; --ink: #16191f; --soft: #5b6472; --line: #cfd4dc; --paper: #ffffff; }
+  :root[data-page="dark"] { --page: #101318; --ink: #eef0f3; --soft: #a4acb9; --line: #2f3540; --paper: #181c23; }
+  html body { margin: 0; padding: 24px; background: var(--page); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; margin-bottom: 20px; }
+  .top h1 { margin: 0; font-size: 22px; }
+  .top p { margin: 4px 0 0; color: var(--soft); }
+  .top label { display: inline-flex; align-items: center; gap: 8px; color: var(--soft); font-size: 14px; font-weight: 600; }
+  .top select { width: auto; min-height: 36px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--ink); font: inherit; }
+  .looks { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(340px, 1fr); gap: 20px; overflow-x: auto; padding-bottom: 8px; }
+  .look { min-width: 0; }
+  .look-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+  .look-letter { display: grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 50%; background: var(--ink); color: var(--page); font-size: 18px; font-weight: 700; }
+  .look-head h2 { margin: 0; font-size: 17px; line-height: 1.3; }
+  .look-head p { margin: 2px 0 0; color: var(--soft); font-size: 14px; }
+  .look-chosen { display: inline-block; margin-left: 8px; padding: 1px 8px; border: 1px solid var(--line); border-radius: 10px; color: var(--soft); font-size: 12px; font-weight: 600; vertical-align: 2px; }
+  .frame { margin-bottom: 16px; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .frame .app { min-height: 0; }
+  .frame .auth { padding: 0; }
+  .frame .page { padding-bottom: 28px; }
+  .phone .look { max-width: 390px; }
+</style>
+</head>
+<body>
+<div class="top">
+  <div>
+    <h1 id="title"></h1>
+    <p id="how"></p>
+  </div>
+  <label><span id="mode-label"></span>
+    <select id="mode"></select>
+  </label>
+</div>
+<div class="looks" id="looks"></div>
+<script type="application/json" id="data">/*DATA*/null</script>
+<script>
+(function () {
+  'use strict';
+  var data = JSON.parse(document.getElementById('data').textContent) || { direcciones: [] };
+  var TEXTS = {
+    en: {
+      title: 'Choose a look for {0}', how: 'The same two screens in each look. Tell the AI the letter you choose.',
+      mode: 'Theme', system: 'System', light: 'Light', dark: 'Dark', chosen: 'Chosen',
+      signin: 'Sign in to your account', lead: 'With your email and your password.', email: 'Email', password: 'Password', enter: 'Sign in',
+      first: 'First time here?', create: 'Create your account',
+      sample: 'This week', sampleLead: 'What is coming up.', all: 'All', mine: 'Mine',
+      items: [['First thing', 'Saturday at 10:00'], ['Second thing', 'Sunday at 11:30'], ['Third thing', 'Tuesday at 18:00']],
+      view: 'View', saved: 'Your changes were saved.', failed: 'It could not be saved. Try again.', action: 'Continue', cancel: 'Cancel'
+    },
+    es: {
+      title: 'Elige un estilo para {0}', how: 'Las mismas dos pantallas en cada estilo. Dile a la IA la letra que eliges.',
+      mode: 'Modo', system: 'Sistema', light: 'Claro', dark: 'Oscuro', chosen: 'Elegida',
+      signin: 'Entra a tu cuenta', lead: 'Con tu correo y tu contraseña.', email: 'Correo', password: 'Contraseña', enter: 'Entrar',
+      first: '¿Primera vez aquí?', create: 'Crea tu cuenta',
+      sample: 'Esta semana', sampleLead: 'Lo que viene.', all: 'Todo', mine: 'Lo mío',
+      items: [['Primera cosa', 'Sábado a las 10:00'], ['Segunda cosa', 'Domingo a las 11:30'], ['Tercera cosa', 'Martes a las 18:00']],
+      view: 'Ver', saved: 'Tus cambios quedaron guardados.', failed: 'No se pudo guardar. Inténtalo otra vez.', action: 'Continuar', cancel: 'Cancelar'
+    }
+  };
+  var T = TEXTS[String(data.idioma || 'en').slice(0, 2).toLowerCase()] || TEXTS.en;
+  var sample = data.muestra || {};
+  var name = data.producto || '';
+  var root = document.documentElement;
+  root.lang = data.idioma || 'en';
+  if (data.dispositivo === 'phone') { document.body.classList.add('phone'); }
+
+  /* Every text goes in as text: a name or a reason from the design files is never read as markup. */
+  function el(tag, cls, text, attrs) {
+    var node = document.createElement(tag);
+    if (cls) { node.className = cls; }
+    if (text != null) { node.textContent = text; }
+    Object.keys(attrs || {}).forEach(function (key) { node.setAttribute(key, attrs[key]); });
+    for (var i = 4; i < arguments.length; i++) { if (arguments[i]) { node.appendChild(arguments[i]); } }
+    return node;
+  }
+  function brand() {
+    return el('div', 'brand', null, null, el('span', 'brand-mark', (name.charAt(0) || 'A').toUpperCase(), { 'aria-hidden': 'true' }), el('span', '', name));
+  }
+  function field(label, type, value) {
+    var input = el('input', '', null, { type: type, value: value, 'aria-label': label, readonly: '' });
+    return el('div', 'field', null, null, el('label', '', label), input);
+  }
+  function signIn() {
+    var foot = el('p', 'foot', T.first + ' ');
+    foot.appendChild(el('a', '', T.create, { href: '#' }));
+    return el('div', 'app', null, null, el('div', 'auth', null, null, el('div', 'card', null, null,
+      brand(), el('h1', '', T.signin), el('p', 'lead', T.lead), field(T.email, 'email', 'ana@example.com'), field(T.password, 'password', 'secret123'),
+      el('button', 'btn btn-primary', T.enter, { type: 'button' }), foot)));
+  }
+  function screen() {
+    var list = el('ul', 'list');
+    (sample.entradas && sample.entradas.length ? sample.entradas : T.items).slice(0, 3).forEach(function (item) {
+      list.appendChild(el('li', '', null, null, el('b', '', item[0]), el('span', '', item[1] || ''), el('a', '', T.view, { href: '#' })));
+    });
+    var chips = el('ul', 'chips', null, null,
+      el('li', '', null, null, el('span', 'chip', T.all, { 'aria-pressed': 'true' })), el('li', '', null, null, el('span', 'chip', T.mine)));
+    var saved = el('div', 'alert alert-success', null, null, el('p', '', null, null, el('strong', '', T.saved)));
+    var failed = el('div', 'alert alert-danger', null, null, el('p', '', null, null, el('strong', '', T.failed)));
+    var buttons = el('div', 'btn-row', null, null,
+      el('button', 'btn btn-primary', sample.accion || T.action, { type: 'button' }), el('button', 'btn', T.cancel, { type: 'button' }));
+    var top = el('header', 'topbar', null, null, brand(), el('span', 'avatar avatar-small end', 'A', { 'aria-hidden': 'true' }));
+    return el('div', 'app', null, null, top, el('div', 'page', null, null,
+      el('h1', '', sample.titulo || T.sample), el('p', 'lead', T.sampleLead), chips, list, el('p', '', ''), saved, failed, buttons));
+  }
+
+  var looks = document.getElementById('looks');
+  var sections = (data.direcciones || []).map(function (look) {
+    var title = el('h2', '', look.nombre);
+    if (look.elegida) { title.appendChild(el('span', 'look-chosen', T.chosen)); }
+    var section = el('section', 'look', null, { 'aria-label': look.id + ' ' + look.nombre },
+      el('div', 'look-head', null, null, el('span', 'look-letter', look.id), el('div', '', null, null, title, el('p', '', look.porque))),
+      el('div', 'frame', null, null, signIn()), el('div', 'frame', null, null, screen()));
+    looks.appendChild(section);
+    return { node: section, look: look };
+  });
+
+  var system = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : { matches: false };
+  var asked = new URLSearchParams(location.search).get('modo');
+  var mode = asked === 'claro' || asked === 'oscuro' ? asked : 'sistema';
+  function paint() {
+    var dark = mode === 'oscuro' || (mode === 'sistema' && system.matches);
+    root.dataset.page = dark ? 'dark' : 'light';
+    sections.forEach(function (entry) {
+      var colors = dark ? entry.look.oscuro : entry.look.claro;
+      Object.keys(colors).forEach(function (token) { entry.node.style.setProperty('--' + token, colors[token]); });
+      entry.node.style.setProperty('--radius', entry.look.radio);
+      entry.node.style.setProperty('--radius-control', entry.look.radioControl);
+      entry.node.style.setProperty('--font', entry.look.fuente);
+      entry.node.style.setProperty('color-scheme', dark ? 'dark' : 'light');
+    });
+  }
+
+  document.title = T.title.replace('{0}', name);
+  document.getElementById('title').textContent = T.title.replace('{0}', name);
+  document.getElementById('how').textContent = T.how;
+  document.getElementById('mode-label').textContent = T.mode;
+  var select = document.getElementById('mode');
+  [['sistema', T.system], ['claro', T.light], ['oscuro', T.dark]].forEach(function (option) {
+    select.appendChild(el('option', '', option[1], { value: option[0] }));
+  });
+  select.value = mode;
+  select.addEventListener('change', function () { mode = select.value; paint(); });
+  if (system.addEventListener) { system.addEventListener('change', paint); }
+  document.addEventListener('click', function (event) { if (event.target.closest('a[href="#"]')) { event.preventDefault(); } });
+  paint();
+})();
+</script>
+</body>
+</html>

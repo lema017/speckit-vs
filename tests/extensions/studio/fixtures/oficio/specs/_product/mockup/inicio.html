@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0e1116" media="(prefers-color-scheme: dark)">
+  <title>Inicio de Oficio</title>
+  <link rel="stylesheet" href="_studio/theme.css">
+  <link rel="stylesheet" href="_studio/kit.css">
+  <script src="_studio/product.js"></script>
+  <script src="_studio/screens.js"></script>
+  <script src="_studio/runtime.js"></script>
+</head>
+<body data-screen="SCR-home" data-area="inicio" data-layout="app">
+  <div class="app">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">O</span><span translate="no">Oficio</span></div>
+      <a class="btn btn-inline" href="entrar.html?sesion=0">Cerrar sesión</a>
+    </header>
+    <main class="page">
+      <h1>Hola, <span data-bind="nombre">Ana</span></h1>
+      <p class="lead" data-state="vacio" hidden>Aquí vas a ver tus talleres.</p>
+      <p class="lead" data-state="normal cargando" data-persona="ACT-vecina">Los talleres a los que te apuntaste.</p>
+      <p class="lead" data-state="normal cargando" data-persona="ACT-tallerista" hidden>Los talleres que das esta semana.</p>
+
+      <ul class="list" data-state="normal" data-persona="ACT-vecina" data-ref="ST-5">
+        <li><b>Pan de masa madre</b><span>Sábado a las 10:00, con Rosa</span><a href="#taller">Ver taller</a></li>
+        <li><b>Arreglo de bicis</b><span>Domingo a las 11:30, con Tomás</span><a href="#taller">Ver taller</a></li>
+      </ul>
+      <ul class="list" data-state="normal" data-persona="ACT-tallerista" hidden>
+        <li><b>Arreglo de bicis</b><span>Domingo a las 11:30. Van 6 de 8 personas</span><a href="#taller">Ver taller</a></li>
+        <li><b>Frenos y cambios</b><span>Miércoles a las 19:00. Van 3 de 6 personas</span><a href="#taller">Ver taller</a></li>
+      </ul>
+
+      <div class="empty" data-state="vacio" data-persona="ACT-vecina" data-ref="ST-5" hidden>
+        <p>Todavía no te apuntaste a ningún taller.</p>
+        <a class="btn btn-primary btn-inline" href="#talleres">Ver los talleres de esta semana</a>
+      </div>
+      <div class="empty" data-state="vacio" data-persona="ACT-tallerista" hidden>
+        <p>Todavía no das ningún taller.</p>
+        <a class="btn btn-primary btn-inline" href="#proponer">Proponer un taller</a>
+      </div>
+
+      <div data-state="cargando" role="status" aria-label="Cargando tus talleres" hidden>
+        <div class="skeleton"><i></i><i></i></div>
+        <div class="skeleton"><i></i><i></i></div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

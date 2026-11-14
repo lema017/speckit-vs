@@ -62,3 +62,5 @@ docs/dev
 specs/
 # Test fixtures that hold specs/ trees on purpose: the capabilities two-branch tests.
 !tests/extensions/capabilities/fixtures/**/specs/
+# The studio tests keep the design of an example product, which lives under specs/ too.
+!tests/extensions/studio/fixtures/**/specs/

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0e1116" media="(prefers-color-scheme: dark)">
+  <title>Nueva contraseña de Oficio</title>
+  <link rel="stylesheet" href="_studio/theme.css">
+  <link rel="stylesheet" href="_studio/kit.css">
+  <script src="_studio/product.js"></script>
+  <script src="_studio/screens.js"></script>
+  <script src="_studio/runtime.js"></script>
+</head>
+<body data-screen="SCR-reset" data-area="acceso" data-layout="auth">
+  <div class="app">
+    <div class="auth">
+      <main class="card">
+        <div class="brand"><span class="brand-mark" aria-hidden="true">O</span><span translate="no">Oficio</span></div>
+        <h1><span data-state="normal cargando">Crea una contraseña nueva</span><span data-state="error" hidden>Este enlace ya no sirve</span></h1>
+
+        <div data-state="normal cargando">
+          <p class="lead">Es para la cuenta de <span data-bind="correo">ana@ejemplo.com</span>.</p>
+          <form data-ref="ST-4" data-goto="inicio.html?sesion=1" novalidate>
+            <div class="field">
+              <label for="password">Contraseña nueva</label>
+            <div class="password">
+              <input id="password" name="password" type="password" autocomplete="new-password" required minlength="8" data-msg-required="Elige una contraseña." aria-describedby="password-pista">
+              <button class="toggle" type="button" aria-controls="password" aria-label="Mostrar contraseña">Mostrar</button>
+            </div>
+              <p class="hint" id="password-pista" data-ref="R-password-length">Al menos 8 caracteres.</p>
+            </div>
+            <div class="field">
+              <label for="repetir">Repítela</label>
+            <div class="password">
+              <input id="repetir" name="repetir" type="password" autocomplete="new-password" required data-match="password" data-msg-required="Repite la contraseña.">
+              <button class="toggle" type="button" aria-controls="repetir" aria-label="Mostrar contraseña">Mostrar</button>
+            </div>
+            </div>
+            <button class="btn btn-primary" type="submit" data-loading-label="Guardando…">Guardar contraseña</button>
+          </form>
+        </div>
+
+        <div data-state="error" hidden>
+          <div class="alert alert-danger" role="alert" data-ref="R-reset-link">
+            <p>El enlace vence a los 60&nbsp;minutos y sirve una sola vez. Pide otro y úsalo enseguida.</p>
+          </div>
+          <a class="btn btn-primary" href="recuperar.html">Pedir otro enlace</a>
+        </div>
+
+        <p class="foot"><a href="entrar.html">Volver a la entrada</a></p>
+      </main>
+    </div>
+  </div>
+</body>
+</html>

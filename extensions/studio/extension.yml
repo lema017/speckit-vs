@@ -1,0 +1,30 @@
+schema_version: "1.0"
+
+extension:
+  id: studio
+  name: "Product Studio"
+  version: "0.1.0"
+  description: "Design a product before building it: a guided conversation with the product owner, and a mockup to click through in the browser."
+  author: lema017
+  repository: https://github.com/lema017/speckit-vs
+  license: MIT
+
+requires:
+  speckit_version: ">=1.0.0"
+
+provides:
+  commands:
+    - name: speckit.studio.define
+      file: commands/speckit.studio.define.md
+      description: "Start the design of a product: turn an idea into who it is for, what it does, its areas and its look, by asking the product owner"
+    - name: speckit.studio.map
+      file: commands/speckit.studio.map.md
+      description: "Design one area of the product with the product owner: its stories, its screens with every button, its flows and its business rules in draft"
+    - name: speckit.studio.mockup
+      file: commands/speckit.studio.mockup.md
+      description: "Draw the screens that are described as a mockup the product owner can click through in the browser, and show a picture of each one"
+
+tags:
+  - "design"
+  - "mockup"
+  - "product"
