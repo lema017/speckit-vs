@@ -84,6 +84,8 @@ specify init my-project --integration copilot --preset compliance
 | `SPECIFY_FEATURE_DIRECTORY` | Override the active feature directory (takes precedence over `.specify/feature.json`). A relative path is joined to the project root without a containment check, so a value like `../shared-feature` still resolves outside it; an absolute path is used as-is and may likewise point outside the project root. The project root still identifies the Spec Kit project and its command/configuration context, but the selected feature directory itself is not required to live under it. Combine with `SPECIFY_INIT_DIR` to pick both the project and the feature non-interactively. |
 | `SPECIFY_FEATURE` | Explicitly override the active feature **label** (e.g. `001-photo-albums`) — the identifier the core helpers report as the current feature/branch (`get_current_branch` in Bash, `Get-CurrentBranch` in PowerShell). Those helpers never inspect Git: when the variable is set they return it verbatim, and when it is unset they return an empty string. The basename fallback happens later — `get_feature_paths` / `Get-FeaturePathsEnv` substitute the resolved feature directory's basename so the reported label is still usable — so calling the named helpers directly does **not** give you that fallback. You set it yourself: the Bash and Python feature scripts only **print** a commented `export SPECIFY_FEATURE=…` / `$env:SPECIFY_FEATURE = …` hint for you to run, because a child process cannot change its parent's environment, and `/speckit.specify` persists `feature_directory` to `.specify/feature.json` instead of setting this variable. (The PowerShell feature scripts do assign `$env:SPECIFY_FEATURE`, but that only reaches you when the script runs inside your current PowerShell session.) It does **not** locate the feature directory: with only `SPECIFY_FEATURE` set, `get_feature_paths` fails with *"Feature directory not found. Set `SPECIFY_FEATURE_DIRECTORY` or run the specify command to create `.specify/feature.json`."* Use `SPECIFY_FEATURE_DIRECTORY` (above) or `.specify/feature.json` to select the directory. |
 | `SPECKIT_PROGRESS_NO_BROWSER` | Set to `1` or `true` to stop [progress pages](../how-to/progress.md) from opening by themselves. They are still drawn. |
+| `SPECKIT_STUDIO_NO_BROWSER` | Set to `1` or `true` to stop the [mockup of a design](../how-to/studio.md) from opening in the browser. It is still built, and its link printed. `SPECKIT_PROGRESS_NO_BROWSER` does the same |
+| `SPECKIT_STUDIO_BROWSER` | The path of the browser that takes the pictures of the mockup, when it is not Chrome, Chromium, Edge or Brave in their usual place |
 | `SPECIFY_FEATURE_NO_PERSIST` | Set to `1` or `true` to stop every core script from writing `.specify/feature.json`, even when it would otherwise persist `SPECIFY_FEATURE_DIRECTORY` on read. Useful when multiple agents run concurrently against the same checkout, each with its own `SPECIFY_FEATURE_DIRECTORY`: without it, each invocation's persist step can overwrite another agent's pinned feature directory. |
 
 > **Two resolution axes.** `SPECIFY_INIT_DIR` selects the **project** (which directory contains `.specify/`); `SPECIFY_FEATURE_DIRECTORY` / `.specify/feature.json` select the **feature** — its default location is under `specs/` in that project, but an explicitly selected feature directory is not restricted to living inside it. They are independent — project first, then feature.
@@ -199,7 +201,23 @@ specify progress status
 | `specify progress doctor` | Check that the view works here: files, Python, the log, each harness |
 | `specify progress browser on\|off` | Choose whether a spec's page opens by itself the first time it is drawn |
 
+`specify progress open --design` opens the progress of the product design instead of a spec, and `specify progress status` shows it first when the project has one.
+
 See [See how far a spec has come](../how-to/progress.md).
+
+## Design the Product
+
+```bash
+specify studio open
+```
+
+| Command | Description |
+| --- | --- |
+| `specify studio open` | Build the mockup of the product and open it in your browser. `--directions` opens the looks to choose from, `--no-browser` only prints the link |
+| `specify studio status` | Show how far the design is and which command comes next. Read-only |
+| `specify studio check` | Check that the design and the pages of the mockup agree. Read-only. Exits with 1 when something has to be fixed |
+
+`status` and `check` take `--json`. The design itself is made in the agent's chat, with the commands of the `studio` extension. See [Design the product first](../how-to/studio.md).
 
 ## Experimental MCP Server
 

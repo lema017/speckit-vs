@@ -56,6 +56,8 @@
       href: how-to/capabilities.md
     - name: See how far a spec has come
       href: how-to/progress.md
+    - name: Design the product first
+      href: how-to/studio.md
     - name: Adapt Spec Kit to your process
       href: how-to/customization.md
 

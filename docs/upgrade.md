@@ -16,6 +16,7 @@
 | **Project Files** | Run `specify integration upgrade <key>`, then `specify extension update` | Refresh installed integration files and extensions in your project |
 | **Both** | Run CLI upgrade, then project update | Recommended for major version updates |
 | **The `capabilities` extension** | `specify extension add capabilities --force` | After upgrading the CLI by hand. Registers new hooks and keeps your configuration. `specify upgrade` does this for you |
+| **The `studio` extension** | `specify extension add studio` | Once, in a project created before the [design stage](how-to/studio.md) existed. `specify upgrade` updates the extensions a project has, and adds none |
 
 ---
 
