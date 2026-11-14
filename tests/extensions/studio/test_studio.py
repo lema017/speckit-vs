@@ -10,11 +10,12 @@ import json
 import os
 import re
 import stat
+import subprocess
 import sys
 
 import pytest
 
-from .conftest import EXT_DIR, FIXTURE, PRODUCT
+from .conftest import EXT_DIR, FIXTURE, PRODUCT, PYTHON, SCRIPT
 
 FIXTURE_PAGES = FIXTURE / "specs" / "_product" / "mockup"
 
@@ -659,6 +660,16 @@ def test_status_says_what_was_understood_and_what_can_be_read(oficio):
     oficio.remove("vision.md")
     out = oficio.status()
     assert out["mockup"] is True and out["documents"][0] == "actors.md" and out["summary"]["idea"] == ""
+
+
+def test_the_answer_is_utf8_whatever_the_console_speaks(oficio):
+    """A Windows console has its own code page. The answer must not take it: an agent reads it as UTF-8."""
+    done = subprocess.run([PYTHON, "-S", str(SCRIPT), "status", "--root", str(oficio.path)], capture_output=True,
+                          env=dict(os.environ, PYTHONIOENCODING="cp1252", **oficio.env))
+    assert done.returncode == 0, done.stderr
+    out = json.loads(done.stdout.decode("utf-8"))
+    assert out["owner"] == "Ana Pérez" and out["open"][0]["question"] == "¿Hay cupo por taller?"
+    assert out["summary"]["people"][1]["name"] == "Tomás"
 
 
 def test_the_idea_is_the_first_paragraph_of_the_vision(oficio):

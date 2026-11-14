@@ -1162,6 +1162,10 @@ def scaffold(root, kit, name, owner, language, device=None):
 def main(argv=None):
     import argparse  # Only here: the progress page loads this file to read the design, and needs no command line.
 
+    # The answer is UTF-8 wherever it runs. A Windows console would write a name with an accent in its own code page.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+
     parser = argparse.ArgumentParser(prog="studio.py", description="The design of a product and its mockup", allow_abbrev=False)
     parser.add_argument("command", choices=["scaffold", "status", "check", "build", "directions", "pick", "open", "shots"])
     parser.add_argument("letter", nargs="?", help="pick: the letter of the direction")
