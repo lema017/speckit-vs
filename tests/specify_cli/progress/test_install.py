@@ -106,7 +106,7 @@ def test_every_integration_gets_the_engine_with_every_script_variant(tmp_path, k
     project = tmp_path / "project"
     init(project, key, script)
     scripts = project / ".specify" / "scripts"
-    for name in ("engine.py", "page.html", "index.html"):
+    for name in ("engine.py", "page.html", "index.html", "design.html"):
         assert (scripts / "progress" / name).is_file(), name
         assert (scripts / "progress" / name).read_bytes().replace(b"\r\n", b"\n") == (
             REPO / "scripts" / "progress" / name

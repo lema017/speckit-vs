@@ -157,3 +157,52 @@ def test_an_unknown_spec_name_cannot_control_the_terminal(in_project):
     result = status("--feature", "\x1b[2Jzzz[red]")
     assert result.exit_code == 1
     assert "\x1b[2J" not in result.output
+
+
+# -- The design of the product -----------------------------------------------------------------
+
+DESIGN = ["Design of Oficio", "Steps: Define: 2 decisions; Map: 2 of 2 areas; Mockup: 6 of 6 screens",
+          "Next: /speckit.studio.mockup. Every area is drawn. Open the mockup and say what to change.", "Needs attention: 2, see the page"]
+
+
+def test_the_design_is_shown_before_the_specs(in_project):
+    in_project.design()
+    in_project.feature("001-login")
+    in_project.feature("002-logout")
+    before = in_project.written()
+    result = status()
+    assert result.exit_code == 0, result.output
+    lines = [" ".join(line.split()) for line in strip_ansi(result.output).splitlines() if line.strip()]
+    assert lines[:4] == DESIGN and lines[4].startswith("Spec ") and any(line.startswith("001-login") for line in lines)
+    assert in_project.written() == before, "reading the progress writes nothing"
+
+
+def test_a_design_with_no_spec_yet_is_all_there_is_to_show(in_project):
+    in_project.design()
+    lines = [" ".join(line.split()) for line in strip_ansi(status().output).splitlines() if line.strip()]
+    assert lines == DESIGN + ["No specs yet."]
+
+
+def test_the_design_is_shown_with_the_current_spec_too(in_project):
+    in_project.design()
+    in_project.set_current(in_project.feature("001-login"))
+    output = strip_ansi(status().output)
+    assert "Design of Oficio" in output and "001-login, current" in output
+
+
+def test_a_spec_that_was_asked_for_is_shown_alone(in_project):
+    in_project.design()
+    in_project.feature("001-login")
+    assert "Design of Oficio" not in strip_ansi(status("--feature", "001").output)
+
+
+def test_json_stays_the_list_of_specs(in_project):
+    in_project.design()
+    in_project.feature("001-login")
+    rows = json.loads(status("--all", "--json").output)
+    assert [row["id"] for row in rows] == ["001-login"]
+
+
+def test_a_project_without_a_design_shows_none(in_project):
+    in_project.feature("001-login")
+    assert "Design" not in strip_ansi(status().output)

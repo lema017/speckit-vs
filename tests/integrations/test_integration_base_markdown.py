@@ -252,7 +252,7 @@ class MarkdownIntegrationTests:
                          "resolve-template.ps1", "setup-plan.ps1", "setup-tasks.ps1", "progress.ps1", "run-step.ps1"]:
                 files.append(f".specify/scripts/powershell/{name}")
 
-        for name in ["engine.py", "hook.py", "index.html", "page.html"]:
+        for name in ["design.html", "engine.py", "hook.py", "index.html", "page.html"]:
             files.append(f".specify/scripts/progress/{name}")
         files += native_event_files(self.KEY)
 

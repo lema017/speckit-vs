@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import zoneinfo  # noqa: F401  Loaded before any test fakes sys.platform: the CLI's first run imports it, and it reads this platform's build data.
 from pathlib import Path
 
 import pytest
@@ -23,6 +25,10 @@ ENV_CLEARED = (
     "SSH_CLIENT",
     "SSH_TTY",
 )
+
+REPO = Path(__file__).resolve().parents[3]
+STUDIO = REPO / "extensions" / "studio"
+OFICIO = REPO / "tests" / "extensions" / "studio" / "fixtures" / "oficio" / "specs" / "_product"
 
 SPEC = """# Feature Specification: Login
 
@@ -88,9 +94,20 @@ class Project:
         relative = directory.relative_to(self.root).as_posix()
         (self.root / ".specify" / "feature.json").write_text(json.dumps({"feature_directory": relative}), encoding="utf-8")
 
+    def install_studio(self) -> None:
+        """Give the project the studio extension, whose script knows what a design says."""
+        target = self.root / ".specify" / "extensions" / "studio"
+        shutil.copytree(str(STUDIO), str(target), ignore=shutil.ignore_patterns("__pycache__"))
+
+    def design(self) -> Path:
+        """Give the project the studio extension and the design of Oficio: two areas, both drawn."""
+        self.install_studio()
+        shutil.copytree(str(OFICIO), str(self.root / "specs" / "_product"))
+        return self.root / "specs" / "_product"
+
     def written(self):
-        """Every file under the project, to prove a command wrote nothing."""
-        return sorted(str(path.relative_to(self.root)) for path in self.root.rglob("*") if path.is_file())
+        """Every file under the project, to prove a command wrote nothing. Bytecode a loaded script left does not count."""
+        return sorted(str(path.relative_to(self.root)) for path in self.root.rglob("*") if path.is_file() and "__pycache__" not in path.parts)
 
 
 @pytest.fixture(autouse=True)

@@ -7,8 +7,10 @@
 # Usage: ./progress.sh [--harness NAME] COMMAND [OPTIONS]
 #
 # COMMANDS:
-#   show [--open]              Draw the page and report in full; --open also opens it
+#   show [--open] [--design]   Draw the page and report in full; --open also opens it
 #   step NAME STATUS           Record a step, draw the page and report
+#   design NAME STATUS [--area AREA] [--note TEXT]
+#                              Record a step of the design, draw its page and report
 #   render                     Draw the pages
 #   status                     Read the progress, as JSON
 #   browser on|off             Open pages by themselves, or not
