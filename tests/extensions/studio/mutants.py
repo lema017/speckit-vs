@@ -253,6 +253,7 @@ MUTANTS = [
     ("what-an-attribute-says-is-not-read", '        self._words.extend(at[key] for key in ("aria-label", "placeholder", "alt", "value", "title") if at.get(key))', "        pass"),
     ("a-name-in-other-letters-is-missed", 'return " ".join(label.split()).lower() in " ".join(" ".join(self._words).split()).lower()', 'return " ".join(label.split()) in " ".join(" ".join(self._words).split())'),
     ("a-name-with-other-spacing-is-missed", 'return " ".join(label.split()).lower() in " ".join(" ".join(self._words).split()).lower()', 'return label.lower() in " ".join(" ".join(self._words).split()).lower()'),
+    ("answer-in-the-code-page-of-the-console", '        sys.stdout.reconfigure(encoding="utf-8")', "        pass"),
     ("new-options-on-any-command", "        if value is not None and args.command not in commands:", "        if False:"),
 ]
 
