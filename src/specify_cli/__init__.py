@@ -433,6 +433,11 @@ _register_event_cmds(app)
 from .progress import register as _register_progress_cmds  # noqa: E402
 _register_progress_cmds(app)
 
+
+# ===== Studio Commands =====
+from .studios import register as _register_studio_cmds  # noqa: E402
+_register_studio_cmds(app)
+
 # Re-export selected helpers to preserve the public import surface.
 from .integrations._helpers import (  # noqa: E402
     _clear_init_options_for_integration as _clear_init_options_for_integration,
