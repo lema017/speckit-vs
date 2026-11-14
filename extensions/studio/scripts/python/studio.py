@@ -1174,7 +1174,9 @@ def main(argv=None):
     parser.add_argument("--area", help="shots: only the screens of this area")
     parser.add_argument("--states", action="store_true", help="shots: every state of each screen, not only the normal one")
     parser.add_argument("--no-browser", action="store_true", help="open: write the page and print its link, without opening it")
-    args = parser.parse_args(argv)
+    # Intermixed: before Python 3.12 a positional that may be absent, such as the letter of `pick`,
+    # is not found once an option stands between it and the command.
+    args = parser.parse_intermixed_args(argv)
     root = Path(args.root).resolve()
     if not root.is_dir():
         parser.error("--root is not a directory")

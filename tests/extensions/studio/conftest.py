@@ -28,7 +28,11 @@ class Project:
         self.env = {"SPECKIT_STUDIO_NO_BROWSER": "1", "SPECKIT_STUDIO_BROWSER": str(path / "no-browser-here")}
 
     def run(self, command, *args):
-        """(exit code, parsed answer). No site packages: the script uses the standard library only."""
+        """(exit code, parsed answer). No site packages: the script uses the standard library only.
+
+        The options go before what the command takes, as an agent may write them: before Python 3.12
+        that order lost the letter of `pick`, and only an older Python shows it.
+        """
         done = subprocess.run([PYTHON, "-I", "-S", str(SCRIPT), command, "--root", str(self.path), *args],
                               capture_output=True, encoding="utf-8", errors="replace", env=dict(os.environ, **self.env))
         try:
