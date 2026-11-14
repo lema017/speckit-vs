@@ -98,6 +98,8 @@ _FENCE = re.compile(r"^\s*(```+|~~~+)")
 _QUESTION = re.compile(r"^\s*[-*+]\s+(?:\*\*)?Q:")
 _REQUIREMENT = re.compile(r"\*\*(FR-\d+)\*\*")
 _STEP_NAME = re.compile(r"^[a-z][a-z0-9.-]{0,40}$")
+_AREA_NAME = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
+MAX_AREA_CHARS = 60
 _TASK_NAME = re.compile(r"^T\d+$")
 _SAFE_FILE = re.compile(r"[^A-Za-z0-9._-]+")
 _PROGRESS_CALL = re.compile(r"(?:^|[\s;&|(])(start|done|block|fail|skip|note)\s+(T\d+)\b")
@@ -337,6 +339,9 @@ def clean_event(raw):
         if status not in STEP_STATUSES or not isinstance(name, str) or not _STEP_NAME.match(name):
             return None
         event["step"] = STEP_ALIASES.get(name, name)
+        area = raw.get("area")
+        if isinstance(area, str) and len(area) <= MAX_AREA_CHARS and _AREA_NAME.match(area):
+            event["area"] = area
     else:
         return None
     stamp = parse_timestamp(raw.get("ts"))
@@ -1151,10 +1156,223 @@ def project_slices(root):
     return slice_groups(maps, [(path.name,) + spec_slice(path) for path in discover_features(Path(root))])
 
 
+# The design of the product is specs/_product/, written with the studio extension. The script of
+# that extension knows what those files mean, so the engine loads it from the project and asks it;
+# the engine adds the log, the documents and the page. Reading a design costs about as much as a
+# whole redraw, so its page is drawn when the design or every page is asked for, and not after
+# each task: then the list of specs shows the summary of the last time it was drawn.
+DESIGN_DIR = Path("specs") / "_product"
+DESIGN_MARK = "product.md"
+DESIGN_TEMPLATE = "design.html"
+DESIGN_SUMMARY = ".design.json"
+STUDIO_SCRIPT = Path(".specify") / "extensions" / "studio" / "scripts" / "python" / "studio.py"
+INIT_OPTIONS = Path(".specify") / "init-options.json"
+_DOCUMENT_NAME = re.compile(r"^[a-z][a-z0-9-]*\.md$")
+_STUDIO_MODULES = {}
+
+
+def has_design(root):
+    """True when the project keeps the design of a product."""
+    directory = Path(root) / DESIGN_DIR
+    return not directory.is_symlink() and (directory / DESIGN_MARK).is_file()
+
+
+def load_studio(root):
+    """The script of the studio extension as a module, or None when the project does not have it."""
+    path = Path(root) / STUDIO_SCRIPT
+    if path.is_symlink() or not path.is_file():
+        return None
+    key = str(path)
+    if key not in _STUDIO_MODULES:
+        import importlib.util  # Only here: most projects have no design to read.
+
+        spec = importlib.util.spec_from_file_location("speckit_studio_script", key)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _STUDIO_MODULES[key] = module
+    return _STUDIO_MODULES[key]
+
+
+def command_text(root, name, args=""):
+    """A command as the person types it: with hyphens where commands are skills, with dots elsewhere."""
+    text, _ = read_limited(Path(root) / INIT_OPTIONS, 64 * 1024)
+    try:
+        options = json.loads(text) if text else {}
+    except ValueError:
+        options = {}
+    skills = isinstance(options, dict) and options.get("ai_skills") is True
+    shown = "/" + (name.replace(".", "-") if skills else name)
+    return shown + (" " + args if args else "")
+
+
+def _is_running(event, now):
+    """A step somebody started and nobody closed, unless that was so long ago that its session is gone."""
+    if not event or event["status"] != "in_progress":
+        return False
+    started = parse_timestamp(event.get("ts"))
+    return started is not None and (now - started).total_seconds() <= ABANDONED_AFTER_SECONDS
+
+
+def _area_fact(area, name):
+    if area["steps"].get(name) == "pending":
+        return "not yet"
+    if name == "map":
+        fact = "%d %s" % (area["stories"], "story" if area["stories"] == 1 else "stories")
+        return fact + (", %d waiting" % area["asked"] if area["asked"] else "")
+    return "%d of %s" % (area["pages"], _count(area["screens"], "screen"))
+
+
+def build_design(root, out_dir, now=None, include_documents=True):
+    """Everything the page of the design needs, or None when the project has no design to show."""
+    root = Path(root)
+    if not has_design(root):
+        return None
+    now = now or datetime.now(timezone.utc)
+    directory = root / DESIGN_DIR
+    data = {"schema": SCHEMA_VERSION, "generated": _stamp(now), "product": "", "problem": None}
+    try:
+        studio = load_studio(root)
+        if studio is None:
+            return None
+        status = studio.status(studio.Product(root))
+    except Exception as exc:  # A design nobody can read must not take the pages of the specs with it.
+        data["problem"] = plain_text(exc, MAX_NOTE_CHARS) or type(exc).__name__
+        return data
+    events, bad_lines, log_truncated = read_events(directory / LOG_NAME)
+    events = [event for event in events if event["kind"] == "step"]
+    last, last_in_area, noted = {}, {}, {}
+    for event in events:
+        last[event["step"]] = event
+        if event.get("area"):
+            last_in_area[(event["step"], event["area"])] = event
+        if event["status"] == "done" and event.get("note"):
+            noted[event["step"]] = event["note"]
+    titles = {area["id"]: area["title"] for area in status["areas"]}
+
+    steps = []
+    for step in status["steps"]:
+        event = last.get(step["name"])
+        running = _is_running(event, now)
+        steps.append({
+            "name": step["name"],
+            "label": step["name"].capitalize(),
+            "command": command_text(root, step["command"]),
+            "state": "active" if running and step["state"] == "pending" else step["state"],
+            "fact": step["fact"],
+            "running": running,
+            "note": noted.get(step["name"]),
+            "who": actor_label(event.get("actor")) if event else None,
+            "ts": event["ts"] if event else None,
+        })
+    areas = []
+    for area in status["areas"]:
+        chips = []
+        for name in area["steps"]:
+            running = _is_running(last_in_area.get((name, area["id"])), now)
+            state = area["steps"][name]
+            chips.append({"name": name, "label": name.capitalize(), "state": "active" if running and state == "pending" else state,
+                          "fact": _area_fact(area, name), "running": running})
+        areas.append({
+            "id": area["id"], "title": area["title"], "covers": area["covers"], "state": area["state"], "screens": area["screens"],
+            "rules": area["rules"], "open": area["open"], "steps": chips, "command": command_text(root, "speckit.studio.map", area["id"]),
+        })
+    attention = list(status["attention"])
+    if bad_lines:
+        attention.append({"kind": "log", "text": "%s of the design's log could not be read." % _count(bad_lines, "line")})
+    if log_truncated:
+        attention.append({"kind": "log", "text": "The design's log is too large: only its first part was read."})
+    activity = []
+    for event in list(reversed(events))[:ACTIVITY_LIMIT]:
+        activity.append({"step": event["step"], "status": event["status"], "ts": event["ts"], "note": event.get("note"),
+                         "area": event.get("area"), "area_title": titles.get(event.get("area"))})
+    documents, links = [], []
+    if include_documents:
+        budget = MAX_DOCS_TOTAL_BYTES
+        for name in status["documents"]:
+            if not isinstance(name, str) or not _DOCUMENT_NAME.match(name):
+                continue
+            path = directory / name
+            text, truncated = read_limited(path, min(MAX_DOC_BYTES, max(budget, 0)))
+            if text is None:
+                continue
+            budget -= len(text.encode("utf-8", errors="replace"))
+            documents.append({"name": name, "markdown": True, "text": text, "truncated": truncated, "href": _relative_href(path, out_dir)})
+        mockup = directory / "mockup" / "index.html"
+        if status["mockup"] and mockup.is_file():
+            links.append({"label": "Open the mockup", "href": _relative_href(mockup, out_dir)})
+        looks = directory / "mockup" / "_studio" / "directions.html"
+        if looks.is_file() and not looks.is_symlink():
+            links.append({"label": "Compare the looks", "href": _relative_href(looks, out_dir)})
+    step = status["next"]
+    data.update({
+        "product": status["product"] or "",
+        "owner": status["owner"],
+        "totals": status["totals"],
+        "steps": steps,
+        "areas": areas,
+        "summary": status["summary"],
+        "next": {"command": command_text(root, step["command"], step["args"]), "why": step["why"]},
+        "attention": attention,
+        "activity": activity,
+        "documents": documents,
+        "links": links,
+        "screens": status["totals"]["screens"],
+    })
+    return data
+
+
+def design_summary(data):
+    """What the list of specs and the terminal say about the design: little, and no document."""
+    if data is None:
+        return None
+    summary = {"file": DESIGN_TEMPLATE, "generated": data["generated"], "product": data["product"], "problem": data["problem"]}
+    if not data["problem"]:
+        summary.update({
+            "totals": {key: data["totals"][key] for key in ("areas", "drawn", "in_design", "not_started")},
+            "steps": [{"label": step["label"], "state": step["state"], "fact": step["fact"]} for step in data["steps"]],
+            "next": data["next"],
+            "attention": len(data["attention"]),
+        })
+    return summary
+
+
+def stored_design_summary(root, out_dir):
+    """The summary of the last time the design was drawn, for a redraw that does not read the design."""
+    if not has_design(root):
+        return None
+    text, _ = read_limited(out_dir / DESIGN_SUMMARY, 256 * 1024)
+    try:
+        summary = json.loads(text) if text else None
+    except ValueError:
+        return None
+    return summary if isinstance(summary, dict) and summary.get("file") == DESIGN_TEMPLATE else None
+
+
+def design_lines(summary, link=None):
+    """How far the design is and what comes next, for the end of a command and for the terminal."""
+    if summary["problem"]:
+        lines = ["The design cannot be read: %s" % plain_text(summary["problem"], MAX_NOTE_CHARS)]
+    else:
+        lines = ["Design of %s" % plain_text(summary["product"]),
+                 "Steps: " + "; ".join("%s: %s" % (step["label"], plain_text(step["fact"])) for step in summary["steps"]),
+                 "Next: %s. %s" % (plain_text(summary["next"]["command"]), plain_text(summary["next"]["why"], MAX_NOTE_CHARS))]
+        if summary["attention"]:
+            lines.append("Needs attention: %d, see the page" % summary["attention"])
+    if link:
+        lines.append("Page: " + link)
+    return lines
+
+
+def design_status(root, now=None):
+    """Read-only summary of the design for machines and for terminals, or None. Writes nothing."""
+    root = Path(root)
+    return design_summary(build_design(root, root / OUTPUT_DIR, now=now, include_documents=False))
+
+
 def page_file_names(features):
-    """One safe, unique file name per spec. index.html belongs to the list of specs."""
+    """One safe, unique file name per spec. index.html belongs to the list of specs, design.html to the design."""
     names = {}
-    used = {INDEX_TEMPLATE.lower()}
+    used = {INDEX_TEMPLATE.lower(), DESIGN_TEMPLATE.lower()}
     for path in features:
         stem = _SAFE_FILE.sub("_", path.name).strip("._") or "spec"
         candidate = stem + ".html"
@@ -1225,15 +1443,31 @@ def render_project(root, feature=None, now=None):
             target = out_dir / file_name
             write_atomic(target, fill_template(page, data))
             pages.append({"id": data["id"], "path": str(target), "current": is_current, "totals": data["totals"]})
+    design = None
+    if feature is None:
+        data = build_design(root, out_dir, now=now)
+        design = design_summary(data)
+        if data is not None:
+            write_atomic(out_dir / DESIGN_TEMPLATE, fill_template(_load_template(DESIGN_TEMPLATE), data))
+            write_atomic(out_dir / DESIGN_SUMMARY, json.dumps(design, ensure_ascii=True))
+    else:
+        design = stored_design_summary(root, out_dir)
     index = out_dir / INDEX_TEMPLATE
     write_atomic(index, fill_template(_load_template(INDEX_TEMPLATE), {
         "generated": _stamp(now),
         "specs": summaries,
         "maps": slice_groups(maps, sliced),
+        "design": design,
     }))
     if feature is None:
-        _remove_orphan_pages(out_dir, set(names.values()) | {INDEX_TEMPLATE})
-    return {"out_dir": str(out_dir), "index": str(index), "pages": pages}
+        _remove_orphan_pages(out_dir, set(names.values()) | {INDEX_TEMPLATE} | ({DESIGN_TEMPLATE} if design else set()))
+        if design is None:
+            try:
+                (out_dir / DESIGN_SUMMARY).unlink()
+            except OSError:
+                pass
+    return {"out_dir": str(out_dir), "index": str(index), "pages": pages,
+            "design": {"path": str(out_dir / DESIGN_TEMPLATE), "summary": design} if design else None}
 
 
 def can_open_browser(env=None, platform=None):
@@ -1743,8 +1977,9 @@ def _page_link(drawn, feature):
     return Path(page).resolve().as_uri()
 
 
-def _report(root, feature, drawn, problems, detail):
-    link = _page_link(drawn, feature)
+def _report(root, feature, drawn, problems, detail, after_design=False):
+    """What the specs say. After the lines of the design, only the specs there are, and no link of their own."""
+    link = None if after_design else _page_link(drawn, feature)
     try:
         rows = status_data(root, feature)
     except (ProgressError, OSError) as exc:
@@ -1756,7 +1991,7 @@ def _report(root, feature, drawn, problems, detail):
         return
     for row in rows:
         _say("%s: %d of %d done" % (plain_text(row["id"]), row["totals"]["done"], row["totals"]["total"]))
-    if not rows:
+    if not rows and not after_design:
         _say("No specs yet.")
     if link:
         _say("Page: " + link)
@@ -1782,14 +2017,59 @@ def run_step_command(root, name, status, harness=None, note=None, reference=None
     return 0
 
 
-def run_show_command(root, reference=None, open_page=False):
-    """Redraw and report in full. For /speckit.progress, which also opens the page every time, and
-    for the end of a command, which does not."""
+def _design_link(drawn):
+    design = drawn.get("design") if drawn else None
+    return Path(design["path"]).resolve().as_uri() if design else None
+
+
+def run_design_command(root, name, status, harness=None, note=None, area=None, quiet=False):
+    """Record a step of the design, redraw and say how far the design is and what comes next.
+    Problems are reported, never raised: the command's work comes first."""
     problems = []
-    feature = _resolve_feature(root, reference, problems)
+    if has_design(root):
+        event = make_step_event(name, status, harness, note)
+        if isinstance(area, str) and len(area) <= MAX_AREA_CHARS and _AREA_NAME.match(area):
+            event["area"] = area
+        try:
+            append_event(root / DESIGN_DIR, event)
+        except (ProgressError, OSError) as exc:
+            problems.append(str(exc))
+    drawn = _draw(root, None, problems)
+    link = _design_link(drawn)
+    if link:
+        open_once(root, drawn["design"]["path"])
+    if not quiet:
+        if link:
+            for line in design_lines(drawn["design"]["summary"], link):
+                _say(line)
+        else:
+            _say("No design yet. It starts with %s." % command_text(root, "speckit.studio.define"))
+    for problem in problems:
+        _say("progress: %s" % plain_text(problem, MAX_NOTE_CHARS), sys.stderr)
+    return 0
+
+
+def run_show_command(root, reference=None, open_page=False, design=False):
+    """Redraw and report in full. For /speckit.progress, which also opens the page every time, and
+    for the end of a command, which does not. The design is what is shown when it was asked for,
+    and when the project has a design and no spec is the current one."""
+    problems = []
+    feature = None if design else _resolve_feature(root, reference, problems)
     drawn = _draw(root, feature, problems)
-    _report(root, feature, drawn, problems, detail=True)
-    link = _page_link(drawn, feature)
+    link = _design_link(drawn) if feature is None and not reference else None
+    if link:
+        for line in design_lines(drawn["design"]["summary"], link):
+            _say(line)
+        if not design:
+            _report(root, None, drawn, problems, detail=True, after_design=True)
+    elif design:
+        _say("No design yet. It starts with %s." % command_text(root, "speckit.studio.define"))
+        link = _page_link(drawn, feature)
+        if link:
+            _say("Page: " + link)
+    else:
+        _report(root, feature, drawn, problems, detail=True)
+        link = _page_link(drawn, feature)
     if open_page and link:
         _say(open_now(root, link))
     for problem in problems:
@@ -1858,6 +2138,13 @@ def _parser():
     commands.add_parser("status", parents=[shared], allow_abbrev=False, help="Read the progress. Prints JSON, writes nothing.")
     show = commands.add_parser("show", parents=[shared], allow_abbrev=False, help="Draw the page and report in full.")
     show.add_argument("--open", action="store_true", dest="open_page", help="Also open the page in a browser, every time.")
+    show.add_argument("--design", action="store_true", help="Show the design of the product instead of a spec.")
+    design = commands.add_parser("design", parents=[shared], allow_abbrev=False, help="Record a step of the design, draw its page and report.")
+    design.add_argument("name", help="The step: define, map or mockup")
+    design.add_argument("status", choices=sorted(STEP_STATUSES - {"note"}))
+    design.add_argument("--area", help="The area the step was about")
+    design.add_argument("--note", help="One line about the step")
+    design.add_argument("--quiet", action="store_true", help="Print nothing")
     step = commands.add_parser("step", parents=[shared], allow_abbrev=False, help="Record a step, draw the page and report.")
     step.add_argument("name", choices=STEP_NAMES + tuple(STEP_ALIASES))
     step.add_argument("status", choices=sorted(STEP_STATUSES))
@@ -1943,11 +2230,20 @@ def main(argv=None):
         if args.command == "done" and args.then == args.task:
             parser.error("--then has to name another task")
         return _run_task_command(args, root)
-    if args.command not in ("step", "show"):
+    if args.command == "design":
+        if not _STEP_NAME.match(args.name):
+            parser.error("a step of the design is a word such as define, map or mockup")
+        if args.area is not None and not (len(args.area) <= MAX_AREA_CHARS and _AREA_NAME.match(args.area)):
+            parser.error("--area takes the name of an area, in lowercase and hyphens")
+    if args.command not in ("step", "show", "design"):
         return _run_machine_command(args, root)
     try:
+        if args.command == "design":
+            return run_design_command(root, args.name, args.status, args.harness, args.note, args.area, args.quiet)
         if args.command == "show":
-            return run_show_command(root, args.feature, args.open_page)
+            if args.design and args.feature:
+                _say("progress: --design shows the design, so --feature was left aside.", sys.stderr)
+            return run_show_command(root, args.feature, args.open_page, args.design)
         return run_step_command(root, args.name, args.status, args.harness, args.note, args.feature, args.quiet)
     except Exception as exc:
         _say("progress: unexpected %s: %s" % (type(exc).__name__, plain_text(exc, MAX_NOTE_CHARS)), sys.stderr)

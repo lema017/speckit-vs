@@ -37,12 +37,20 @@ p.request{margin:2px 0 0;font-size:13px;overflow-wrap:anywhere}
 .slice{border:1px dashed var(--line);border-radius:10px;padding:14px 16px;margin-bottom:10px}
 .dropped .name{text-decoration:line-through;color:var(--soft)}
 .empty{color:var(--soft)}
+a.design{border-color:var(--soft)}
+.steps{display:flex;flex-wrap:wrap;gap:4px 16px;margin-top:8px;font-size:13px;color:var(--soft)}
+.steps b{color:var(--ink);font-weight:600}
+.steps .done b::before{content:"\2713\00a0";color:var(--done)}
+.steps .attention b{color:var(--blocked)}
+.nextstep{margin-top:8px;font-size:13px;overflow-wrap:anywhere}
+.nextstep code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
 </style>
 </head>
 <body>
 <main>
 <h1>Spec Kit progress</h1>
 <p>Every spec in this project. Specs that build the slices of a larger request are grouped under it.</p>
+<div id="design"></div>
 <div id="list"></div>
 </main>
 <script type="application/json" id="data">/*DATA*/null</script>
@@ -85,6 +93,33 @@ p.request{margin:2px 0 0;font-size:13px;overflow-wrap:anywhere}
     top.appendChild(left); top.appendChild(el("div", "count", note)); box.appendChild(top);
     return box;
   }
+  // The design of the product, when the project has one: how far it is and what comes next.
+  function design(d) {
+    var a = el("a", "spec design"), top = el("div", "top"), left = el("div", "left");
+    a.href = encodeURIComponent(d.file);
+    left.appendChild(el("span", "name", d.product || "Product"));
+    left.appendChild(el("div", "id", "Product design"));
+    top.appendChild(left);
+    if (d.problem) {
+      var broken = el("div", "count"); broken.appendChild(el("span", "flag", "cannot be read")); top.appendChild(broken);
+      a.appendChild(top);
+      a.appendChild(el("div", "nextstep", d.problem));
+      return a;
+    }
+    var count = el("div", "count", d.totals.drawn + " of " + plural(d.totals.areas, "area") + " drawn");
+    if (d.attention) count.appendChild(el("span", "flag", d.attention + " to check"));
+    top.appendChild(count); a.appendChild(top);
+    var steps = el("div", "steps");
+    d.steps.forEach(function (s) {
+      var one = el("span", s.state); one.appendChild(el("b", "", s.label)); one.appendChild(document.createTextNode(" " + s.fact));
+      steps.appendChild(one);
+    });
+    a.appendChild(steps);
+    var next = el("div", "nextstep"); next.appendChild(document.createTextNode("Next: ")); next.appendChild(el("code", "", d.next.command));
+    a.appendChild(next);
+    return a;
+  }
+  if (D.design) document.getElementById("design").appendChild(design(D.design));
   var maps = D.maps || [], byId = Object.create(null), shown = Object.create(null);
   D.specs.forEach(function (row) { byId[row.id] = row; });
   maps.forEach(function (map) {
@@ -103,7 +138,7 @@ p.request{margin:2px 0 0;font-size:13px;overflow-wrap:anywhere}
   var rest = D.specs.filter(function (row) { return !shown[row.id]; });
   if (maps.length && rest.length) list.appendChild(el("h2", "", "Other specs"));
   rest.forEach(function (row) { list.appendChild(card(row, null)); });
-  if (!D.specs.length && !maps.length) list.appendChild(el("div", "empty", "No specs yet."));
+  if (!D.specs.length && !maps.length) list.appendChild(el("div", "empty", D.design ? "No specs yet. They come after the design." : "No specs yet."));
   setInterval(function () { if (document.visibilityState === "visible") location.reload(); }, 15000);
 })();
 </script>

@@ -19,6 +19,7 @@ def progress_open(
         "--feature",
         help="Open this spec: its directory name, or a unique prefix such as 002.",
     ),
+    design: bool = typer.Option(False, "--design", help="Open the progress of the product design instead of a spec."),
     no_browser: bool = typer.Option(False, "--no-browser", help="Draw the page and print its link, without opening it."),
 ) -> None:
     """Draw the progress page and open it in your browser.
@@ -26,16 +27,20 @@ def progress_open(
     Opens the current spec, or the list of specs when none is current. Over SSH,
     in CI or without a display it only prints the link.
     """
+    if design and feature is not None:
+        fail("Use either --feature or --design, not both.")
     root = project_root()
     engine = load_engine()
     target = named_feature(engine, root, feature)
-    if target is None:
+    if target is None and not design:
         target = engine.current_feature_dir(root)
     try:
         result = engine.render_project(root, target)
     except (engine.ProgressError, OSError) as exc:
         fail(str(exc))
-    page = result["pages"][0]["path"] if target is not None else result["index"]
+    if design and not result["design"]:
+        fail("This project has no design yet. It starts with the speckit.studio.define command of your agent.")
+    page = result["design"]["path"] if design else result["pages"][0]["path"] if target is not None else result["index"]
     link = Path(page).resolve().as_uri()
     opened = False
     if not no_browser and engine.can_open_browser():

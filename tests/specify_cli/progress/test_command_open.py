@@ -130,3 +130,35 @@ def test_a_project_elsewhere_can_be_targeted(project, tmp_path, monkeypatch, ope
     assert result.exit_code == 0, result.output
     assert opened == [(project.root / ".specify" / "progress" / "index.html").resolve().as_uri()]
     assert list(launch.iterdir()) == []
+
+
+def test_the_design_can_be_asked_for(in_project, opened):
+    in_project.design()
+    in_project.set_current(in_project.feature("001-login"))
+    result = runner.invoke(app, ["progress", "open", "--design"])
+    assert result.exit_code == 0, result.output
+    page = in_project.root / ".specify" / "progress" / "design.html"
+    assert page.is_file() and opened == [page.resolve().as_uri()]
+    assert not (in_project.root / "specs" / "_product" / "progress.jsonl").exists(), "opening the page records no step"
+
+
+def test_without_asking_the_current_spec_still_opens(in_project, opened):
+    in_project.design()
+    in_project.set_current(in_project.feature("001-login"))
+    result = runner.invoke(app, ["progress", "open"])
+    assert result.exit_code == 0 and opened[0].endswith("/001-login.html")
+
+
+def test_asking_for_the_design_of_a_project_that_has_none_fails(in_project, opened):
+    in_project.feature("001-login")
+    result = runner.invoke(app, ["progress", "open", "--design"])
+    assert result.exit_code == 1 and opened == []
+    assert "This project has no design yet. It starts with the speckit.studio.define command" in plain(result)
+
+
+def test_the_design_and_a_spec_cannot_both_be_asked_for(in_project, opened):
+    in_project.design()
+    in_project.feature("001-login")
+    result = runner.invoke(app, ["progress", "open", "--design", "--feature", "001"])
+    assert result.exit_code == 1 and opened == []
+    assert "Use either --feature or --design, not both." in plain(result)

@@ -94,6 +94,7 @@ def progress_status(
     """Show how far a spec has come, in the terminal. Read-only.
 
     Without options it shows the current spec, or every spec when none is current.
+    When the project has a product design, it is shown first, unless a spec was asked for.
     """
     if feature is not None and all_specs:
         fail("Use either --feature or --all, not both.")
@@ -104,8 +105,13 @@ def progress_status(
         target = engine.current_feature_dir(root)
     try:
         rows = engine.status_data(root, target)
+        design = engine.design_status(root) if feature is None and not as_json else None
     except (engine.ProgressError, OSError) as exc:
         fail(str(exc))
+    if design is not None:
+        for line in engine.design_lines(design):
+            _line(line)
+        console.print()
     if as_json:
         typer.echo(json.dumps(rows, indent=2))
     elif not rows:

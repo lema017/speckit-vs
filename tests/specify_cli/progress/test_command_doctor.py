@@ -63,7 +63,7 @@ def test_a_fresh_project_is_fine(installed):
     assert "speckit:" not in output
 
 
-@pytest.mark.parametrize("name", ["engine.py", "hook.py", "page.html", "index.html"])
+@pytest.mark.parametrize("name", ["engine.py", "hook.py", "page.html", "index.html", "design.html"])
 def test_a_missing_engine_file_fails(installed, name):
     project = installed()
     (project / ".specify" / "scripts" / "progress" / name).unlink()

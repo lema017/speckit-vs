@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="generator" content="speckit-progress">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>Design progress</title>
+<style>
+:root{color-scheme:light dark;--bg:#f6f7f8;--panel:#fff;--ink:#14181d;--soft:#5b6570;--line:#dfe3e7;--track:#e7eaee;
+--done:#1a7f4b;--active:#1f63c9;--blocked:#a85f00;--pending:#7d8791;--tint:#f0f2f4;--done-tint:#eef7f1;--active-tint:#eef4fd;--blocked-tint:#fbf3e4}
+@media (prefers-color-scheme:dark){:root{--bg:#101316;--panel:#191d21;--ink:#e9edf0;--soft:#a3adb6;--line:#2c3238;--track:#2c3238;
+--done:#3fbf7f;--active:#6ea6ff;--blocked:#e0a040;--pending:#7d8791;--tint:#22272c;--done-tint:#17251d;--active-tint:#172232;--blocked-tint:#2a2212}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+body.reading{overflow:hidden}
+main{max-width:1180px;margin:0 auto;padding:20px 16px 48px}
+button,select{font:inherit;color:inherit}
+a{color:inherit}
+.mono,code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
+.link{all:unset;cursor:pointer;text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}
+.link:focus-visible,a:focus-visible{outline:2px solid var(--active);outline-offset:1px}
+header .crumb{font-size:13px;color:var(--soft);margin-bottom:6px;display:flex;gap:12px;justify-content:space-between;flex-wrap:wrap}
+header h1{font-size:24px;line-height:1.2;margin:0;overflow-wrap:anywhere}
+header .id{color:var(--soft);font-size:13px;margin-top:2px}
+.total{display:flex;align-items:center;gap:14px;margin:16px 0 6px}
+.total .num{font-size:30px;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1}
+.total .what{color:var(--soft);font-size:13px;white-space:nowrap}
+.total .bar{flex:1;height:10px;min-width:60px}
+.bar{background:var(--track);border-radius:5px;overflow:hidden;display:flex}
+.bar i{display:block;height:100%}
+.counts{display:flex;flex-wrap:wrap;gap:4px 14px;color:var(--soft);font-size:13px}
+.counts b{color:var(--ink);font-variant-numeric:tabular-nums}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:1px}
+.pipeline{list-style:none;margin:18px 0 0;padding:0;display:grid;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.pipeline li{border-left:1px solid var(--line);min-width:0;border-top:3px solid var(--track)}
+.pipeline li:first-child{border-left:0}
+.pipeline button{all:unset;box-sizing:border-box;display:block;width:100%;height:100%;padding:10px 12px 11px;cursor:pointer}
+.pipeline button:hover,.pipeline button[aria-expanded=true]{background:var(--tint)}
+.pipeline button:focus-visible{outline:2px solid var(--active);outline-offset:-2px}
+.pipeline .label{font-weight:600;font-size:14px}
+.pipeline .cmd{color:var(--soft);overflow-wrap:anywhere}
+.pipeline .fact{font-size:13px;margin-top:4px;overflow-wrap:anywhere}
+.pipeline li.done{border-top-color:var(--done)}
+.pipeline li.active{border-top-color:var(--active)}
+.pipeline li.attention{border-top-color:var(--blocked)}
+.pipeline li.pending .label{color:var(--soft);font-weight:500}
+.now{display:inline-block;font-size:11.5px;font-weight:600;color:var(--active);border:1px solid var(--active);border-radius:999px;padding:0 7px;margin-left:8px;vertical-align:1px;white-space:nowrap}
+.stepinfo{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-top:8px;padding:10px 14px;font-size:13px}
+.stepinfo h2{font-size:14px;margin:0 0 2px}
+.stepinfo p{margin:4px 0 0;overflow-wrap:anywhere}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:18px;align-items:start;margin-top:18px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:12px}
+.card h2{font-size:16px;margin:0;display:inline;overflow-wrap:anywhere}
+.card .sub{color:var(--soft);font-size:13px;margin:3px 0 0;overflow-wrap:anywhere}
+.pill{display:inline-block;font-size:12px;font-weight:600;border:1px solid var(--line);border-radius:999px;padding:0 9px;margin-left:8px;color:var(--soft);vertical-align:2px;white-space:nowrap}
+.pill.drawn{color:var(--done);border-color:var(--done)}
+.pill.in-design{color:var(--active);border-color:var(--active)}
+.chips{list-style:none;margin:12px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.chips li{border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+.chips .label{font-weight:600;font-size:13px}
+.chips .fact{color:var(--soft);font-size:12.5px;overflow-wrap:anywhere}
+.chips li.done{border-color:var(--done);background:var(--done-tint)}
+.chips li.done .label::before{content:"\2713\00a0";color:var(--done)}
+.chips li.active{border-color:var(--active);background:var(--active-tint)}
+.chips li.attention{border-color:var(--blocked);background:var(--blocked-tint)}
+.chips li.pending .label{color:var(--soft);font-weight:500}
+.about p{margin:6px 0 0;overflow-wrap:anywhere}
+.about ul{list-style:none;margin:8px 0 0;padding:0}
+.about li{padding:5px 0;border-top:1px solid var(--line);overflow-wrap:anywhere}
+.about li b{font-weight:600}
+.about .k{color:var(--soft);font-size:12.5px}
+aside section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:12px}
+aside h2{font-size:14px;margin:0 0 8px}
+aside ul{list-style:none;margin:0;padding:0}
+aside section.next{border-color:var(--active);background:var(--active-tint)}
+.next .cmd{font-weight:650;font-size:13.5px;overflow-wrap:anywhere}
+.next p{margin:4px 0 0;overflow-wrap:anywhere}
+.attn li{padding:6px 0;border-top:1px solid var(--line);font-size:13px;overflow-wrap:anywhere}
+.attn li:first-child{border-top:0;padding-top:0}
+.attn .more{color:var(--soft);font-size:12.5px;margin:3px 0 0}
+.feed li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:4px 0;font-size:13px}
+.feed .text{min-width:0;overflow-wrap:anywhere}
+.when{color:var(--soft);font-size:12px;white-space:nowrap}
+.docs li{padding:3px 0}
+.docs li.go{padding:0 0 8px;margin-bottom:6px;border-bottom:1px solid var(--line)}
+.docs li.go a{font-weight:600}
+.empty{color:var(--soft);font-size:13px}
+.problem{border-left:3px solid var(--blocked);padding:8px 12px;margin-top:16px;background:var(--panel);border-radius:0 8px 8px 0;overflow-wrap:anywhere}
+.live{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.live input{margin:0}
+dialog{border:1px solid var(--line);border-radius:12px;padding:0;background:var(--panel);color:var(--ink);width:min(860px,calc(100vw - 32px));height:calc(100vh - 48px);max-width:none;max-height:none;overflow:hidden}
+dialog::backdrop{background:rgba(10,14,18,.5)}
+.vwrap{display:flex;flex-direction:column;height:100%}
+.vhead{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--line)}
+.vhead select{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:6px 9px;min-height:34px;flex:1;min-width:140px;max-width:100%}
+.vhead .close{background:var(--tint);border:1px solid var(--line);border-radius:7px;padding:6px 12px;min-height:34px;cursor:pointer}
+.vbody{flex:1;overflow:auto;padding:14px 18px 28px}
+.notice{border-left:3px solid var(--blocked);background:var(--tint);padding:6px 10px;border-radius:0 5px 5px 0;margin:0 0 12px}
+.md{overflow-wrap:anywhere;font-size:14px;line-height:1.55}
+.md h2,.md h3,.md h4,.md h5,.md h6{line-height:1.25;margin:20px 0 6px}
+.md h2{font-size:21px}.md h3{font-size:17px}.md h4{font-size:15px}.md h5,.md h6{font-size:14px}
+.md>:first-child{margin-top:0}
+.md p{margin:8px 0}
+.md hr{border:0;border-top:1px solid var(--line);margin:16px 0}
+.md code{background:var(--tint);border-radius:4px;padding:0 4px}
+.md pre{background:var(--tint);border-radius:7px;padding:10px 12px;overflow:auto;margin:10px 0;white-space:pre}
+.md pre code{background:none;padding:0}
+.md ul{list-style:none;margin:8px 0;padding:0}
+.md li{display:flex;gap:7px;margin:3px 0}
+.md li .mark{flex:none;color:var(--soft)}
+.md li .item{min-width:0}
+.md blockquote{margin:8px 0;padding:2px 12px;border-left:3px solid var(--line);color:var(--soft)}
+.md .wrap{overflow-x:auto;margin:10px 0}
+.md table{border-collapse:collapse;font-size:13px}
+.md th,.md td{border:1px solid var(--line);padding:4px 8px;text-align:left;vertical-align:top}
+.md .url{color:var(--soft);font-size:12.5px}
+@media (max-width:980px){.layout{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:560px){.pipeline{grid-template-columns:minmax(0,1fr)!important}.pipeline li{border-left:0;border-bottom:1px solid var(--line)}.total .num{font-size:24px}dialog{width:100vw;height:100vh;border-radius:0;border:0}.vbody{padding:12px 14px 24px}}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div class="crumb"><a href="index.html">All specs</a><span class="live"><span id="updated"></span><label class="live"><input type="checkbox" id="auto" checked> Auto-refresh</label></span></div>
+  <h1 id="title"></h1>
+  <div class="id" id="sid">Product design</div>
+  <div class="total" id="total"><span class="num" id="num"></span><span class="what" id="what"></span><span class="bar" id="bar" role="img"></span></div>
+  <div class="counts" id="counts"></div>
+</header>
+<div class="problem" id="problem" hidden></div>
+<ol class="pipeline" id="pipeline"></ol>
+<div class="stepinfo" id="stepinfo" hidden></div>
+<div class="layout" id="layout">
+  <div>
+    <section class="card about" id="about" hidden></section>
+    <div id="areas"></div>
+    <div class="empty" id="noareas" hidden>No areas yet. The first conversation names them.</div>
+  </div>
+  <aside>
+    <section class="next" id="next" hidden><h2>Next step</h2><div class="cmd mono" id="nextcmd"></div><p id="nextwhy"></p></section>
+    <section><h2>Needs your attention</h2><ul class="attn" id="attn"></ul></section>
+    <section><h2>Latest activity</h2><ul class="feed" id="feed"></ul></section>
+    <section><h2>Documents</h2><ul class="docs" id="docs"></ul></section>
+  </aside>
+</div>
+</main>
+<dialog id="viewer" aria-label="Document">
+  <div class="vwrap">
+    <div class="vhead">
+      <select id="vname" aria-label="Choose a document"></select>
+      <a id="vopen" target="_blank" rel="noopener noreferrer">Open the file</a>
+      <button type="button" class="close" id="vclose">Close</button>
+    </div>
+    <div class="vbody" id="vbody" tabindex="0"></div>
+  </div>
+</dialog>
+<script type="application/json" id="data">/*DATA*/null</script>
+<script>
+(function () {
+  "use strict";
+  var D = JSON.parse(document.getElementById("data").textContent);
+  var STATES = {done: "Done", active: "In progress", attention: "Needs attention", pending: "Not started"};
+  var AREA_STATES = {"not-started": "not started", "in-design": "in design", drawn: "drawn"};
+  var EVENTS = {done: "done", in_progress: "started", failed: "failed", skipped: "skipped", note: "note"};
+  var KEY = "speckit-progress:design", HASH = "#state=";
+  var RELOAD_MS = 5000, QUIET_MS = 3000, LONG_LINE = 4000;
+
+  function $(id) { return document.getElementById(id); }
+  function el(tag, cls, text) { var n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined && text !== null) n.textContent = text; return n; }
+  function txt(s) { return document.createTextNode(s); }
+  function plural(n, word) { return n + " " + word + (n === 1 ? "" : "s"); }
+
+  // Reloading is how a file:// page refreshes, so what the reader opened has to survive it.
+  function load() {
+    try { var raw = sessionStorage.getItem(KEY); if (raw) return JSON.parse(raw) || {}; } catch (e) {}
+    try { if (location.hash.indexOf(HASH) === 0) return JSON.parse(decodeURIComponent(location.hash.slice(HASH.length))) || {}; } catch (e) {}
+    return {};
+  }
+  function save() {
+    var text = JSON.stringify(S);
+    try { sessionStorage.setItem(KEY, text); return; } catch (e) {}
+    try { location.replace(HASH + encodeURIComponent(text)); } catch (e) {}
+  }
+  function ago(ts) {
+    if (!ts) return "time unknown";
+    var s = (Date.now() - new Date(ts).getTime()) / 1000;
+    if (isNaN(s)) return "time unknown";
+    s = Math.max(0, s);
+    if (s < 60) return "just now";
+    if (s < 3600) return Math.round(s / 60) + " min ago";
+    if (s < 86400) return Math.round(s / 3600) + " h ago";
+    return Math.round(s / 86400) + " d ago";
+  }
+
+  var S = load();
+  document.title = (D.product || "Product") + " - Design progress";
+  $("title").textContent = D.product || "Product design";
+
+  function clock() { $("updated").textContent = "Updated " + ago(D.generated); }
+  var dlg = $("viewer"), auto = $("auto"), touched = 0;
+  function keepCurrent() {
+    clock();
+    auto.checked = S.auto !== false;
+    auto.addEventListener("change", function () { S.auto = auto.checked; save(); });
+    ["pointerdown", "keydown", "wheel"].forEach(function (name) { window.addEventListener(name, function () { touched = Date.now(); }, {passive: true}); });
+    setInterval(function () {
+      clock();
+      var sel = window.getSelection && window.getSelection();
+      if (!auto.checked || document.visibilityState !== "visible" || dlg.open || Date.now() - touched < QUIET_MS || (sel && !sel.isCollapsed)) return;
+      S.y = window.scrollY; save();
+      location.reload();
+    }, RELOAD_MS);
+    if (S.y) window.scrollTo(0, S.y);
+  }
+
+  // A design nobody can read: say why, and show nothing that would be a guess.
+  if (D.problem) {
+    $("problem").hidden = false;
+    $("problem").textContent = "The design cannot be read: " + D.problem;
+    $("total").hidden = true; $("pipeline").hidden = true; $("layout").hidden = true;
+    keepCurrent();
+    return;
+  }
+
+  // The total: how the areas stand
+  var T = D.totals, parts = [["drawn", "var(--done)", "drawn"], ["in_design", "var(--active)", "in design"], ["not_started", "var(--pending)", "not started"]];
+  $("num").textContent = T.drawn + " / " + T.areas;
+  $("what").textContent = "areas drawn";
+  $("bar").setAttribute("aria-label", T.drawn + " of " + plural(T.areas, "area") + " drawn, " + T.in_design + " in design");
+  parts.forEach(function (part) {
+    var n = T[part[0]] || 0;
+    if (n && part[0] !== "not_started") { var i = el("i"); i.style.width = (100 * n / T.areas) + "%"; i.style.background = part[1]; $("bar").appendChild(i); }
+    var c = el("span"), d = el("span", "dot"); d.style.background = part[1];
+    c.appendChild(d); c.appendChild(el("b", "", n)); c.appendChild(txt(" " + part[2]));
+    $("counts").appendChild(c);
+  });
+
+  // The steps a person runs, in order
+  function drawStep() {
+    var box = $("stepinfo"), step = D.steps.filter(function (s) { return s.name === S.step; })[0];
+    box.textContent = "";
+    box.hidden = !step;
+    if (!step) return;
+    box.appendChild(el("h2", "", step.label + ": " + (STATES[step.state] || step.state)));
+    box.appendChild(el("p", "", step.fact));
+    var run = el("p"); run.appendChild(txt("Command: ")); run.appendChild(el("span", "mono", step.command)); box.appendChild(run);
+    if (step.note) box.appendChild(el("p", "", "Last time: " + step.note));
+    if (step.who) box.appendChild(el("p", "", "By " + step.who + ", " + ago(step.ts)));
+  }
+  $("pipeline").style.gridTemplateColumns = "repeat(" + Math.max(D.steps.length, 1) + ",minmax(0,1fr))";
+  D.steps.forEach(function (s) {
+    var li = el("li", s.state), b = el("button"), label = el("div", "label", s.label);
+    b.type = "button"; b.setAttribute("aria-expanded", S.step === s.name ? "true" : "false");
+    b.title = s.label + ": " + s.fact;
+    if (s.running) label.appendChild(el("span", "now", "running now"));
+    b.appendChild(label);
+    b.appendChild(el("div", "cmd mono", s.command));
+    b.appendChild(el("div", "fact", s.fact));
+    b.addEventListener("click", function () {
+      S.step = S.step === s.name ? null : s.name; save(); drawStep();
+      Array.prototype.forEach.call($("pipeline").querySelectorAll("button"), function (n) { n.setAttribute("aria-expanded", n === b && S.step ? "true" : "false"); });
+    });
+    li.appendChild(b);
+    $("pipeline").appendChild(li);
+  });
+  drawStep();
+
+  // What was understood
+  var about = $("about"), sum = D.summary || {};
+  if (sum.idea || (sum.people || []).length || sum.look) {
+    about.hidden = false;
+    about.appendChild(el("h2", "", "The product"));
+    if (sum.idea) about.appendChild(el("p", "", sum.idea));
+    var facts = el("ul");
+    (sum.people || []).forEach(function (p) {
+      var li = el("li"); li.appendChild(el("b", "", p.name)); li.appendChild(txt(p.role ? ", " + p.role : ""));
+      if (p.about) li.appendChild(el("div", "k", p.about));
+      facts.appendChild(li);
+    });
+    if (sum.look) { var look = el("li"); look.appendChild(el("span", "k", "Look: ")); look.appendChild(txt(sum.look)); facts.appendChild(look); }
+    if (D.owner) { var owner = el("li"); owner.appendChild(el("span", "k", "Approves: ")); owner.appendChild(txt(D.owner)); facts.appendChild(owner); }
+    if (facts.children.length) about.appendChild(facts);
+  }
+
+  // The areas, each with its own steps
+  function rulesLine(rules) {
+    var draft = rules.draft || 0, approved = (rules.designed || 0) + (rules.implemented || 0), out = [];
+    if (draft) out.push(plural(draft, "rule") + " in draft");
+    if (approved) out.push(plural(approved, "rule") + " approved");
+    return out;
+  }
+  D.areas.forEach(function (a) {
+    var card = el("section", "card"), bits = [];
+    card.appendChild(el("h2", "", a.title));
+    card.appendChild(el("span", "pill " + a.state, AREA_STATES[a.state] || a.state));
+    if (a.state === "not-started") bits.push(a.covers || "Not described yet");
+    else {
+      bits.push(plural(a.screens, "screen"));
+      bits = bits.concat(rulesLine(a.rules || {}));
+      if (a.open) bits.push(plural(a.open, "question") + " open");
+    }
+    card.appendChild(el("p", "sub", bits.join(" · ")));
+    if (a.state === "not-started") {
+      var start = el("p", "sub"); start.appendChild(txt("Start it with ")); start.appendChild(el("span", "mono", a.command)); card.appendChild(start);
+    } else {
+      var chips = el("ul", "chips");
+      (a.steps || []).forEach(function (s) {
+        var li = el("li", s.state), label = el("div", "label", s.label);
+        if (s.running) label.appendChild(el("span", "now", "running now"));
+        li.appendChild(label);
+        li.appendChild(el("div", "fact", s.fact));
+        chips.appendChild(li);
+      });
+      card.appendChild(chips);
+    }
+    $("areas").appendChild(card);
+  });
+  $("noareas").hidden = D.areas.length > 0;
+
+  // Next step
+  if (D.next) {
+    $("next").hidden = false;
+    $("nextcmd").textContent = D.next.command;
+    $("nextwhy").textContent = D.next.why;
+  }
+
+  // Needs your attention
+  D.attention.forEach(function (a) {
+    var li = el("li", "", a.text);
+    (a.details || []).forEach(function (d) { li.appendChild(el("div", "more mono", d)); });
+    $("attn").appendChild(li);
+  });
+  if (!D.attention.length) $("attn").appendChild(el("li", "empty", "Nothing right now."));
+
+  // Latest activity
+  D.activity.slice(0, 12).forEach(function (e) {
+    var li = el("li"), text = el("div", "text", e.step + (e.area_title ? " · " + e.area_title : "") + " · " + (EVENTS[e.status] || e.status));
+    if (e.note) text.title = e.note;
+    li.appendChild(text);
+    li.appendChild(el("div", "when", ago(e.ts)));
+    $("feed").appendChild(li);
+  });
+  if (!D.activity.length) $("feed").appendChild(el("li", "empty", "Nothing recorded yet."));
+
+  // Reading the documents. Their text was written by a model or a person, so it is never parsed
+  // as HTML: every piece becomes a text node, and links stay text so they cannot be followed.
+  function docByName(name) { return (D.documents || []).filter(function (d) { return d.name === name; })[0]; }
+  function inline(parent, s) {
+    if (s.length > 4000) { parent.appendChild(txt(s)); return; }
+    var re = /`([^`\n]{1,1000})`|\*\*([^*\n]{1,1000})\*\*|\*([^*\n]{1,1000})\*|\[([^\]\n]{1,1000})\]\(([^)\n]{1,1000})\)/g, last = 0, m;
+    while ((m = re.exec(s))) {
+      if (m[3] !== undefined && /^\s|\s$/.test(m[3])) continue;
+      if (m.index > last) parent.appendChild(txt(s.slice(last, m.index)));
+      if (m[1] !== undefined) parent.appendChild(el("code", "", m[1]));
+      else if (m[2] !== undefined) parent.appendChild(el("strong", "", m[2]));
+      else if (m[3] !== undefined) parent.appendChild(el("em", "", m[3]));
+      else { parent.appendChild(txt(m[4] + " ")); parent.appendChild(el("span", "url", "(" + m[5] + ")")); }
+      last = re.lastIndex;
+    }
+    if (last < s.length) parent.appendChild(txt(s.slice(last)));
+  }
+  function cells(line) {
+    var s = line.trim();
+    if (s.charAt(0) === "|") s = s.slice(1);
+    if (s.charAt(s.length - 1) === "|") s = s.slice(0, -1);
+    return s.replace(/\\\|/g, "\u0000").split("|").map(function (c) { return c.trim().replace(/\u0000/g, "|"); });
+  }
+  function isSeparator(line) { return line.length < 2000 && /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(line) && line.indexOf("-") >= 0; }
+  function clipped(src) {
+    return src.split(/\r\n?|\n/).map(function (line) {
+      return line.length > LONG_LINE ? line.slice(0, LONG_LINE) + " … (long line cut, open the file to see it all)" : line;
+    });
+  }
+  function renderMarkdown(src) {
+    var root = el("div", "md"), lines = clipped(src), i = 0, para = [], list = null, m;
+    function flush() { if (para.length) { var p = el("p"); inline(p, para.join(" ")); root.appendChild(p); para = []; } }
+    while (i < lines.length) {
+      var line = lines[i];
+      if (!line.trim()) { flush(); list = null; i++; continue; }
+      if ((m = /^\s*(```+|~~~+)/.exec(line))) {
+        flush(); list = null;
+        var code = [], fence = m[1].charAt(0);
+        i++;
+        while (i < lines.length && !(/^\s*(```+|~~~+)/.test(lines[i]) && lines[i].trim().charAt(0) === fence)) { code.push(lines[i]); i++; }
+        i++;
+        var pre = el("pre"); pre.appendChild(el("code", "", code.join("\n"))); root.appendChild(pre);
+        continue;
+      }
+      if (/^\s*<!--/.test(line)) {
+        flush();
+        while (i < lines.length && lines[i].indexOf("-->") < 0) i++;
+        i++;
+        continue;
+      }
+      if (line.length < 2000) {
+        if ((m = /^(#{1,6})[ \t]+(.+)$/.exec(line))) {
+          flush(); list = null;
+          var h = el("h" + Math.min(+m[1].length + 1, 6));
+          inline(h, m[2].replace(/[ \t#]+$/, ""));
+          root.appendChild(h); i++;
+          continue;
+        }
+        if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { flush(); list = null; root.appendChild(el("hr")); i++; continue; }
+        if (line.indexOf("|") >= 0 && i + 1 < lines.length && isSeparator(lines[i + 1])) {
+          flush(); list = null;
+          var wrap = el("div", "wrap"), table = el("table"), thead = el("thead"), tr = el("tr"), body = el("tbody");
+          cells(line).forEach(function (c) { var th = el("th"); inline(th, c); tr.appendChild(th); });
+          thead.appendChild(tr); table.appendChild(thead); table.appendChild(body);
+          i += 2;
+          while (i < lines.length && lines[i].indexOf("|") >= 0 && lines[i].trim()) {
+            var br = el("tr");
+            cells(lines[i]).forEach(function (c) { var td = el("td"); inline(td, c); br.appendChild(td); });
+            body.appendChild(br); i++;
+          }
+          wrap.appendChild(table); root.appendChild(wrap);
+          continue;
+        }
+      }
+      if ((m = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/.exec(line))) {
+        flush();
+        if (!list) { list = el("ul"); root.appendChild(list); }
+        var li = el("li"), bullet = /\d/.test(m[2]) ? m[2] : "•";
+        li.style.marginLeft = Math.min(Math.floor(m[1].replace(/\t/g, "    ").length / 2), 6) * 14 + "px";
+        li.appendChild(el("span", "mark", bullet));
+        var item = el("span", "item"); inline(item, m[3]); li.appendChild(item);
+        list.appendChild(li); i++;
+        continue;
+      }
+      if ((m = /^\s*>\s?(.*)$/.exec(line))) {
+        flush(); list = null;
+        var q = el("blockquote"); inline(q, m[1]); root.appendChild(q); i++;
+        continue;
+      }
+      list = null;
+      para.push(line.trim()); i++;
+    }
+    flush();
+    return root;
+  }
+  function openDoc(name) {
+    var doc = docByName(name);
+    if (!doc) return;
+    S.doc = name; save();
+    $("vname").value = name;
+    $("vopen").setAttribute("href", doc.href);
+    var body = $("vbody");
+    body.textContent = "";
+    if (doc.truncated) body.appendChild(el("p", "notice", "This file is large, so only its first part is shown here. Open the file to read all of it."));
+    body.appendChild(renderMarkdown(doc.text));
+    if (!dlg.open) { if (dlg.showModal) dlg.showModal(); else dlg.setAttribute("open", "open"); }
+    document.body.classList.add("reading");
+    body.scrollTop = 0;
+  }
+  function closed() { delete S.doc; save(); document.body.classList.remove("reading"); }
+  (D.links || []).forEach(function (l) {
+    var li = el("li", "go"), a = el("a", "", l.label);
+    a.setAttribute("href", l.href); a.setAttribute("target", "_blank"); a.setAttribute("rel", "noopener noreferrer");
+    li.appendChild(a);
+    $("docs").appendChild(li);
+  });
+  (D.documents || []).forEach(function (d) {
+    $("vname").appendChild(new Option(d.name, d.name));
+    var li = el("li"), b = el("button", "link mono", d.name);
+    b.type = "button"; b.addEventListener("click", function () { openDoc(d.name); });
+    li.appendChild(b);
+    $("docs").appendChild(li);
+  });
+  if (D.screens) $("docs").appendChild(el("li", "empty", plural(D.screens, "screen") + " described in screens/"));
+  if (!(D.documents || []).length && !(D.links || []).length) $("docs").appendChild(el("li", "empty", "No documents yet."));
+  $("vname").addEventListener("change", function () { openDoc($("vname").value); });
+  $("vclose").addEventListener("click", function () { if (dlg.close) dlg.close(); else { dlg.removeAttribute("open"); closed(); } });
+  dlg.addEventListener("close", closed);
+  dlg.addEventListener("click", function (e) { if (e.target === dlg && dlg.close) dlg.close(); });
+
+  keepCurrent();
+  if (S.doc) openDoc(S.doc);
+})();
+</script>
+</body>
+</html>

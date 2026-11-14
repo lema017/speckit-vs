@@ -453,7 +453,7 @@ class TestClineIntegration(MarkdownIntegrationTests):
             ]:
                 files.append(f".specify/scripts/powershell/{name}")
 
-        for name in ["engine.py", "hook.py", "index.html", "page.html"]:
+        for name in ["design.html", "engine.py", "hook.py", "index.html", "page.html"]:
             files.append(f".specify/scripts/progress/{name}")
 
         for name in [

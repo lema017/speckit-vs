@@ -22,7 +22,7 @@ WRAPPERS = {
     "ps": ("powershell", ("progress.ps1", "run-step.ps1")),
     "py": ("python", ("progress.py", "run_step.py")),
 }
-ENGINE_FILES = ("engine.py", "hook.py", "page.html", "index.html")
+ENGINE_FILES = ("engine.py", "hook.py", "page.html", "index.html", "design.html")
 UPGRADE = "Run: specify integration upgrade"
 SHARED_MANIFEST = "speckit"  # Spec Kit's own files, not an integration.
 
