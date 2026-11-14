@@ -7,6 +7,7 @@ and specification maintenance.
 | Goal | Guide |
 | --- | --- |
 | Understand the development approach | [Understand Spec-Driven Development](sdd.md) |
+| Turn an idea into a mockup and business rules before the first spec | [Design the product first](studio.md) |
 | Start with code you already have | [Adopt Spec Kit in an existing project](existing-projects.md) |
 | Work across projects in one repository | [Work in a monorepo](monorepo.md) |
 | Agree on interfaces between components | [Define and evolve contracts](contract-driven-development.md) |

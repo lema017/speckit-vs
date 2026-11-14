@@ -40,6 +40,20 @@ Each group shows the request, how many of its slices are delivered, and the slic
 
 A slice is `delivered` when every task of its spec is closed and, if the spec changes rules, its delta is folded into the catalog. Specs that belong to no map come after the groups, under "Other specs". A project without slice maps gets the plain list.
 
+### The design of a product
+
+A project that is [designing its product](studio.md) has one more page, linked on top of the list of specs. `/speckit-progress design` opens it, and so does `/speckit-progress` while no spec is in progress:
+
+```bash
+specify progress open --design
+```
+
+![The progress page of a design: two of four areas drawn, the three steps with what each one has, each area with its own steps, the next command to run, what needs attention, the latest activity and the documents. The data is an example.](../images/progress-design.png)
+
+It shows the steps of the design in order, each area with its own steps, the command that comes next, what waits for the person, the latest activity and the documents. The steps and the areas come from the files under `specs/_product/`. The log, `specs/_product/progress.jsonl`, only adds which step is running and what was done last.
+
+Reading a design takes about as long as redrawing a spec's page, so the design page is redrawn when a design command ends, and when every page is drawn. A redraw after a task leaves it as it was.
+
 ## What the page shows
 
 - **Totals:** how many tasks are done, in progress, blocked, failed, skipped and pending.
