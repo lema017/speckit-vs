@@ -90,6 +90,20 @@
         "issues",
         "integration"
       ]
+    },
+    "studio": {
+      "name": "Product Studio",
+      "id": "studio",
+      "version": "0.1.0",
+      "description": "Design a product before building it: a guided conversation with the product owner, and a mockup to click through in the browser.",
+      "author": "lema017",
+      "repository": "https://github.com/lema017/speckit-vs",
+      "bundled": true,
+      "tags": [
+        "design",
+        "mockup",
+        "product"
+      ]
     }
   }
 }

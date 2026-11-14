@@ -100,8 +100,24 @@ def _confirm_extension_url_trust(
     return approvals
 
 
-# What a new project gets from ``specify init`` in this fork.
-DEFAULT_EXTENSIONS = ("capabilities",)
+# What a new project gets from ``specify init`` in this fork, in install order.
+DEFAULT_EXTENSIONS = ("capabilities", "studio")
+
+
+def _powershell_note(missing: list[str]) -> str:
+    """What to tell a PowerShell project about the defaults it does not get."""
+    one = len(missing) == 1
+    return (
+        "The %s extension%s %s not installed with PowerShell scripts: %s not been validated on Windows. To try %s, use %s."
+        % (
+            " and ".join(missing),
+            "" if one else "s",
+            "is" if one else "are",
+            "it has" if one else "they have",
+            "it" if one else "them",
+            " ".join("--extension %s" % name for name in missing),
+        )
+    )
 
 
 def _with_default_extensions(
@@ -724,17 +740,18 @@ def register(app: typer.Typer) -> None:
             has_commands,
             no_default_extensions,
         )
+        not_installed = [
+            name for name in DEFAULT_EXTENSIONS
+            if not any(_installs_extension(spec, name) for spec in extensions)
+        ]
         if (
             selected_script == "ps"
             and has_commands
             and is_new_project
             and not no_default_extensions
-            and not any(_installs_extension(spec, "capabilities") for spec in extensions)
+            and not_installed
         ):
-            console.print(
-                "[dim]The capabilities extension is not installed with PowerShell scripts: it has not "
-                "been validated on Windows. To try it, use --extension capabilities.[/dim]"
-            )
+            console.print(f"[dim]{_powershell_note(not_installed)}[/dim]")
 
         tracker = StepTracker("Initialize Specify Project")
 

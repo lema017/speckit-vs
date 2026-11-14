@@ -457,9 +457,11 @@ def test_on_every_integration_the_default_adds_only_its_own(tmp_path: Path, monk
     if not get_integration(key).list_command_templates():
         assert added == set()
         return
-    assert {path for path in added if "capabilities" not in path and not path.startswith("graphify-out/")} == _DEFAULT_ALSO_WRITES
-    in_project = [path for path in added if "capabilities" in path and not path.startswith(".specify/")]
-    assert in_project or list((tmp_path / "home").rglob("*capabilities*")), "no command reached this integration"
+    named = ("capabilities", "studio")
+    assert {path for path in added if not any(name in path for name in named) and not path.startswith("graphify-out/")} == _DEFAULT_ALSO_WRITES
+    for name in named:
+        in_project = [path for path in added if name in path and not path.startswith(".specify/")]
+        assert in_project or list((tmp_path / "home").rglob("*%s*" % name)), "no command of %s reached this integration" % name
 
 
 def _files(*roots: Path) -> dict[str, bytes]:
@@ -533,13 +535,13 @@ def test_a_graph_that_cannot_be_built_does_not_stop_init(tmp_path: Path, monkeyp
     monkeypatch.setattr(command_init, "build_first_graph", lambda _project: ("error", "not built: update-failed"))
     project, output = _default_ext_init(tmp_path)
     assert "not built: update-failed" in output
-    assert _installed(project) == ["capabilities"]
+    assert _installed(project) == ["capabilities", "studio"]
 
 
 def test_a_new_project_gets_the_default_extensions(tmp_path: Path):
     project, output = _default_ext_init(tmp_path)
-    assert _installed(project) == ["capabilities"]
-    assert "Install extension: capabilities" in output
+    assert _installed(project) == ["capabilities", "studio"]
+    assert "Install extension: capabilities" in output and "Install extension: studio" in output
     assert (project / ".claude/skills/speckit-capabilities-locate/SKILL.md").is_file()
     # Two hooks of its own before specify: the cut into slices, then the rules of the slice.
     assert _hook_order(project, "before_specify") == ["capabilities", "capabilities"]
@@ -552,16 +554,33 @@ def test_a_new_project_gets_the_default_extensions(tmp_path: Path):
     assert "## Slice *(mandatory)*" in template and "## Capability Delta" in template
 
 
+def test_a_new_project_can_design_its_product(tmp_path: Path):
+    """The studio extension brings its three commands, what they read, and the kit of the mockup. It adds no hook."""
+    project, _ = _default_ext_init(tmp_path)
+    for command in ("define", "map", "mockup"):
+        skill = (project / (".claude/skills/speckit-studio-%s/SKILL.md" % command)).read_text(encoding="utf-8")
+        assert "python3 .specify/extensions/studio/scripts/python/studio.py status" in skill
+        assert ".specify/scripts/bash/progress.sh --harness claude design %s done" % command in skill
+        assert "{SCRIPT}" not in skill and "{PROGRESS}" not in skill and "$ARGUMENTS" in skill
+    studio = project / ".specify/extensions/studio"
+    for name in ("guide/conversation.md", "guide/files.md", "guide/kit.md", "mockup/_studio/kit.css", "mockup/_studio/runtime.js",
+                 "mockup/_studio/directions.html", "scripts/python/studio.py"):
+        assert (studio / name).is_file(), name
+    config = yaml.safe_load((project / ".specify" / "extensions.yml").read_text(encoding="utf-8"))
+    assert all(hook["extension"] != "studio" for hooks in config["hooks"].values() for hook in hooks)
+    assert not (project / "specs" / "_product").exists(), "a design starts when the person asks for one"
+
+
 def test_the_default_runs_before_what_the_user_asks_for(tmp_path: Path):
     """Prompts run hooks in install order: fold has to run before the commit offer of git."""
     project, _ = _default_ext_init(tmp_path, "--extension", "git")
-    assert _installed(project) == ["capabilities", "git"]
+    assert _installed(project) == ["capabilities", "studio", "git"]
     assert _hook_order(project, "after_implement")[0] == "capabilities"
 
 
 def test_asking_for_a_default_by_name_installs_it_once_where_it_was_asked(tmp_path: Path):
     project, output = _default_ext_init(tmp_path, "--extension", "git", "--extension", "capabilities")
-    assert _installed(project) == ["git", "capabilities"]
+    assert _installed(project) == ["studio", "git", "capabilities"]
     assert output.count("Install extension: capabilities") == 1
 
 
@@ -569,7 +588,7 @@ def test_asking_for_a_default_by_its_directory_replaces_it(tmp_path: Path):
     """The default would install first, and the copy that was asked for would fail as already installed."""
     source = Path(__file__).resolve().parents[2] / "extensions" / "capabilities"
     project, output = _default_ext_init(tmp_path, "--extension", str(source))
-    assert _installed(project) == ["capabilities"]
+    assert _installed(project) == ["studio", "capabilities"]
     assert "already installed" not in output
 
 
@@ -592,14 +611,15 @@ def test_a_workflow_run_directory_does_not_make_a_project_existing(tmp_path: Pat
     """The engine creates ``.specify/workflows/runs/`` before its init step runs."""
     (tmp_path / "demo" / ".specify" / "workflows" / "runs").mkdir(parents=True)
     project, _ = _default_ext_init(tmp_path)
-    assert _installed(project) == ["capabilities"]
+    assert _installed(project) == ["capabilities", "studio"]
 
 
 def test_no_default_extensions_leaves_the_core_project(tmp_path: Path):
     project, output = _default_ext_init(tmp_path, "--no-default-extensions")
     assert _installed(project) == []
-    assert "capabilities" not in output
-    assert not (project / ".specify/extensions/capabilities").exists()
+    assert "capabilities" not in output and "studio" not in output
+    assert not (project / ".specify/extensions/capabilities").exists() and not (project / ".specify/extensions/studio").exists()
+    assert not (project / ".claude/skills/speckit-studio-define").exists()
     assert not (project / ".claude/skills/speckit-capabilities-locate").exists()
     assert "Capability Delta" not in (project / ".specify/templates/spec-template.md").read_text(encoding="utf-8")
 
@@ -618,10 +638,10 @@ def test_removing_a_default_lasts_through_a_re_init(tmp_path: Path):
     finally:
         os.chdir(previous)
     assert removed.exit_code == 0, removed.output
-    assert _installed(project) == []
+    assert _installed(project) == ["studio"]
 
     project, output = _default_ext_init(tmp_path)
-    assert _installed(project) == []
+    assert _installed(project) == ["studio"]
     assert "Install extension: capabilities" not in output
 
 
@@ -634,14 +654,16 @@ def test_an_existing_project_is_not_given_a_default_it_never_had(tmp_path: Path)
 def test_a_re_init_keeps_the_default_of_a_project_that_has_it(tmp_path: Path):
     project, _ = _default_ext_init(tmp_path)
     project, _ = _default_ext_init(tmp_path)
-    assert _installed(project) == ["capabilities"]
+    assert _installed(project) == ["capabilities", "studio"]
 
 
 def test_powershell_does_not_get_a_default_validated_only_with_python3(tmp_path: Path):
     """The prompts call ``python3``, which a Windows machine may not have. Nothing here ran on Windows."""
     project, output = _default_ext_init(tmp_path, script="ps")
     assert _installed(project) == []
-    assert "--extension capabilities" in output.replace("\n", " ")
+    note = " ".join(output.split())
+    assert "The capabilities and studio extensions are not installed with PowerShell scripts: they have not been validated on Windows." in note
+    assert "To try them, use --extension capabilities --extension studio." in note
 
     project, _ = _default_ext_init(tmp_path, "--extension", "capabilities", name="asked", script="ps")
     assert _installed(project) == ["capabilities"]
@@ -650,15 +672,20 @@ def test_powershell_does_not_get_a_default_validated_only_with_python3(tmp_path:
 @pytest.mark.parametrize("args", [(), ("--no-default-extensions",)])
 def test_the_powershell_note_is_for_a_new_project_that_did_not_opt_out(tmp_path: Path, args: tuple[str, ...]):
     _, first = _default_ext_init(tmp_path, *args, script="ps")
-    assert ("--extension capabilities" in first.replace("\n", " ")) == (not args)
+    assert ("--extension capabilities" in " ".join(first.split())) == (not args)
     _, again = _default_ext_init(tmp_path, *args, script="ps")
-    assert "--extension capabilities" not in again.replace("\n", " ")
+    assert "--extension capabilities" not in " ".join(again.split())
 
 
 def test_the_powershell_note_is_not_for_a_project_that_has_it(tmp_path: Path):
     source = Path(__file__).resolve().parents[2] / "extensions" / "capabilities"
     project, output = _default_ext_init(tmp_path, "--extension", str(source), script="ps")
     assert _installed(project) == ["capabilities"]
+    note = " ".join(output.split())
+    assert "The studio extension is not installed with PowerShell scripts: it has not been validated on Windows. To try it, use --extension studio." in note
+    assert "--extension capabilities" not in note
+    project, output = _default_ext_init(tmp_path, "--extension", "capabilities", "--extension", "studio", name="both", script="ps")
+    assert _installed(project) == ["capabilities", "studio"]
     assert "not installed with PowerShell" not in output.replace("\n", " ")
     _, again = _default_ext_init(tmp_path, script="ps")
     assert "not installed with PowerShell" not in again.replace("\n", " ")
