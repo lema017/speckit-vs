@@ -1,6 +1,6 @@
 # Design the product first
 
-Before the first spec, a product owner can turn an idea into something they can see and approve: a mockup to click through and comment on in the browser, and the business rules of the product, approved with their name. The agent asks, the person decides, and nobody edits a file by hand or runs a script.
+Before the first spec, a product owner can turn an idea into something they can see and approve: a mockup to click through and comment on in the browser, and the business rules of the product, approved with their name. Then each area is cut into small specs that are built from what was designed. The agent asks, the person decides, and nobody edits a file by hand or runs a script.
 
 This is the `studio` extension. `specify init` installs it in every new project of this fork.
 
@@ -11,8 +11,9 @@ This is the `studio` extension. `specify init` installs it in every new project 
 | 3 | `/speckit-studio-mockup` | Nothing: the agent builds it | The mockup open in your browser, and a picture of each screen |
 | 4 | `/speckit-studio-iterate` | Comment on the mockup, or say the change in words, and say yes to each change | The design and the mockup changed |
 | 5 | `/speckit-studio-approve <area>` | Read the exact text of each rule and say yes | The rules of the area approved, with your name and the date |
+| 6 | `/speckit-studio-slice <area>` | Read the list of slices and say yes | The area cut into slices, each with its screens and its rules. One spec builds one slice |
 
-Steps 3 and 4 repeat until the mockup is right. Agents that name commands with dots use `/speckit.studio.define`, `/speckit.studio.map`, `/speckit.studio.mockup`, `/speckit.studio.iterate` and `/speckit.studio.approve`. See [Command invocation](../integrations/cli.md#command-invocation).
+Steps 3 and 4 repeat until the mockup is right. After step 6, `/speckit-specify D-…` writes the spec of one slice. Agents that name commands with dots use `/speckit.studio.define`, `/speckit.studio.map`, `/speckit.studio.mockup`, `/speckit.studio.iterate`, `/speckit.studio.approve` and `/speckit.studio.slice`. See [Command invocation](../integrations/cli.md#command-invocation).
 
 ## Start the conversation
 
@@ -153,12 +154,53 @@ From then on the rules are the reference: a spec builds them as they are written
 
 To change a rule after it was approved, ask for it with `/speckit-studio-iterate`. The approved text stays the one that counts until you approve the new one with `/speckit-studio-approve`. Meanwhile the mockup shows both. A rule that is already built changes with a spec.
 
-To build what you approved, cut the rules of a capability into slices and write one spec per slice. See [capabilities](capabilities.md):
+## Cut the area into specs
+
+When the rules of an area are approved:
 
 ```text
-/speckit-capabilities-slice login
-/speckit-specify D-login-clave
+/speckit-studio-slice acceso
 ```
+
+1. The agent proposes the slices of the area, in the order to build them. A slice is one thing a person can do and check from end to end: one story, with the screens that show it and the rules it needs.
+2. You approve the list, or say what to change. Nothing is written before your yes.
+3. The slices are kept in `specs/_slices/acceso.md`.
+
+For "acceso" the list could be:
+
+| Slice | What you check |
+| --- | --- |
+| `D-acceso-registro` | I create an account and see my home |
+| `D-acceso-clave` | I sign in with my email and my password |
+| `D-acceso-recuperar` | I change my password with the link from the email |
+| `D-acceso-social` | I sign in with Google |
+
+- **One spec builds one slice,** so each spec is small. See [slices](capabilities.md#one-spec-one-slice).
+- **A screen can be in several slices.** The sign-in screen serves the password and the providers: each slice builds its part of it.
+- **A rule is built by one slice.** A slice that needs a rule another one builds comes after it. A rule nothing needs yet is left for later, with the reason.
+- **A rule in two parts goes in the slice that finishes it.** "A cancelled workshop leaves the list, and its page says it was cancelled" is seen on two screens. The slice of the list shows its part, and the slice of the page builds the rule: only then can you check all of it.
+- **Nothing in the design changes here.** If the cut shows that a story or a rule is wrong, that is `/speckit-studio-iterate`.
+
+## Build a slice
+
+```text
+/speckit-specify D-acceso-clave
+```
+
+The command is the one of every spec. For a slice cut from a design it receives what you designed, so the spec says what you approved and invents nothing:
+
+- the rules of the slice, with their exact text and the example each was approved with;
+- its story, with its criteria;
+- each of its screens: what it is for, every button and field, every state, and the page of the mockup;
+- what you decided about the product and about the area. `/speckit-clarify-deep` does not ask it again, and it asks in the language of the product.
+
+Then come `/speckit-plan`, `/speckit-tasks` and `/speckit-implement`, as for any spec. To build every slice of an area one after another, with a stop at each one:
+
+```bash
+specify workflow run sliced --input map=acceso
+```
+
+The mockup follows the work. Under **Rules**, each rule says how far it is: in draft, approved, in a spec or built, and which slice builds it.
 
 ## See how far the design is
 
@@ -166,9 +208,9 @@ To build what you approved, cut the rules of a capability into slices and write 
 /speckit-progress design
 ```
 
-![The progress page of a design: how many areas are approved, the five steps with what each one has, each area with its own steps, the next command to run, what needs attention, the latest activity and the documents. The data is an example.](../images/progress-design.png)
+![The progress page of a design: how many areas are approved, the six steps with what each one has, each area with its own steps, the next command to run, what needs attention, the latest activity and the documents. The data is an example.](../images/progress-design.png)
 
-The page shows how many areas are approved, the steps in order with what each one has, each area with its own steps, the command that comes next and why, what waits for you, the latest activity, and the documents of the design. Comments that wait to be applied and rules that changed after they were approved are listed under what needs your attention. It comes from the files of the design, not from what the agent says it did. Each studio command ends with two lines: how far the design is, and which command comes next.
+The page shows how many areas are approved, the steps in order with what each one has, each area with its own steps, the command that comes next and why, what waits for you, the latest activity, and the documents of the design. Comments that wait to be applied, rules that changed after they were approved and stories that are in no slice yet are listed under what needs your attention. Once an area is cut, its last step counts the slices delivered, and the list of specs groups its specs under the area. It comes from the files of the design, not from what the agent says it did. Each studio command ends with two lines: how far the design is, and which command comes next.
 
 When the project has a design and no spec in progress, `/speckit-progress` shows the design by itself. In the terminal:
 
@@ -203,7 +245,7 @@ To check that the files and the pages agree:
 specify studio check
 ```
 
-It fails when a story has no screen, a button leads to a screen that does not exist, a page uses a state its screen does not have, a rule is cited by nobody, a page cannot be reached, or a draft gives another text to a rule that is already built. It notes, without failing, colors that cannot be read, links to something that is not designed yet, and a change to an approved rule that waits for its approval.
+It fails when a story has no screen, a button leads to a screen that does not exist, a page uses a state its screen does not have, a rule is cited by nobody, a page cannot be reached, a draft gives another text to a rule that is already built, or a slice names a story or a screen the design does not have. It notes, without failing, colors that cannot be read, links to something that is not designed yet, a change to an approved rule that waits for its approval, and a story of a cut area that is in no slice.
 
 ## Add it to an existing project
 
@@ -217,10 +259,10 @@ A project that already has code can use it too. The agent reads what the product
 
 ## Limits
 
-- **This version stops at the approved rules.** Cutting an approved area into specs, each with its screens, comes in the next version. Until then `/speckit-capabilities-slice` cuts the rules, and `/speckit-specify` does not read the screens by itself: name them in your request.
+- **A spec can change a rule you approved, and the design does not tell you yet.** The catalog records the change with the spec that made it. `/speckit-capabilities-check` shows it.
 - **An approved rule cannot be retired yet.** Its text can change. Taking it out of the catalog comes later.
 - **One person comments at a time.** The mockup is served to the computer that runs it.
-- **Approving needs the `capabilities` extension,** which keeps the approved rules. Every new project of this fork has it.
+- **Approving and cutting need the `capabilities` extension,** which keeps the approved rules and the slices. Every new project of this fork has it.
 - **The pictures need a browser.** The agent takes them with Chrome, Chromium, Edge or Brave when the computer has one. Without one, it gives you the link. `SPECKIT_STUDIO_BROWSER` names another browser.
 - **The bar of the mockup is in English or Spanish.** A product in another language gets the bar in English. The screens are in the language of the product.
 - **Fonts are the ones the computer has.** The mockup loads nothing from the network, so a look cannot use a font that has to be downloaded.

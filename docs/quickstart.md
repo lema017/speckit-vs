@@ -49,7 +49,7 @@ starting either path.
 8. `/speckit-implement`
 9. `/speckit-converge`
 
-Every project also gets this map as a picture in Spanish, `.specify/lifecycle.png`, and `specify init` ends by pointing to it. The picture adds the capabilities commands, marks the optional steps, and names every command as Claude Code invokes it. It shows where a large request is cut into slices and how to go on to the next one. It also lists the catalog's script subcommands for when they apply: `publish-design` to approve rules before their code exists, `defer` to leave a designed rule for another spec, and `rebase` when two branches change the same capability.
+Every project also gets this map as a picture in Spanish, `.specify/lifecycle.png`, and `specify init` ends by pointing to it. The picture adds the capabilities commands, marks the optional steps, and names every command as Claude Code invokes it. It starts with the six commands that [design a product](how-to/studio.md) before its first spec, for a project that wants to. It shows where a large request is cut into slices and how to go on to the next one. It also lists the catalog's script subcommands for when they apply: `publish-design` to approve rules before their code exists, `defer` to leave a designed rule for another spec, and `rebase` when two branches change the same capability.
 
 ### Install Specify
 
