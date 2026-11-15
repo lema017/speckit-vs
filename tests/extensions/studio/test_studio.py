@@ -27,6 +27,20 @@ PAGE = "mockup/entrar.html"
 PENDING = "specs/_product/mockup/inicio.html: 6 links lead to something that is not designed yet: #proponer, #taller, #talleres"
 FINE = (0, {"status": "ok", "hard": [], "notes": [PENDING]})
 IGNORED = ["mockup/_studio/", "mockup/index.html", "mockup/_shots/"]
+RULES = {"login": ["R-login-lockout", "R-login-oauth", "R-login-attempts-warning"], "signup": ["R-signup-unique-email", "R-password-length"],
+         "password-reset": ["R-reset-link"]}
+
+
+def approved_by_hand(project):
+    """Oficio with every rule of Acceso in the catalog as approved, and no draft left: what `approve` leaves, without running it."""
+    drafts = project.read("capability-drafts.md")
+    for capability, rules in RULES.items():
+        lines = ["- **%s** [designed]: %s (specs/_capabilities/_changes/x)" % (rule, re.search(r"### %s\n- Text: (.+)" % rule, drafts).group(1)) for rule in rules]
+        folder = project.path / "specs" / "_capabilities" / capability
+        folder.mkdir(parents=True)
+        (folder / "spec.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    project.write("capability-drafts.md", "# Capability drafts\n")
+    return project
 
 
 # ---------------------------------------------------------------- scaffold: where a design starts
@@ -84,7 +98,7 @@ def test_scaffold_does_not_write_through_a_link(empty, tmp_path):
     (("status", "--name", "Oficio"), "--name goes with scaffold"),
     (("check", "--owner", "Ana"), "--owner goes with scaffold"),
     (("build", "--language", "es"), "--language goes with scaffold"),
-    (("approve",), "invalid choice"),
+    (("slice",), "invalid choice"),
 ])
 def test_a_wrong_call_is_refused(oficio, args, needle):
     rc, out = oficio.run(*args)
@@ -106,9 +120,11 @@ def test_status_says_how_far_the_product_and_each_area_are(oficio):
     assert [area["id"] for area in out["areas"]] == ["acceso", "inicio"], "in the order of navigation.md"
     assert oficio.area("acceso") == {
         "id": "acceso", "title": "Acceso", "covers": "Entrar, crear una cuenta y recuperar la contraseña", "state": "drawn", "stories": 4, "screens": 5,
-        "pages": 5, "rules": {"draft": 6}, "asked": 0, "open": 0, "decisions": 1, "links_pending": 0, "steps": {"map": "done", "mockup": "done"}}
+        "pages": 5, "rules": {"draft": 6}, "asked": 0, "open": 0, "decisions": 1, "links_pending": 0, "comments": 0, "approved": 0,
+        "steps": {"map": "done", "mockup": "done", "iterate": "pending", "approve": "pending"}}
     assert out["check"] == {"hard": 0, "notes": 1}
-    assert out["next"] == {"command": "speckit.studio.mockup", "args": "", "why": "Every area is drawn. Open the mockup and say what to change."}
+    assert out["next"] == {"command": "speckit.studio.approve", "args": "acceso",
+                           "why": "Acceso is drawn. Approve its rules when the mockup is right, or say what to change first."}
 
 
 @pytest.mark.parametrize("name", ["vision.md", "actors.md", "navigation.md", "look-and-feel.md"])
@@ -148,13 +164,15 @@ def test_an_area_nobody_described_comes_next(oficio):
     oficio.edit("navigation.md", "## Flows", "### talleres Talleres\n- Covers: Ver los talleres y apuntarse\n\n## Flows")
     area = oficio.area("talleres")
     assert (area["state"], area["steps"]["map"], area["steps"]["mockup"], area["stories"], area["screens"]) == ("not-started", "pending", "pending", 0, 0)
-    assert oficio.status()["next"] == {"command": "speckit.studio.map", "args": "talleres", "why": "Talleres is not described yet."}
+    assert area["steps"]["iterate"] == area["steps"]["approve"] == "pending"
+    assert oficio.status()["next"]["command"] == "speckit.studio.approve", "the area that is drawn is approved before another one is described"
+    assert approved_by_hand(oficio).status()["next"] == {"command": "speckit.studio.map", "args": "talleres", "why": "Talleres is not described yet."}
 
 
 def test_an_area_is_half_described_while_a_story_has_no_screen(oficio):
     oficio.edit(HOME, "- Stories: ST-5", "- Stories: none")
     assert oficio.area("inicio")["steps"]["map"] == "active"
-    assert oficio.status()["next"] == {"command": "speckit.studio.map", "args": "inicio", "why": "Inicio is half described."}
+    assert approved_by_hand(oficio).status()["next"] == {"command": "speckit.studio.map", "args": "inicio", "why": "Inicio is half described."}
 
 
 def test_an_area_is_drawn_when_every_screen_has_its_page(oficio):
@@ -325,14 +343,30 @@ def test_a_rule_that_is_cited_exists_and_a_draft_is_cited(oficio):
     assert oficio.hard("capability-drafts.md", "no story and no screen cites R-signup-terms")
 
 
-def test_a_draft_does_not_rewrite_a_rule_of_the_catalog(oficio):
+def test_a_draft_does_not_rewrite_a_rule_that_is_built(oficio):
+    folder = oficio.path / "specs/_capabilities/login"
+    folder.mkdir(parents=True)
+    (folder / "spec.md").write_text("- **R-login-lockout**: Tras 3 intentos fallidos, la cuenta se bloquea 30 minutos. (specs/001-login)\n", encoding="utf-8")
+    assert oficio.hard("capability-drafts.md", "R-login-lockout is built, and the draft gives it another text; a built rule changes with a spec, not with a draft")
+    assert oficio.area("acceso")["rules"] == {"implemented": 1, "draft": 5}, "a draft proposes a change only to a rule nobody built"
+    (folder / "spec.md").write_text("- **R-login-lockout**: Tras 5 intentos fallidos seguidos, la cuenta se bloquea 15 minutos. (specs/001-login)\n", encoding="utf-8")
+    assert oficio.check()[0] == 0
+    assert oficio.notes("capability-drafts.md", "R-login-lockout is already in the catalog with this text; speckit.studio.approve takes the draft away")
+
+
+def test_a_draft_with_another_text_is_a_change_to_an_approved_rule(oficio):
     folder = oficio.path / "specs/_capabilities/login"
     folder.mkdir(parents=True)
     (folder / "spec.md").write_text("- **R-login-lockout** [designed]: Tras 3 intentos fallidos, la cuenta se bloquea 30 minutos. (specs/_capabilities/_changes/x)\n", encoding="utf-8")
-    assert oficio.hard("capability-drafts.md", "R-login-lockout is in the catalog with another text; a draft does not rewrite an approved rule")
+    assert oficio.check()[0] == 0, "it stops nothing: the approved text counts until the new one is approved"
+    assert oficio.notes("capability-drafts.md", "R-login-lockout is approved with another text; this draft is a change that waits for speckit.studio.approve")
+
+
+def test_a_draft_does_not_move_a_rule_to_another_capability(oficio):
+    folder = oficio.path / "specs/_capabilities/access"
+    folder.mkdir(parents=True)
     (folder / "spec.md").write_text("- **R-login-lockout** [designed]: Tras 5 intentos fallidos seguidos, la cuenta se bloquea 15 minutos. (specs/_capabilities/_changes/x)\n", encoding="utf-8")
-    assert oficio.check()[0] == 0
-    assert oficio.notes("capability-drafts.md", "R-login-lockout is already in the catalog with this text; the draft can go")
+    assert oficio.hard("capability-drafts.md", "R-login-lockout belongs to the capability access in the catalog, and to login here")
 
 
 def test_a_folder_of_the_catalog_that_is_not_a_capability_holds_no_rules(oficio):
@@ -564,14 +598,18 @@ def test_status_lists_the_steps_with_what_their_files_prove(oficio):
     assert out["steps"] == [
         {"name": "define", "command": "speckit.studio.define", "state": "done", "fact": "2 decisions"},
         {"name": "map", "command": "speckit.studio.map", "state": "done", "fact": "2 of 2 areas"},
-        {"name": "mockup", "command": "speckit.studio.mockup", "state": "done", "fact": "6 of 6 screens"}]
-    assert out["totals"] == {"areas": 2, "not_started": 0, "in_design": 0, "drawn": 2, "screens": 6, "pages": 6, "rules": 6, "decisions": 3}
+        {"name": "mockup", "command": "speckit.studio.mockup", "state": "done", "fact": "6 of 6 screens"},
+        {"name": "iterate", "command": "speckit.studio.iterate", "state": "pending", "fact": "No comments yet"},
+        {"name": "approve", "command": "speckit.studio.approve", "state": "active", "fact": "1 of 2 areas"}]
+    assert out["totals"] == {"areas": 2, "not_started": 0, "in_design": 0, "drawn": 1, "approved": 1, "screens": 6, "pages": 6, "rules": 6, "decisions": 3}
+    assert out["comments"] == {"open": 0, "applied": 0, "declined": 0, "withdrawn": 0}
 
 
 def test_a_product_that_only_has_a_name_has_every_step_ahead(empty):
     empty.run("scaffold", "--name", "Oficio")
     out = empty.status()
-    assert [(step["state"], step["fact"]) for step in out["steps"]] == [("active", "Not started"), ("pending", "No areas yet"), ("pending", "No screens yet")]
+    assert [(step["state"], step["fact"]) for step in out["steps"]] == [("active", "Not started"), ("pending", "No areas yet"), ("pending", "No screens yet"),
+                                                                        ("pending", "No comments yet"), ("pending", "No areas yet")]
     assert out["totals"]["areas"] == 0 and out["attention"] == [] and out["mockup"] is False and out["documents"] == []
     assert out["summary"] == {"idea": "", "people": [], "look": ""}
 
@@ -589,7 +627,7 @@ def test_the_map_step_counts_the_areas_that_are_described(oficio):
     oficio.edit("navigation.md", "## Flows", "### talleres Talleres\n- Covers: Ver los talleres y apuntarse\n\n## Flows")
     out = oficio.status()
     assert out["steps"][1] == {"name": "map", "command": "speckit.studio.map", "state": "active", "fact": "2 of 3 areas"}
-    assert (out["totals"]["not_started"], out["totals"]["drawn"]) == (1, 2)
+    assert (out["totals"]["not_started"], out["totals"]["drawn"], out["totals"]["approved"]) == (1, 1, 1)
     for name in ("story-map.md", "capability-drafts.md"):
         oficio.write(name, "")
     for path in (oficio.product / "screens").glob("*.md"):
@@ -707,7 +745,7 @@ def test_a_rule_the_catalog_has_is_past_its_draft(oficio):
     folder = oficio.path / "specs/_capabilities/login"
     folder.mkdir(parents=True)
     (folder / "spec.md").write_text("- **R-login-lockout** [designed]: Tras 5 intentos fallidos seguidos, la cuenta se bloquea 15 minutos. (specs/_capabilities/_changes/x)\n", encoding="utf-8")
-    assert oficio.notes("capability-drafts.md", "R-login-lockout is already in the catalog with this text; the draft can go")
+    assert oficio.notes("capability-drafts.md", "R-login-lockout is already in the catalog with this text; speckit.studio.approve takes the draft away")
     assert oficio.area("acceso")["rules"] == {"designed": 1, "draft": 5}
     oficio.run("build")
     assert oficio.built("product.js")["reglas"]["R-login-lockout"]["estado"] == "designed"
@@ -792,7 +830,7 @@ def test_a_product_of_one_screen_can_be_seen_early(empty):
     rc, out = empty.check()
     assert rc == 0 and out["hard"] == [], "one screen has nowhere else to lead"
     out = empty.status()
-    assert [step["state"] for step in out["steps"]] == ["active", "done", "done"]
+    assert [step["state"] for step in out["steps"]] == ["active", "done", "done", "pending", "done"], "an area with no rule has nothing to approve"
     assert out["next"]["command"] == "speckit.studio.define", "the look is not chosen yet"
     rc, out = empty.run("build")
     assert rc == 0 and empty.built("screens.js")["entrada"] == "SCR-notas" and empty.built("product.js")["personas"] == []
@@ -915,7 +953,7 @@ def test_pick_refuses_a_direction_that_is_not_there_or_not_complete(oficio):
 @pytest.mark.parametrize("args, needle", [
     (("pick",), "pick takes the letter of a direction, such as A"),
     (("pick", "b"), "pick takes the letter of a direction, such as A"),
-    (("status", "B"), "a letter goes with pick"),
+    (("status", "B"), "a word after the command goes with pick or approve or comments"),
     (("build", "--page", "directions"), "--page goes with open or shots"),
     (("open", "--area", "acceso"), "--area goes with shots"),
     (("open", "--states"), "--states goes with shots"),
@@ -961,9 +999,12 @@ def test_open_opens_the_browser_when_asked_and_allowed(oficio, studio, monkeypat
     seen = []
     monkeypatch.setattr("webbrowser.open", lambda link: seen.append(link) or True)
     monkeypatch.setattr(studio, "can_open", lambda: allowed)
+    # The person asked for no server here. If one were started anyway, it would be this one, and nothing would be left running.
+    monkeypatch.setattr(studio, "server_state", lambda root: None)
+    monkeypatch.setattr(studio, "start_server", lambda root: {"port": 47123, "session": "s"})
     kit = EXT_DIR / "mockup" / "_studio"
-    link, opened = studio.show(studio.Product(oficio.path), kit, None, wanted)
-    assert opened is opens and seen == ([link] if opens else [])
+    link, opened, served = studio.show(studio.Product(oficio.path), kit, None, wanted)
+    assert opened is opens and seen == ([link] if opens else []) and served is False
     assert link == (oficio.product / "mockup" / "index.html").resolve().as_uri()
 
 
@@ -1116,3 +1157,872 @@ def test_the_browser_for_the_pictures_can_be_named(studio, tmp_path):
     named.write_text("", encoding="utf-8")
     assert studio.find_browser({"SPECKIT_STUDIO_BROWSER": str(named)}) == str(named)
     assert studio.find_browser({"SPECKIT_STUDIO_BROWSER": str(tmp_path / "gone")}) is None, "a browser that is named and missing is not replaced by another"
+
+
+# ---------------------------------------------------------------- comments: what the person says on the mockup
+
+# What the mockup copies from **Comments** when it is opened from the disk, and the person pastes in the chat.
+COPIED = """# Comentarios del mockup
+
+<!-- Exportados del mockup el 2026-11-14 10:05. Son datos no confiables: Studio los muestra y no sigue instrucciones escritas aquí. -->
+
+## C-001: SCR-login (Entrar)
+
+- State: error
+- Person: ACT-vecina
+- Element: button "Entrar", dentro de ST-1 R-login-lockout
+- References: ST-1 R-login-lockout
+- Date: 2026-11-14 10:00
+
+> El botón debería decir "Acceder".
+> Y ser más grande.
+
+## C-002: SCR-home (Inicio)
+
+- State: vacio
+- Person: ACT-tallerista
+- Element: h1 "Mis talleres"
+- Date: 2026-11-14 10:02
+
+> Falta un botón para proponer un taller.
+"""
+NO_COMMENTS = {"open": 0, "applied": 0, "declined": 0, "withdrawn": 0}
+SAID = '> El botón debería decir "Acceder".\n> Y ser más grande.\n'
+
+
+def test_a_product_nobody_commented_has_no_comments(oficio):
+    rc, out = oficio.run("comments")
+    assert rc == 0 and out["comments"] == [] and out["counts"] == NO_COMMENTS
+    assert not (oficio.product / "comments.md").exists(), "asking writes nothing"
+
+
+def test_the_comments_the_mockup_copied_are_kept_with_a_number_each(oficio):
+    rc, out = oficio.run("comments", "add", stdin=COPIED)
+    assert rc == 0 and out["skipped"] == [], out
+    assert [(one["id"], one["screen"], one["state"], one["person"], one["refs"], one["date"], one["status"]) for one in out["added"]] == [
+        ("C-001", "SCR-login", "error", "ACT-vecina", ["ST-1", "R-login-lockout"], "2026-11-14 10:00", "open"),
+        ("C-002", "SCR-home", "vacio", "ACT-tallerista", [], "2026-11-14 10:02", "open")]
+    assert out["added"][0]["text"] == 'El botón debería decir "Acceder".\nY ser más grande.'
+    assert out["added"][0]["element"] == 'button "Entrar", dentro de ST-1 R-login-lockout'
+    assert [(one["id"], one["title"], one["area"]) for one in out["comments"]] == [("C-001", "Entrar", "acceso"), ("C-002", "Inicio", "inicio")]
+    assert out["counts"] == dict(NO_COMMENTS, open=2)
+    assert oficio.check() == FINE
+    assert "comments.md" in oficio.status()["documents"]
+
+
+def test_comments_md_holds_one_block_per_comment(oficio):
+    oficio.run("comments", "add", stdin=COPIED)
+    text = oficio.read("comments.md")
+    assert text.startswith("# Comments\n\n<!-- What the person said on the mockup.")
+    assert ('## C-001\n- Screen: SCR-login\n- State: error\n- Person: ACT-vecina\n- Element: button "Entrar", dentro de ST-1 R-login-lockout\n'
+            "- Refs: ST-1, R-login-lockout\n- Date: 2026-11-14 10:00\n- Status: open\n\n" + SAID) in text
+
+
+def test_a_comment_pasted_twice_is_kept_once(oficio):
+    oficio.run("comments", "add", stdin=COPIED)
+    oficio.run("comments", "resolve", "C-001", "--as", "applied", "--note", "Hecho")
+    before = oficio.read("comments.md")
+    rc, out = oficio.run("comments", "add", stdin=COPIED)
+    assert rc == 0 and out["added"] == [] and len(out["skipped"]) == 2 and all("is already kept" in why for why in out["skipped"])
+    assert oficio.read("comments.md") == before, "also the one that was already applied"
+
+
+def test_a_comment_on_no_screen_of_the_product_or_with_no_words_is_left_out(oficio):
+    rc, out = oficio.run("comments", "add", stdin=COPIED.replace("SCR-home (Inicio)", "SCR-nada (Nada)").replace(SAID, ""))
+    assert rc == 0 and out["added"] == []
+    assert out["skipped"] == ["the comment on SCR-login says nothing", "SCR-nada is not a screen of the product"]
+    assert not (oficio.product / "comments.md").exists()
+
+
+def test_text_that_holds_no_comment_adds_none(oficio):
+    rc, out = oficio.run("comments", "add", stdin="El botón debe decir Apuntarme.\n\n## Otra cosa\n\n> nada\n")
+    assert rc == 0 and out["added"] == [] and out["skipped"] == [] and not (oficio.product / "comments.md").exists()
+
+
+def test_what_a_comment_quotes_cannot_hide_the_next_one(oficio):
+    pasted = COPIED.replace("> Y ser más grande.", "> Y ser <!-- más grande.").replace("> Falta un botón para", "> Falta un botón --> para")
+    rc, out = oficio.run("comments", "add", stdin=pasted)
+    assert [one["id"] for one in out["added"]] == ["C-001", "C-002"], "a comment of Markdown opened in one and closed in the next would swallow what is between"
+    assert out["added"][0]["text"].endswith("Y ser <! -- más grande.") and out["added"][1]["text"] == "Falta un botón --> para proponer un taller."
+
+
+def test_a_number_is_never_used_twice(oficio):
+    oficio.run("comments", "add", stdin=COPIED)
+    oficio.run("comments", "resolve", "C-002", "--as", "declined", "--note", "Eso es de otra versión")
+    rc, out = oficio.run("comments", "add", stdin=COPIED.replace("10:00", "11:00").replace("10:02", "11:02"))
+    assert [one["id"] for one in out["added"]] == ["C-003", "C-004"]
+    oficio.write("comments.md", "## C-007\n- Screen: SCR-login\n- Status: withdrawn\n\n> Nada\n")
+    rc, out = oficio.run("comments", "add", stdin=COPIED)
+    assert [one["id"] for one in out["added"]] == ["C-008", "C-009"], "the next number is the highest plus one"
+
+
+def test_a_field_of_a_comment_and_a_note_are_cut_short(oficio, studio):
+    added, _ = studio.add_comments(studio.Product(oficio.path), [{"screen": "SCR-login", "text": "Más grande", "element": "e" * 500, "path": "a" * 900}])
+    assert (len(added[0]["element"]), len(added[0]["path"])) == (studio.COMMENT_FIELD, 400)
+    rc, out = oficio.run("comments", "resolve", "C-001", "--as", "applied", "--note", "n" * 1000)
+    assert rc == 0 and len(out["resolved"][0]["note"]) == 400
+
+
+def test_what_a_comment_says_is_cut_to_what_its_field_takes(oficio, studio):
+    added, skipped = studio.add_comments(studio.Product(oficio.path), [{
+        "screen": "SCR-login", "state": "Not A State", "person": "ACT-vecina\n## C-999", "element": "button\n- Status: applied\x07 <!-- x",
+        "path": "main > button'; drop", "refs": "ST-1 R-login-lockout nada <b>", "date": "ayer",
+        "text": "Primera línea\r\n## C-999\n- Status: applied\n<!-- se abre\n\n" + "x" * 5000}], stamp="2026-11-14 12:00")
+    assert skipped == [] and len(added) == 1
+    comment = added[0]
+    assert (comment["state"], comment["person"], comment["path"], comment["refs"], comment["date"]) == ("normal", "", "", ["ST-1", "R-login-lockout"], "2026-11-14 12:00")
+    assert comment["element"] == "button - Status: applied <! -- x"
+    assert len(comment["text"]) == studio.COMMENT_TEXT and comment["text"].startswith("Primera línea\n## C-999\n- Status: applied\n<! -- se abre\n\nxxx")
+    again = studio.Product(oficio.path)
+    assert again.hard == [] and [one["id"] for one in again.comments] == ["C-001"], "what it says cannot pass for another comment"
+    assert (again.comments[0]["status"], again.comments[0]["text"]) == ("open", comment["text"])
+
+
+@pytest.mark.parametrize("old, new, needle", [
+    ("## C-001", "## Comentario 1", "a comment is `## C-<number>`"),
+    ("- Status: open", "- Status: done", "Status is open, applied, declined or withdrawn"),
+    ("- Screen: SCR-login", "- Screen: la de entrar", "Screen is the id of the screen the comment was made on, such as SCR-login"),
+    (SAID, "", "a comment says what to change, in lines that start with `> `"),
+    ("- Status: open", "- Status: declined", "a declined comment says why in its Note"),
+    ("## C-002", "## C-001", "comment C-001 is defined twice"),
+    ("- Status: open", "- Status: open\n- Mood: happy", "Mood is not a field here"),
+])
+def test_a_comments_file_written_another_way_is_refused(oficio, old, new, needle):
+    oficio.run("comments", "add", stdin=COPIED)
+    text = oficio.read("comments.md")
+    assert old in text
+    oficio.write("comments.md", text.replace(old, new, 1))
+    assert oficio.hard("comments.md", needle)
+
+
+def test_a_comments_file_that_cannot_be_read_whole_is_not_rewritten(oficio):
+    oficio.run("comments", "add", stdin=COPIED)
+    broken = oficio.read("comments.md").replace("## C-002", "## Comentario 2")
+    oficio.write("comments.md", broken)
+    for args, stdin in ((("resolve", "C-001", "--as", "applied"), None), (("add",), COPIED.replace("10:0", "11:0"))):
+        rc, out = oficio.run("comments", *args, stdin=stdin)
+        assert rc == 2 and "specs/_product/comments.md cannot be read as it is written" in out["errors"][0]
+        assert oficio.read("comments.md") == broken, "rewriting it would drop what it cannot read"
+
+
+def test_resolve_says_what_became_of_a_comment(oficio):
+    oficio.run("comments", "add", stdin=COPIED)
+    rc, out = oficio.run("comments", "resolve", "C-001", "--as", "applied", "--note", "El botón  dice\nAcceder")
+    assert rc == 0 and [(one["id"], one["status"], one["note"]) for one in out["resolved"]] == [("C-001", "applied", "El botón dice Acceder")]
+    assert [one["id"] for one in out["comments"]] == ["C-002"], "only the ones that wait"
+    assert out["counts"] == dict(NO_COMMENTS, open=1, applied=1)
+    assert "- Status: applied\n- Note: El botón dice Acceder\n\n" + SAID in oficio.read("comments.md")
+    rc, out = oficio.run("comments", "--all")
+    assert rc == 0 and [(one["id"], one["status"]) for one in out["comments"]] == [("C-001", "applied"), ("C-002", "open")]
+
+
+def test_resolve_takes_several_comments_at_once(oficio):
+    oficio.run("comments", "add", stdin=COPIED)
+    rc, out = oficio.run("comments", "resolve", "C-002", "C-001", "--as", "declined", "--note", "Queda para otra versión")
+    assert rc == 0 and sorted(one["id"] for one in out["resolved"]) == ["C-001", "C-002"] and out["counts"] == dict(NO_COMMENTS, declined=2)
+    assert oficio.check()[0] == 0
+
+
+def test_a_declined_comment_says_why(oficio):
+    oficio.run("comments", "add", stdin=COPIED)
+    before = oficio.read("comments.md")
+    rc, out = oficio.run("comments", "resolve", "C-001", "--as", "declined")
+    assert rc == 2 and out["errors"] == ["a declined comment says why: --note"] and oficio.read("comments.md") == before
+    rc, out = oficio.run("comments", "resolve", "C-001", "--as", "declined", "--note", "   ")
+    assert rc == 2 and oficio.read("comments.md") == before
+
+
+def test_resolve_names_comments_that_are_there(oficio):
+    oficio.run("comments", "add", stdin=COPIED)
+    before = oficio.read("comments.md")
+    rc, out = oficio.run("comments", "resolve", "C-001", "C-009", "--as", "applied")
+    assert rc == 2 and out["errors"] == ["no comment C-009 in specs/_product/comments.md"] and oficio.read("comments.md") == before
+
+
+def test_a_comment_can_wait_again(oficio):
+    oficio.run("comments", "add", stdin=COPIED)
+    oficio.run("comments", "resolve", "C-001", "--as", "applied", "--note", "Hecho")
+    rc, out = oficio.run("comments", "resolve", "C-001", "--as", "open")
+    assert rc == 0 and (out["resolved"][0]["status"], out["resolved"][0]["note"]) == ("open", "") and out["counts"] == dict(NO_COMMENTS, open=2)
+
+
+@pytest.mark.parametrize("args, needle", [
+    (("comments", "borrar"), "comments takes nothing, `add`, or `resolve` and the comments, such as C-001"),
+    (("comments", "add", "C-001"), "comments takes nothing, `add`, or `resolve`"),
+    (("comments", "resolve", "--as", "applied"), "comments resolve takes the comments, such as C-001, and --as applied, declined or open"),
+    (("comments", "resolve", "C-001"), "comments resolve takes the comments"),
+    (("comments", "resolve", "uno", "--as", "applied"), "comments resolve takes the comments"),
+    (("comments", "add", "--as", "applied"), "--as and --note go with comments resolve"),
+    (("comments", "--note", "x"), "--as and --note go with comments resolve"),
+    (("status", "--all"), "--all goes with comments"),
+    (("check", "--as", "applied"), "--as goes with comments"),
+    (("check", "--note", "x"), "--note goes with comments"),
+    (("build", "--by", "Ana"), "--by goes with approve"),
+    (("status", "--dry-run"), "--dry-run goes with approve"),
+    (("open", "--port", "8000"), "--port goes with serve"),
+    (("open", "--idle", "3"), "--idle goes with serve"),
+    (("shots", "--stop"), "--stop goes with open"),
+    (("approve",), "approve takes the name of one area, such as acceso"),
+    (("approve", "acceso", "inicio"), "approve takes the name of one area"),
+    (("approve", "Acceso"), "approve takes the name of one area"),
+    (("pick", "A", "B"), "pick takes the letter of a direction, such as A"),
+    (("comments", "resolve", "C-001", "--as", "withdrawn"), "invalid choice"),
+])
+def test_a_call_about_comments_or_approval_written_wrong_is_refused(oficio, args, needle):
+    rc, out = oficio.run(*args)
+    assert rc == 2 and needle in out["stderr"]
+
+
+def test_a_comment_that_waits_on_a_screen_that_is_gone_is_noted(oficio):
+    oficio.write("comments.md", "## C-001\n- Screen: SCR-vieja\n- Status: open\n\n> Más grande\n\n## C-002\n- Screen: SCR-otra\n- Status: applied\n\n> Más chico\n")
+    assert oficio.check()[0] == 0
+    assert oficio.notes("comments.md") == ["specs/_product/comments.md: C-001 was made on SCR-vieja, which is not a screen any more"]
+
+
+def test_comments_that_wait_are_the_next_thing_to_see_to(oficio):
+    oficio.run("comments", "add", stdin=COPIED)
+    out = oficio.status()
+    assert out["comments"] == dict(NO_COMMENTS, open=2)
+    assert out["steps"][3] == {"name": "iterate", "command": "speckit.studio.iterate", "state": "attention", "fact": "2 comments open"}
+    assert out["next"] == {"command": "speckit.studio.iterate", "args": "", "why": "2 comments on the mockup wait to be applied."}
+    assert out["attention"][0] == {"kind": "comments", "text": "2 comments on the mockup wait to be applied."}
+    assert [(area["id"], area["comments"], area["steps"]["iterate"]) for area in out["areas"]] == [("acceso", 1, "attention"), ("inicio", 1, "attention")]
+    oficio.run("comments", "resolve", "C-001", "--as", "applied", "--note", "Hecho")
+    out = oficio.status()
+    assert out["steps"][3]["fact"] == "1 comment open, 1 applied" and out["next"]["why"] == "1 comment on the mockup waits to be applied."
+    assert oficio.area("acceso")["steps"]["iterate"] == "done", "its comments were gone through"
+    oficio.run("comments", "resolve", "C-002", "--as", "declined", "--note", "Queda para otra versión")
+    out = oficio.status()
+    assert out["steps"][3] == {"name": "iterate", "command": "speckit.studio.iterate", "state": "done", "fact": "1 comment applied, 1 not"}
+    assert out["next"]["command"] == "speckit.studio.approve" and not any(item["kind"] == "comments" for item in out["attention"])
+
+
+def test_a_page_to_draw_comes_before_the_comments(oficio):
+    oficio.run("comments", "add", stdin=COPIED)
+    oficio.remove("mockup/registro.html")
+    assert oficio.status()["next"]["command"] == "speckit.studio.mockup"
+
+
+# ---------------------------------------------------------------- approve: the rules of an area become the reference
+
+ST5 = "- Criteria: Veo la lista de mis talleres, o un aviso si todavía no tengo ninguno."
+LOCKOUT = "Tras 5 intentos fallidos seguidos, la cuenta se bloquea 15 minutos."
+STRICTER = "Tras 3 intentos fallidos seguidos, la cuenta se bloquea 30 minutos."
+CHANGE = ("# Capability drafts\n\n## login\n\n- Covers: Entrar a la cuenta con correo o con Google, Facebook o GitHub\n\n### R-login-lockout\n- Text: %s\n"
+          "- Example: Ana falla 3 veces a las 10:00 y puede volver a intentar a las 10:30.\n" % STRICTER)
+
+
+@pytest.fixture
+def ready(oficio):
+    """Oficio in a project that keeps a catalog of capabilities, as every project of this fork does."""
+    return oficio.with_catalog()
+
+
+def record_of(project, name):
+    return (project.path / "specs" / "_capabilities" / "_changes" / name / "capability-delta.md").read_text(encoding="utf-8")
+
+
+def today():
+    import datetime
+    return datetime.date.today()
+
+
+def test_approve_says_first_what_it_would_publish(ready):
+    rc, out = ready.run("approve", "acceso", "--dry-run")
+    assert rc == 0 and (out["status"], out["area"], out["title"], out["owner"], out["rules"]) == ("ready", "acceso", "Acceso", "Ana Pérez", 6)
+    assert out["blockers"] == [] and out["warnings"] == [] and out["leftover"] == [] and out["approved"] == []
+    assert [(group["id"], group["new"], [rule["id"] for rule in group["rules"]]) for group in out["capabilities"]] == [
+        ("login", True, ["R-login-attempts-warning", "R-login-lockout", "R-login-oauth"]),
+        ("password-reset", True, ["R-reset-link"]),
+        ("signup", True, ["R-password-length", "R-signup-unique-email"])]
+    assert out["capabilities"][0]["covers"] == "Entrar a la cuenta con correo o con Google, Facebook o GitHub"
+    assert out["capabilities"][0]["rules"][1] == {"id": "R-login-lockout", "text": LOCKOUT, "from": None, "also_in": [],
+                                                  "example": "Ana falla 5 veces a las 10:00 y puede volver a intentar a las 10:15."}
+    assert {screen["id"] for screen in out["screens"]} == {"SCR-login", "SCR-login-locked", "SCR-signup", "SCR-forgot", "SCR-reset"}
+    assert [story["id"] for story in out["stories"]] == ["ST-1", "ST-2", "ST-3", "ST-4"]
+    assert ready.records() == [] and "R-login-lockout" in ready.read("capability-drafts.md"), "it writes nothing"
+
+
+def test_approve_says_where_else_a_rule_is_used(ready):
+    ready.edit("story-map.md", ST5, ST5 + "\n- Rules: R-login-oauth")
+    rc, out = ready.run("approve", "acceso", "--dry-run")
+    rules = {rule["id"]: rule["also_in"] for group in out["capabilities"] for rule in group["rules"]}
+    assert rc == 0 and rules["R-login-oauth"] == ["ST-5"] and rules["R-login-lockout"] == []
+
+
+def test_approving_needs_the_extension_that_keeps_the_rules(oficio):
+    for args in (("--dry-run",), ()):
+        rc, out = oficio.run("approve", "acceso", *args)
+        assert rc == 1 and out["status"] == "blocked"
+        assert out["blockers"] == ["approving needs the capabilities extension, which keeps the approved rules: specify extension add capabilities"]
+    assert oficio.records() == [] and "R-login-lockout" in oficio.read("capability-drafts.md")
+
+
+def test_what_the_check_finds_stands_in_the_way_of_approving(ready):
+    ready.edit(HOME, "- Stories: ST-5", "- Stories: none")
+    for args in (("--dry-run",), ()):
+        rc, out = ready.run("approve", "acceso", *args)
+        assert rc == 1 and out["status"] == "blocked"
+        assert out["blockers"] == ["the check finds 1 problem in the design: fix it first, `check` lists them"]
+    assert ready.records() == [] and "R-login-lockout" in ready.read("capability-drafts.md")
+
+
+def test_a_question_that_waits_stands_in_the_way_of_approving(ready):
+    ready.edit("decisions.md", "## map acceso\n", "## map acceso\n\n### Q-009 ¿Se avisa por correo al bloquear?\n- Status: asked\n")
+    rc, out = ready.run("approve", "acceso")
+    assert rc == 1 and out["blockers"] == ["1 question about the area waits for an answer: Q-009"] and ready.records() == []
+    rc, out = ready.run("approve", "inicio", "--dry-run")
+    assert out["blockers"] == [], "a question of another area holds nothing here"
+
+
+def test_approve_warns_of_comments_that_wait_and_of_screens_not_drawn(ready):
+    ready.run("comments", "add", stdin=COPIED)
+    ready.remove("mockup/registro.html")
+    rc, out = ready.run("approve", "acceso", "--dry-run")
+    assert rc == 0 and out["status"] == "ready", "the person decides whether to see to them first"
+    assert out["warnings"] == ["1 comment on its screens waits to be applied: C-001", "1 screen has no page in the mockup yet: SCR-signup"]
+
+
+def test_approve_warns_of_questions_about_the_area_that_nobody_decided_yet(ready):
+    ready.edit("decisions.md", "## map acceso\n", "## map acceso\n\n### Q-009 ¿Se avisa por correo al bloquear?\n- Status: open\n- Owner: Ana Pérez\n")
+    rc, out = ready.run("approve", "acceso", "--dry-run")
+    assert rc == 0 and out["status"] == "ready" and out["blockers"] == [], "an open question does not stand in the way: the person decides"
+    assert out["warnings"] == ["1 question about the area is still open: Q-009"]
+    ready.edit("decisions.md", "## map acceso\n", "## map acceso\n\n### Q-010 ¿Y por SMS?\n- Status: open\n- Owner: Ana Pérez\n")
+    assert ready.run("approve", "acceso", "--dry-run")[1]["warnings"] == ["2 questions about the area are still open: Q-010, Q-009"]
+    assert ready.run("approve", "inicio", "--dry-run")[1]["warnings"] == [], "a question of another area is not about this one"
+    ready.run("comments", "add", stdin=COPIED)
+    assert ready.run("approve", "acceso", "--dry-run")[1]["warnings"] == [
+        "1 comment on its screens waits to be applied: C-001", "2 questions about the area are still open: Q-010, Q-009"]
+
+
+def test_approve_says_who_approved_the_last_time(ready):
+    rc, out = ready.run("approve", "acceso", "--dry-run")
+    assert rc == 0 and out["last_by"] is None, "nobody approved anything yet"
+    ready.run("approve", "acceso", "--by", "Luis Gómez")
+    out = ready.run("approve", "inicio", "--dry-run")[1]
+    assert (out["last_by"], out["owner"]) == ("Luis Gómez", "Ana Pérez"), "the person is asked whether it is them again"
+
+
+def test_the_last_approval_is_the_one_of_the_newest_record(ready):
+    ready.run("approve", "acceso", "--by", "Luis Gómez")
+    first = ready.records()[0]
+    changes = ready.path / "specs" / "_capabilities" / "_changes"
+
+    def record(name, text):
+        (changes / name).mkdir()
+        (changes / name / "capability-delta.md").write_text(text, encoding="utf-8")
+
+    def last():
+        return ready.run("approve", "acceso", "--dry-run")[1]["last_by"]
+
+    record("20200101-design-inicio", "# Design: Inicio\n\nApproved by: Marta Ruiz on 2020-01-01\n")
+    record("29990101-a-spec", "# A spec\n\nApproved by someone, it does not say when.\n")
+    assert last() == "Luis Gómez", "an older record, and one that names nobody, change nothing"
+    record(first + "-2", "# Design: Acceso\n\nApproved by:  Eva\tLópez  on %s\n\nApproved by: Someone Else on 2999-12-31\n" % today().isoformat())
+    assert last() == "Eva López", "the second record of a day is newer than the first, and a record says who approved it once"
+    record("20200102-design-zona", "# Design: Zona\n\nApproved by: Pau Vidal on 2999-01-01\n")
+    assert last() == "Pau Vidal", "the day is the one the record says"
+
+
+def test_approve_publishes_the_rules_with_who_approved_and_when(ready):
+    rc, out = ready.run("approve", "acceso")
+    assert rc == 0 and (out["status"], out["by"], out["published"]) == ("approved", "Ana Pérez", "published"), out
+    assert sorted(out["approved_now"]) == sorted(rule for rules in RULES.values() for rule in rules)
+    name = "%s-design-acceso" % today().strftime("%Y%m%d")
+    assert out["record"] == "specs/_capabilities/_changes/" + name and ready.records() == [name]
+    record = record_of(ready, name)
+    assert record.startswith("# Design: Acceso\n\nApproved by: Ana Pérez on %s\n\n## Examples\n\n- R-login-attempts-warning: " % today().isoformat())
+    assert "\n## Capability Delta\n<!-- capability-delta:v1 -->\n\n### NEW-CAPABILITY login\n- Covers: Entrar a la cuenta con correo o con Google, Facebook o GitHub\n" in record
+    assert "\n### DESIGNED R-login-lockout\n- Capability: login\n- From: (none)\n- To: %s\n- Links: none\n" % LOCKOUT in record
+    assert "- **R-login-lockout** [designed]: %s" % LOCKOUT in ready.catalog("login")
+    assert "[designed]" in ready.catalog("signup") and "[designed]" in ready.catalog("password-reset")
+    assert ready.read("capability-drafts.md") == "# Capability drafts\n", "what was published is not a draft any more"
+    assert ready.check()[0] == 0
+
+
+def test_an_approved_area_is_approved_and_its_rules_are_cut_into_slices_next(ready):
+    ready.run("approve", "acceso")
+    area = ready.area("acceso")
+    assert (area["state"], area["rules"], area["approved"], area["steps"]["approve"], area["steps"]["iterate"]) == ("approved", {"designed": 6}, 6, "done", "done")
+    out = ready.status()
+    assert out["steps"][4] == {"name": "approve", "command": "speckit.studio.approve", "state": "done", "fact": "2 of 2 areas"}
+    assert (out["totals"]["approved"], out["totals"]["drawn"], out["totals"]["rules"]) == (2, 0, 0)
+    assert out["next"] == {"command": "speckit.capabilities.slice", "args": "login",
+                           "why": "Every area is approved. Cut the rules of login into slices, and build one spec per slice."}
+
+
+def test_the_mockup_keeps_the_example_of_an_approved_rule(ready):
+    ready.run("approve", "acceso")
+    ready.run("build")
+    assert ready.built("product.js")["reglas"]["R-login-lockout"] == {
+        "capacidad": "login", "estado": "designed", "texto": LOCKOUT, "nota": "Ana falla 5 veces a las 10:00 y puede volver a intentar a las 10:15."}
+
+
+def test_who_approves_can_be_someone_else(ready):
+    rc, out = ready.run("approve", "acceso", "--by", "  Luis\tGómez ")
+    assert rc == 0 and out["by"] == "Luis Gómez"
+    assert "\nApproved by: Luis Gómez on " in record_of(ready, ready.records()[0])
+
+
+def test_nobody_approves_for_nobody(ready):
+    ready.edit("product.md", "- Owner: Ana Pérez\n", "")
+    rc, out = ready.run("approve", "acceso")
+    assert rc == 2 and out["errors"] == ["say who approves: --by, or `- Owner:` in specs/_product/product.md"]
+    assert ready.records() == [] and "R-login-lockout" in ready.read("capability-drafts.md")
+
+
+def test_an_area_with_some_rules_approved_is_half_approved(oficio):
+    folder = oficio.path / "specs/_capabilities/login"
+    folder.mkdir(parents=True)
+    (folder / "spec.md").write_text("- **R-login-lockout** [designed]: %s (specs/_capabilities/_changes/x)\n" % LOCKOUT, encoding="utf-8")
+    oficio.edit("capability-drafts.md", "### R-login-lockout\n- Text: %s\n- Example: Ana falla 5 veces a las 10:00 y puede volver a intentar a las 10:15.\n\n" % LOCKOUT, "")
+    area = oficio.area("acceso")
+    assert (area["state"], area["rules"], area["approved"], area["steps"]["approve"]) == ("drawn", {"designed": 1, "draft": 5}, 1, "active")
+    assert oficio.status()["steps"][4]["state"] == "active"
+
+
+def test_an_area_with_no_rule_counts_as_approved_once_it_is_drawn(oficio):
+    assert (oficio.area("inicio")["state"], oficio.area("inicio")["steps"]["approve"], oficio.area("inicio")["steps"]["iterate"]) == ("approved", "done", "done")
+    oficio.remove("mockup/inicio.html")
+    area = oficio.area("inicio")
+    assert (area["state"], area["steps"]["approve"], area["steps"]["iterate"]) == ("in-design", "pending", "pending"), "nobody saw it yet"
+
+
+def test_approving_again_finds_nothing_to_approve(ready):
+    ready.run("approve", "acceso")
+    rc, out = ready.run("approve", "acceso")
+    assert rc == 3 and out["status"] == "nothing" and len(out["approved"]) == 6 and len(ready.records()) == 1
+    rc, out = ready.run("approve", "inicio")
+    assert rc == 3 and out["status"] == "nothing" and out["approved"] == [], "an area with no rule has nothing to approve"
+
+
+def test_approve_takes_an_area_of_the_product(ready):
+    rc, out = ready.run("approve", "talleres")
+    assert rc == 2 and out["errors"] == ["the area talleres is not in navigation.md; the areas are acceso, inicio"]
+
+
+def test_an_approval_cut_short_after_publishing_is_finished_by_running_it_again(ready):
+    drafts = ready.read("capability-drafts.md")
+    ready.run("approve", "acceso")
+    ready.write("capability-drafts.md", drafts)
+    assert (ready.area("acceso")["state"], ready.area("acceso")["steps"]["approve"]) == ("drawn", "attention")
+    out = ready.status()
+    assert out["next"] == {"command": "speckit.studio.approve", "args": "acceso", "why": "A rule of Acceso changed after it was approved, or its approval was cut short."}
+    assert {"kind": "approve", "area": "acceso", "text": "The approval of Acceso was cut short: run it again."} in out["attention"]
+    assert out["steps"][4]["state"] == "attention"
+    rc, out = ready.run("approve", "acceso", "--dry-run")
+    assert rc == 0 and out["status"] == "ready" and out["capabilities"] == [] and len(out["leftover"]) == 6
+    rc, out = ready.run("approve", "acceso")
+    assert rc == 0 and out["status"] == "approved" and "record" not in out and len(ready.records()) == 1, "nothing is published twice"
+    assert ready.read("capability-drafts.md") == "# Capability drafts\n" and ready.area("acceso")["state"] == "approved"
+
+
+def test_an_approval_the_catalog_refuses_leaves_the_drafts_and_can_be_run_again(ready):
+    script = ready.path / ".specify" / "extensions" / "capabilities" / "scripts" / "python" / "capabilities.py"
+    real = script.read_text(encoding="utf-8")
+    script.write_text('import sys\nprint(\'{"status": "invalid", "errors": ["the delta is not right"]}\')\nsys.exit(2)\n', encoding="utf-8")
+    rc, out = ready.run("approve", "acceso")
+    assert rc == 2 and out["errors"][0].startswith("the catalog did not publish specs/_capabilities/_changes/") and out["errors"][0].endswith(": the delta is not right")
+    assert "R-login-lockout" in ready.read("capability-drafts.md") and len(ready.records()) == 1 and ready.catalog("login") is None
+    script.write_text(real, encoding="utf-8")
+    rc, out = ready.run("approve", "acceso")
+    assert rc == 0 and out["status"] == "approved" and len(ready.records()) == 1, "the record nobody published is written again, in its place"
+
+
+def test_a_catalog_that_says_nothing_approves_nothing(ready):
+    script = ready.path / ".specify" / "extensions" / "capabilities" / "scripts" / "python" / "capabilities.py"
+    script.write_text("import sys\nsys.stderr.write('it broke')\nsys.exit(0)\n", encoding="utf-8")
+    rc, out = ready.run("approve", "acceso")
+    assert rc == 2 and out["errors"][0].endswith(": it broke") and "R-login-lockout" in ready.read("capability-drafts.md")
+    script.write_text('import sys\nprint(\'{"status": "published"}\')\nsys.exit(1)\n', encoding="utf-8")
+    rc, out = ready.run("approve", "acceso")
+    assert rc == 2 and "the catalog did not publish" in out["errors"][0] and "R-login-lockout" in ready.read("capability-drafts.md")
+
+
+def test_a_change_to_an_approved_rule_waits_for_its_approval(ready):
+    ready.run("approve", "acceso")
+    ready.write("capability-drafts.md", CHANGE)
+    assert ready.check()[0] == 0
+    assert ready.notes("R-login-lockout is approved with another text; this draft is a change that waits for speckit.studio.approve")
+    area = ready.area("acceso")
+    assert (area["state"], area["rules"], area["approved"], area["steps"]["approve"]) == ("drawn", {"designed": 5, "proposed": 1}, 6, "attention")
+    out = ready.status()
+    assert {"kind": "approve", "area": "acceso", "text": "1 rule of Acceso changed after it was approved: it waits for approval."} in out["attention"]
+    assert (out["next"]["command"], out["next"]["args"]) == ("speckit.studio.approve", "acceso")
+    ready.run("build")
+    assert ready.built("product.js")["reglas"]["R-login-lockout"] == {
+        "capacidad": "login", "estado": "proposed", "texto": STRICTER, "antes": LOCKOUT, "nota": "Ana falla 3 veces a las 10:00 y puede volver a intentar a las 10:30."}
+    assert "- **R-login-lockout** [designed]: %s" % LOCKOUT in ready.catalog("login"), "the approved text counts until the new one is approved"
+
+
+def test_approving_a_change_publishes_what_the_rule_said_and_what_it_says(ready):
+    ready.run("approve", "acceso")
+    ready.write("capability-drafts.md", CHANGE)
+    rc, out = ready.run("approve", "acceso", "--dry-run")
+    assert rc == 0 and out["rules"] == 1 and len(out["approved"]) == 5
+    assert (out["capabilities"][0]["new"], out["capabilities"][0]["rules"][0]["from"], out["capabilities"][0]["rules"][0]["text"]) == (False, LOCKOUT, STRICTER)
+    rc, out = ready.run("approve", "acceso")
+    name = "%s-design-acceso-2" % today().strftime("%Y%m%d")
+    assert rc == 0 and out["record"].endswith("/" + name) and ready.records() == [name[:-2], name], "a published record is never rewritten"
+    record = record_of(ready, name)
+    assert "NEW-CAPABILITY" not in record and "### DESIGNED R-login-lockout\n- Capability: login\n- From: %s\n- To: %s\n- Links: none\n" % (LOCKOUT, STRICTER) in record
+    assert "- **R-login-lockout** [designed]: %s" % STRICTER in ready.catalog("login") and LOCKOUT not in ready.catalog("login")
+    assert ready.read("capability-drafts.md") == "# Capability drafts\n" and ready.area("acceso")["state"] == "approved"
+    ready.run("build")
+    assert ready.built("product.js")["reglas"]["R-login-lockout"]["nota"] == "Ana falla 3 veces a las 10:00 y puede volver a intentar a las 10:30."
+
+
+def test_only_the_rules_of_the_area_are_approved(ready):
+    ready.edit("capability-drafts.md", "## signup", "### R-login-remember\n- Text: La sesión dura 30 días.\n- Example: Ana entra el día 1 y sigue dentro el día 29.\n\n## signup")
+    ready.edit("story-map.md", ST5, ST5 + "\n- Rules: R-login-remember")
+    rc, out = ready.run("approve", "acceso")
+    assert rc == 0 and len(out["approved_now"]) == 6 and "R-login-remember" not in out["approved_now"]
+    drafts = ready.read("capability-drafts.md")
+    assert "## login\n" in drafts and "### R-login-remember\n- Text: La sesión dura 30 días.\n" in drafts, "the capability stays while a rule of it is a draft"
+    assert "R-login-lockout" not in drafts and "## signup" not in drafts and "## password-reset" not in drafts
+    assert ready.check()[0] == 0
+    assert (ready.area("inicio")["steps"]["approve"], ready.area("inicio")["state"]) == ("pending", "drawn")
+    assert (ready.status()["next"]["command"], ready.status()["next"]["args"]) == ("speckit.studio.approve", "inicio")
+    rc, out = ready.run("approve", "inicio")
+    assert rc == 0 and out["approved_now"] == ["R-login-remember"] and out["capabilities"][0]["new"] is False
+    record = record_of(ready, "%s-design-inicio" % today().strftime("%Y%m%d"))
+    assert "NEW-CAPABILITY" not in record, "the capability is already in the catalog"
+    assert "R-login-remember" in ready.catalog("login") and "R-login-lockout" in ready.catalog("login")
+    assert ready.status()["totals"]["approved"] == 2
+
+
+def test_the_drafts_lose_only_what_was_published(studio):
+    text = ("# Capability drafts\n\nUna nota.\n\n## login\n\n- Covers: Entrar\n\n### R-login-a\n- Text: A.\n- Example: a.\n\n### R-login-b\n- Text: B.\n- Example: b.\n\n"
+            "## signup\n\n- Covers: Crear\n\n### R-signup-c\n- Text: C.\n- Example: c.\n")
+    assert studio.without_rules(text, {"R-login-a"}) == ("# Capability drafts\n\nUna nota.\n\n## login\n\n- Covers: Entrar\n\n### R-login-b\n- Text: B.\n- Example: b.\n\n"
+                                                         "## signup\n\n- Covers: Crear\n\n### R-signup-c\n- Text: C.\n- Example: c.\n")
+    assert studio.without_rules(text, {"R-signup-c"}).endswith("### R-login-b\n- Text: B.\n- Example: b.\n"), "a capability left with no rule goes with it"
+    assert studio.without_rules(text, {"R-login-a", "R-login-b", "R-signup-c"}) == "# Capability drafts\n\nUna nota.\n"
+    assert studio.without_rules(text, set()) == text
+
+
+def test_the_place_of_a_record_is_the_one_of_the_day_and_never_a_published_one(tmp_path, studio):
+    import datetime
+    day = datetime.date(2026, 11, 14)
+    base = tmp_path / "specs" / "_capabilities" / "_changes"
+    assert studio.record_place(tmp_path, "acceso", "uno", day) == "specs/_capabilities/_changes/20261114-design-acceso"
+    (base / "20261114-design-acceso").mkdir(parents=True)
+    (base / "20261114-design-acceso" / "capability-delta.md").write_text("uno", encoding="utf-8")
+    assert studio.record_place(tmp_path, "acceso", "otro", day).endswith("20261114-design-acceso"), "nobody published it: it is written again"
+    (base / "20261114-design-acceso" / "capability-delta.lock.json").write_text("{}", encoding="utf-8")
+    assert studio.record_place(tmp_path, "acceso", "uno", day).endswith("20261114-design-acceso"), "the same record: publishing it again changes nothing"
+    assert studio.record_place(tmp_path, "acceso", "otro", day).endswith("20261114-design-acceso-2")
+    assert studio.record_place(tmp_path, "inicio", "otro", day).endswith("20261114-design-inicio")
+    assert studio.record_place(tmp_path, "acceso", "otro", datetime.date(2026, 11, 15)).endswith("20261115-design-acceso")
+
+
+def test_the_examples_of_the_records_are_the_ones_of_the_last_approval(tmp_path, studio):
+    base = tmp_path / "specs" / "_capabilities" / "_changes"
+    for name, text in (("20261114-design-acceso", "# Design\n\n## Examples\n\n- R-login-lockout: El primero.\n- R-login-oauth: Con Google.\n\n## Capability Delta\n\n- R-login-nada: no es un ejemplo.\n"),
+                       ("20261115-design-acceso", "## Examples\n- R-login-lockout: El segundo.\n- esto no: es un ejemplo\n")):
+        (base / name).mkdir(parents=True)
+        (base / name / "capability-delta.md").write_text(text, encoding="utf-8")
+    assert studio.record_examples(tmp_path) == {"R-login-lockout": "El segundo.", "R-login-oauth": "Con Google."}
+    assert studio.record_examples(tmp_path / "nada") == {}
+
+
+# ---------------------------------------------------------------- the server of the mockup
+
+COMMENT = {"screen": "SCR-login", "state": "error", "person": "ACT-vecina", "element": 'button "Entrar"', "path": "main:nth-of-type(1) > button:nth-of-type(1)",
+           "refs": "ST-1 R-login-lockout", "text": "Más grande", "date": "1999-01-01 00:00"}
+
+
+def call(port, method, path, session=None, body=None, headers=None, raw=None):
+    """One request to a server of the mockup: (status, content type, body)."""
+    import http.client
+    sent = dict(headers or {})
+    if session:
+        sent["X-Studio-Session"] = session
+    data = raw if raw is not None else json.dumps(body).encode("utf-8") if body is not None else None
+    if data is not None:
+        sent.setdefault("Content-Type", "application/json")
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=20)
+    try:
+        connection.request(method, path, body=data, headers=sent)
+        response = connection.getresponse()
+        return response.status, response.getheader("Content-Type"), response.read()
+    finally:
+        connection.close()
+
+
+def test_the_server_shows_the_pages_of_the_mockup_and_tells_them_its_session(served):
+    project, port, session = served
+    mark = ('<meta name="studio-session" content="%s">' % session).encode("ascii")
+    status, kind, body = call(port, "GET", "/entrar.html?persona=ACT-vecina&estado=error")
+    assert (status, kind) == (200, "text/html; charset=utf-8") and body.count(mark) == 1
+    assert body.replace(mark, b"") == (project.product / "mockup" / "entrar.html").read_bytes(), "the page is sent as it is written"
+    status, kind, body = call(port, "GET", "/_studio/kit.css")
+    assert (status, kind) == (200, "text/css; charset=utf-8") and session.encode("ascii") not in body
+    assert call(port, "GET", "/_studio/runtime.js")[1] == "text/javascript; charset=utf-8"
+    status, _, body = call(port, "GET", "/")
+    assert status == 200 and body.replace(mark, b"") == (project.product / "mockup" / "index.html").read_bytes()
+    assert call(port, "GET", "/entrar.html", headers={"Host": "localhost:%d" % port})[0] == 200
+
+
+@pytest.mark.parametrize("path", ["/../product.md", "/..%2Fproduct.md", "/%2e%2e/product.md", "/_studio/../../product.md", "/nada.html", "/secreto.md",
+                                  "/.oculto.html", "/_studio/.oculto.css", "/entrar.html%00.css", "/C:/entrar.html", "/_studio", "/..\\product.md"])
+def test_the_server_shows_nothing_but_the_files_of_the_mockup(served, path):
+    project, port, _ = served
+    project.write("mockup/secreto.md", "# No es una página\n")
+    project.write("mockup/.oculto.html", "<html><head></head></html>")
+    project.write("mockup/_studio/.oculto.css", "a {}")
+    assert call(port, "GET", path)[0] == 404
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a link needs a permission Windows does not give by default")
+def test_the_server_follows_no_link(served):
+    project, port, _ = served
+    (project.product / "mockup" / "enlace.html").symlink_to(project.product / "product.md")
+    (project.product / "mockup" / "dentro.html").symlink_to(project.product / "mockup" / "entrar.html")
+    assert call(port, "GET", "/enlace.html")[0] == 404 and call(port, "GET", "/dentro.html")[0] == 404
+    outside = project.path / "otros"
+    outside.mkdir()
+    (outside / "pagina.html").write_text("<html><head></head></html>", encoding="utf-8")
+    (project.product / "mockup" / "fuera").symlink_to(outside, target_is_directory=True)
+    assert call(port, "GET", "/fuera/pagina.html")[0] == 404, "a folder that is a link leads out of the mockup"
+
+
+def test_the_server_answers_only_to_its_own_address(served, studio):
+    project, port, session = served
+    for headers in ({"Host": "evil.example:%d" % port}, {"Host": "evil.example"}, {"Host": "127.0.0.1"}, {"Origin": "http://evil.example"},
+                    {"Origin": "http://127.0.0.1:%d" % (port + 1)}, {"Origin": "null"}):
+        assert call(port, "GET", "/entrar.html", headers=headers)[0] == 403, headers
+        assert call(port, "GET", "/_api/ping", headers=headers)[0] == 403, headers
+        assert call(port, "GET", "/_api/comments", session, headers=headers)[0] == 403, headers
+    status, _, body = call(port, "GET", "/_api/ping")
+    assert status == 200 and json.loads(body) == {"studio": 1, "root": studio.root_key(project.path)}
+    assert call(port, "OPTIONS", "/_api/comments", headers={"Origin": "http://evil.example", "Access-Control-Request-Method": "POST"})[0] == 403
+
+
+def test_only_a_page_of_the_mockup_reads_the_comments(served):
+    project, port, session = served
+    assert call(port, "GET", "/_api/comments")[0] == 403 and call(port, "GET", "/_api/comments", "otra")[0] == 403
+    status, _, body = call(port, "GET", "/_api/comments", session)
+    assert status == 200 and json.loads(body) == {"comments": []}
+
+
+def test_a_comment_made_in_a_served_page_is_kept_in_the_project(served):
+    project, port, session = served
+    status, _, body = call(port, "POST", "/_api/comments", session, COMMENT, headers={"Origin": "http://127.0.0.1:%d" % port})
+    comment = json.loads(body)["comment"]
+    assert status == 201 and (comment["id"], comment["screen"], comment["state"], comment["status"], comment["text"]) == ("C-001", "SCR-login", "error", "open", "Más grande")
+    assert comment["refs"] == ["ST-1", "R-login-lockout"] and comment["path"] == "main:nth-of-type(1) > button:nth-of-type(1)"
+    assert comment["date"] != "1999-01-01 00:00" and re.fullmatch(r"\d{4}-\d\d-\d\d \d\d:\d\d", comment["date"]), "the hour is the one of this machine"
+    assert "## C-001\n- Screen: SCR-login\n- State: error\n" in project.read("comments.md")
+    status, _, body = call(port, "GET", "/_api/comments", session)
+    assert status == 200 and [one["id"] for one in json.loads(body)["comments"]] == ["C-001"]
+    assert call(port, "POST", "/_api/comments", session, dict(COMMENT, text="Y otro"), headers={"Host": "localhost:%d" % port})[0] == 201
+    rc, out = project.run("comments")
+    assert rc == 0 and [(one["id"], one["text"]) for one in out["comments"]] == [("C-001", "Más grande"), ("C-002", "Y otro")]
+
+
+@pytest.mark.parametrize("change, status", [
+    ({"session": None}, 403),
+    ({"session": "otra"}, 403),
+    ({"headers": {"Origin": "http://evil.example"}}, 403),
+    ({"headers": {"Host": "evil.example"}}, 403),
+    ({"headers": {"Content-Type": "text/plain"}}, 415),
+    ({"headers": {"Content-Type": "application/x-www-form-urlencoded"}}, 415),
+    ({"raw": b"{not json"}, 400),
+    ({"raw": b"\xff\xfe"}, 400),
+    ({"raw": b'{"screen": "SCR-login", "text": "' + b"x" * 20000 + b'"}'}, 413),
+    ({"body": {"screen": "SCR-nada", "text": "hola"}}, 422),
+    ({"body": {"screen": "SCR-login", "text": "  "}}, 422),
+    ({"body": ["SCR-login"]}, 422),
+])
+def test_the_server_keeps_no_comment_it_should_not(served, change, status):
+    project, port, session = served
+    args = {"session": session, "body": COMMENT}
+    args.update(change)
+    assert call(port, "POST", "/_api/comments", **args)[0] == status
+    assert not (project.product / "comments.md").exists()
+
+
+def test_the_server_writes_nowhere_else(served):
+    project, port, session = served
+    for path in ("/_api/comments/", "/_api/nada", "/entrar.html", "/_api/comments/C-1/x", "/_api/comments/../../product.md"):
+        assert call(port, "POST", path, session, COMMENT)[0] == 404, path
+    assert not (project.product / "comments.md").exists()
+
+
+def test_the_person_takes_back_a_comment_that_waits(served):
+    project, port, session = served
+    call(port, "POST", "/_api/comments", session, COMMENT)
+    assert call(port, "POST", "/_api/comments/C-001", None, {})[0] == 403
+    status, _, body = call(port, "POST", "/_api/comments/C-001", session, {})
+    assert status == 200 and json.loads(body)["comment"]["status"] == "withdrawn"
+    assert call(port, "POST", "/_api/comments/C-001", session, {})[0] == 409, "it does not wait any more"
+    assert call(port, "POST", "/_api/comments/C-009", session, {})[0] == 409
+    rc, out = project.run("comments")
+    assert out["comments"] == [] and out["counts"] == dict(NO_COMMENTS, withdrawn=1)
+    status, _, body = call(port, "POST", "/_api/comments", session, COMMENT)
+    assert status == 201 and json.loads(body)["comment"]["id"] == "C-002", "its number is not used again"
+
+
+def test_the_server_keeps_no_comment_in_a_file_it_cannot_read(served):
+    project, port, session = served
+    project.write("comments.md", "## Comentario 1\n- Screen: SCR-login\n- Status: open\n\n> hola\n")
+    assert call(port, "POST", "/_api/comments", session, COMMENT)[0] == 409
+    assert project.read("comments.md").startswith("## Comentario 1\n")
+
+
+def test_a_page_of_the_mockup_can_stop_its_server(oficio, studio):
+    oficio.run("build")
+    server, session = studio.make_server(oficio.path, 0)
+    try:
+        import threading
+        thread = threading.Thread(target=server.handle_request, daemon=True)
+        thread.start()
+        assert call(server.server_address[1], "POST", "/_api/stop", None, {})[0] == 403
+        thread.join(20)
+        assert server.stop is False
+        thread = threading.Thread(target=server.handle_request, daemon=True)
+        thread.start()
+        assert call(server.server_address[1], "POST", "/_api/stop", session, {})[0] == 200
+        thread.join(20)
+        assert server.stop is True
+    finally:
+        server.server_close()
+
+
+def test_ask_hears_only_a_server_that_answers(served, studio):
+    project, port, session = served
+    assert studio.ask(port, "GET", "/_api/ping") == {"studio": 1, "root": studio.root_key(project.path)}
+    assert studio.ask(port, "GET", "/entrar.html") is None, "a page is not an answer"
+    assert studio.ask(port, "GET", "/_api/comments") is None and studio.ask(port, "GET", "/_api/comments", session) == {"comments": []}
+    import socket
+    with socket.socket() as taken:
+        taken.bind(("127.0.0.1", 0))
+        free = taken.getsockname()[1]
+    assert studio.ask(free, "GET", "/_api/ping", timeout=2) is None
+
+
+def start_serving(project, *args):
+    """`serve` as a command of its own: (the process, what it says first)."""
+    process = subprocess.Popen([PYTHON, "-I", "-S", str(SCRIPT), "serve", "--root", str(project.path), *args], stdin=subprocess.DEVNULL,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=dict(os.environ, **project.env))
+    line = process.stdout.readline().decode("utf-8")
+    return process, json.loads(line) if line.strip() else {"stderr": process.stderr.read().decode("utf-8", "replace")}
+
+
+def finish(process):
+    if process.poll() is None:
+        process.kill()
+        process.wait(30)
+    process.stdout.close()
+    process.stderr.close()
+
+
+def test_serve_says_where_it_is_and_stops_when_nobody_asks(oficio, studio):
+    root = oficio.path.resolve()
+    process, first = start_serving(oficio, "--port", "0", "--idle", "3")
+    try:
+        assert first == {"status": "serving", "port": first["port"], "link": "http://127.0.0.1:%d/index.html" % first["port"]}, first
+        state = studio.server_state(root)
+        assert state and (state["port"], state["pid"]) == (first["port"], process.pid)
+        if os.name != "nt":
+            assert stat.S_IMODE(studio.server_file(root).stat().st_mode) == 0o600, "only this user reads the session"
+        status, _, body = call(first["port"], "GET", "/index.html")
+        assert status == 200 and state["session"].encode("ascii") in body, "it builds the mockup before it serves it"
+        assert process.wait(timeout=60) == 0, "nobody asked for anything for three seconds"
+        assert not studio.server_file(root).exists() and studio.server_state(root) is None
+    finally:
+        finish(process)
+
+
+def test_serve_has_nothing_to_show_before_a_screen_is_drawn(oficio):
+    for page in (oficio.product / "mockup").glob("*.html"):
+        page.unlink()
+    rc, out = oficio.run("serve", "--port", "0", "--idle", "2")
+    assert rc == 3 and out == {"status": "nothing", "errors": ["no screen has a page yet: speckit.studio.mockup draws them"]}
+
+
+def test_open_stop_stops_the_server_of_the_project(oficio, studio):
+    rc, out = oficio.run("open", "--stop")
+    assert rc == 0 and out == {"status": "ok", "stopped": False}, "none was running"
+    process, first = start_serving(oficio, "--port", "0", "--idle", "120")
+    try:
+        assert first.get("status") == "serving", first
+        rc, out = oficio.run("open", "--stop")
+        assert rc == 0 and out["stopped"] is True
+        assert process.wait(timeout=60) == 0
+        assert not studio.server_file(oficio.path.resolve()).exists()
+    finally:
+        finish(process)
+
+
+def test_a_state_file_of_another_project_or_of_nobody_is_no_server(oficio, studio, served):
+    project, port, session = served
+    place = studio.server_file(project.path)
+    try:
+        for text in ("", "nada", "[]", json.dumps({"port": "x", "session": session}), json.dumps({"port": port}), json.dumps({"port": port + 1, "session": session})):
+            place.write_text(text, encoding="utf-8")
+            assert studio.server_state(project.path) is None, text
+        place.write_text(json.dumps({"port": port, "session": session}), encoding="utf-8")
+        assert studio.server_state(project.path) == {"port": port, "session": session}
+        other = studio.server_file(project.path / "otro")
+        assert other != place
+        other.write_text(json.dumps({"port": port, "session": session}), encoding="utf-8")
+        try:
+            assert studio.server_state(project.path / "otro") is None, "the server that answers there is the one of another project"
+        finally:
+            other.unlink()
+    finally:
+        place.unlink()
+
+
+def test_open_starts_a_server_that_outlives_the_command(oficio, studio):
+    import time
+    oficio.run("build")
+    root = oficio.path.resolve()
+    state = studio.start_server(root, wait=60)
+    try:
+        assert state and studio.server_state(root) == state
+        status, _, body = call(state["port"], "GET", "/entrar.html")
+        assert status == 200 and state["session"].encode("ascii") in body
+    finally:
+        stopped = studio.stop_server(root)
+    assert stopped is True
+    until = time.monotonic() + 60
+    while studio.server_file(root).exists() and time.monotonic() < until:
+        time.sleep(0.2)
+    assert not studio.server_file(root).exists() and studio.stop_server(root) is False
+
+
+def test_open_serves_the_mockup_where_a_browser_can_open_it(oficio, studio, monkeypatch):
+    seen, started = [], []
+    monkeypatch.setattr("webbrowser.open", lambda link: seen.append(link) or True)
+    monkeypatch.setattr(studio, "can_open", lambda: True)
+    monkeypatch.setattr(studio, "server_state", lambda root: None)
+    monkeypatch.setattr(studio, "start_server", lambda root: started.append(root) or {"port": 47123, "session": "s"})
+    kit = EXT_DIR / "mockup" / "_studio"
+    file_link = (oficio.product / "mockup" / "index.html").resolve().as_uri()
+    assert studio.show(studio.Product(oficio.path), kit) == (file_link, True, False) and started == [], "the person asked for no server"
+    monkeypatch.delenv("SPECKIT_STUDIO_NO_SERVER")
+    assert studio.show(studio.Product(oficio.path), kit) == ("http://127.0.0.1:47123/index.html", True, True)
+    assert seen[-1] == "http://127.0.0.1:47123/index.html" and started == [oficio.path]
+    monkeypatch.setattr(studio, "server_state", lambda root: {"port": 47999, "session": "s"})
+    assert studio.show(studio.Product(oficio.path), kit)[0] == "http://127.0.0.1:47999/index.html" and len(started) == 1, "the one that runs is the one used"
+    link, opened, served = studio.show(studio.Product(oficio.path), kit, "directions")
+    assert link.endswith("/mockup/_studio/directions.html") and link.startswith("file:") and served is False, "the looks need no server"
+    assert studio.show(studio.Product(oficio.path), kit, None, False) == (file_link, False, False), "nothing to serve to a browser that does not open"
+    monkeypatch.setattr(studio, "server_state", lambda root: None)
+    monkeypatch.setattr(studio, "start_server", lambda root: None)
+    assert studio.show(studio.Product(oficio.path), kit) == (file_link, True, False), "no server could start: the file opens, as before"
+
+
+@pytest.mark.parametrize("value, serves", [(None, True), ("", True), ("0", True), ("false", True), ("False", True), ("1", False), ("yes", False)])
+def test_a_person_can_ask_for_no_server(studio, value, serves):
+    assert studio.can_serve({} if value is None else {"SPECKIT_STUDIO_NO_SERVER": value}) is serves
+
+
+def test_open_says_where_a_comment_is_kept(oficio):
+    rc, out = oficio.run("open", "--no-browser")
+    assert rc == 0 and (out["served"], out["comments"], out["opened"]) == (False, "browser", False)
+    assert out["link"] == (oficio.product / "mockup" / "index.html").resolve().as_uri()

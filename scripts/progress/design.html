@@ -57,7 +57,8 @@ header .id{color:var(--soft);font-size:13px;margin-top:2px}
 .card h2{font-size:16px;margin:0;display:inline;overflow-wrap:anywhere}
 .card .sub{color:var(--soft);font-size:13px;margin:3px 0 0;overflow-wrap:anywhere}
 .pill{display:inline-block;font-size:12px;font-weight:600;border:1px solid var(--line);border-radius:999px;padding:0 9px;margin-left:8px;color:var(--soft);vertical-align:2px;white-space:nowrap}
-.pill.drawn{color:var(--done);border-color:var(--done)}
+.pill.approved{color:var(--done);border-color:var(--done)}
+.pill.drawn{color:var(--active);border-color:var(--active)}
 .pill.in-design{color:var(--active);border-color:var(--active)}
 .chips{list-style:none;margin:12px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
 .chips li{border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
@@ -164,7 +165,7 @@ dialog::backdrop{background:rgba(10,14,18,.5)}
   "use strict";
   var D = JSON.parse(document.getElementById("data").textContent);
   var STATES = {done: "Done", active: "In progress", attention: "Needs attention", pending: "Not started"};
-  var AREA_STATES = {"not-started": "not started", "in-design": "in design", drawn: "drawn"};
+  var AREA_STATES = {"not-started": "not started", "in-design": "in design", drawn: "drawn", approved: "approved"};
   var EVENTS = {done: "done", in_progress: "started", failed: "failed", skipped: "skipped", note: "note"};
   var KEY = "speckit-progress:design", HASH = "#state=";
   var RELOAD_MS = 5000, QUIET_MS = 3000, LONG_LINE = 4000;
@@ -227,10 +228,10 @@ dialog::backdrop{background:rgba(10,14,18,.5)}
   }
 
   // The total: how the areas stand
-  var T = D.totals, parts = [["drawn", "var(--done)", "drawn"], ["in_design", "var(--active)", "in design"], ["not_started", "var(--pending)", "not started"]];
-  $("num").textContent = T.drawn + " / " + T.areas;
-  $("what").textContent = "areas drawn";
-  $("bar").setAttribute("aria-label", T.drawn + " of " + plural(T.areas, "area") + " drawn, " + T.in_design + " in design");
+  var T = D.totals, parts = [["approved", "var(--done)", "approved"], ["drawn", "var(--active)", "drawn"], ["in_design", "var(--active)", "in design"], ["not_started", "var(--pending)", "not started"]];
+  $("num").textContent = T.approved + " / " + T.areas;
+  $("what").textContent = "areas approved";
+  $("bar").setAttribute("aria-label", T.approved + " of " + plural(T.areas, "area") + " approved, " + T.drawn + " drawn, " + T.in_design + " in design");
   parts.forEach(function (part) {
     var n = T[part[0]] || 0;
     if (n && part[0] !== "not_started") { var i = el("i"); i.style.width = (100 * n / T.areas) + "%"; i.style.background = part[1]; $("bar").appendChild(i); }

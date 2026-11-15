@@ -14,7 +14,7 @@ from . import studio_app
 from ._script import fail, load_script, project_root, terminal_text
 
 _STATES = {"done": "done", "active": "in progress", "attention": "needs attention", "pending": "not started"}
-_AREA_STATES = {"not-started": "not started", "in-design": "in design", "drawn": "drawn"}
+_AREA_STATES = {"not-started": "not started", "in-design": "in design", "drawn": "drawn", "approved": "approved"}
 
 
 def _line(*parts: object) -> None:
@@ -56,8 +56,11 @@ def studio_status(
         areas.add_column("State", no_wrap=True)
         areas.add_column("Screens", justify="right", no_wrap=True)
         areas.add_column("Drawn", justify="right", no_wrap=True)
+        areas.add_column("Rules approved", justify="right", no_wrap=True)
         for area in status["areas"]:
-            areas.add_row(Text(terminal_text(area["title"])), _AREA_STATES.get(area["state"], area["state"]), str(area["screens"]), str(area["pages"]))
+            rules = sum(area["rules"].values())
+            areas.add_row(Text(terminal_text(area["title"])), _AREA_STATES.get(area["state"], area["state"]), str(area["screens"]), str(area["pages"]),
+                          "%d of %d" % (area["approved"], rules) if rules else "-")
         console.print(areas)
     console.print()
     _line("Next: ", command(root, step["command"], step["args"]), ". ", step["why"])

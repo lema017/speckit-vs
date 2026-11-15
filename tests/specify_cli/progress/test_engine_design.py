@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -19,8 +20,8 @@ from .conftest import OFICIO, REPO as ROOT, step_event, symlink
 from .test_engine_render import HOSTILE, parse_page
 
 NOW = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
-STEPS_LINE = "Steps: Define: 2 decisions; Map: 2 of 2 areas; Mockup: 6 of 6 screens"
-NEXT_LINE = "Next: /speckit.studio.mockup. Every area is drawn. Open the mockup and say what to change."
+STEPS_LINE = "Steps: Define: 2 decisions; Map: 2 of 2 areas; Mockup: 6 of 6 screens; Iterate: No comments yet; Approve: 1 of 2 areas"
+NEXT_LINE = "Next: /speckit.studio.approve acceso. Acceso is drawn. Approve its rules when the mockup is right, or say what to change first."
 
 
 @pytest.fixture
@@ -96,6 +97,15 @@ def test_a_studio_script_behind_a_link_is_not_loaded(engine, designed, tmp_path)
     assert engine.load_studio(designed.root) is None and design_of(engine, designed) is None
 
 
+def test_reading_the_studio_script_leaves_nothing_in_the_project(engine, designed, monkeypatch):
+    monkeypatch.setattr(sys, "dont_write_bytecode", False)
+    folder = designed.root / ".specify" / "extensions" / "studio" / "scripts" / "python"
+    before = sorted(path.name for path in folder.iterdir())
+    assert engine.load_studio(designed.root) is not None and design_of(engine, designed) is not None
+    assert sorted(path.name for path in folder.iterdir()) == before, "git would list what reading the script left behind"
+    assert sys.dont_write_bytecode is False, "what the caller chose is put back"
+
+
 # -- What the page of the design says ----------------------------------------------------------
 
 
@@ -105,10 +115,12 @@ def test_the_design_page_says_how_far_each_step_is(engine, designed):
     assert [(step["name"], step["label"], step["command"], step["state"], step["fact"]) for step in data["steps"]] == [
         ("define", "Define", "/speckit.studio.define", "done", "2 decisions"),
         ("map", "Map", "/speckit.studio.map", "done", "2 of 2 areas"),
-        ("mockup", "Mockup", "/speckit.studio.mockup", "done", "6 of 6 screens")]
+        ("mockup", "Mockup", "/speckit.studio.mockup", "done", "6 of 6 screens"),
+        ("iterate", "Iterate", "/speckit.studio.iterate", "pending", "No comments yet"),
+        ("approve", "Approve", "/speckit.studio.approve", "active", "1 of 2 areas")]
     assert all(step["running"] is False and step["note"] is None and step["who"] is None for step in data["steps"])
-    assert data["totals"]["areas"] == 2 and data["totals"]["drawn"] == 2 and data["screens"] == 6
-    assert data["next"] == {"command": "/speckit.studio.mockup", "why": "Every area is drawn. Open the mockup and say what to change."}
+    assert data["totals"]["areas"] == 2 and (data["totals"]["drawn"], data["totals"]["approved"]) == (1, 1) and data["screens"] == 6
+    assert data["next"] == {"command": "/speckit.studio.approve acceso", "why": "Acceso is drawn. Approve its rules when the mockup is right, or say what to change first."}
 
 
 def test_each_area_shows_its_own_steps(engine, designed):
@@ -118,10 +130,12 @@ def test_each_area_shows_its_own_steps(engine, designed):
     areas = {area["id"]: area for area in design_of(engine, designed)["areas"]}
     assert areas["acceso"]["steps"] == [
         {"name": "map", "label": "Map", "state": "active", "fact": "4 stories, 1 waiting", "running": False},
-        {"name": "mockup", "label": "Mockup", "state": "done", "fact": "5 of 5 screens", "running": False}]
+        {"name": "mockup", "label": "Mockup", "state": "done", "fact": "5 of 5 screens", "running": False},
+        {"name": "iterate", "label": "Iterate", "state": "pending", "fact": "not yet", "running": False},
+        {"name": "approve", "label": "Approve", "state": "pending", "fact": "not yet", "running": False}]
     assert (areas["acceso"]["title"], areas["acceso"]["state"], areas["acceso"]["screens"], areas["acceso"]["rules"]) == ("Acceso", "in-design", 5, {"draft": 6})
-    assert [(chip["state"], chip["fact"]) for chip in areas["inicio"]["steps"]] == [("done", "1 story"), ("pending", "not yet")]
-    assert [(chip["state"], chip["fact"]) for chip in areas["talleres"]["steps"]] == [("pending", "not yet"), ("pending", "not yet")]
+    assert [(chip["state"], chip["fact"]) for chip in areas["inicio"]["steps"]] == [("done", "1 story"), ("pending", "not yet"), ("pending", "not yet"), ("pending", "not yet")]
+    assert [(chip["state"], chip["fact"]) for chip in areas["talleres"]["steps"]] == [("pending", "not yet")] * 4
     assert (areas["talleres"]["state"], areas["talleres"]["covers"], areas["talleres"]["command"]) == (
         "not-started", "Ver los talleres y apuntarse", "/speckit.studio.map talleres")
 
@@ -168,13 +182,55 @@ def test_a_document_the_script_does_not_name_as_one_is_not_read(engine, designed
 # -- How a command is written ------------------------------------------------------------------
 
 
+def test_an_area_shows_the_comments_that_wait_and_how_many_rules_are_approved(engine, designed):
+    product(designed, "comments.md").write_text("## C-001\n- Screen: SCR-login\n- Status: open\n\n> Más grande\n\n## C-002\n- Screen: SCR-login\n- Status: open\n\n> Y azul\n",
+                                                encoding="utf-8")
+    folder = designed.root / "specs" / "_capabilities" / "login"
+    folder.mkdir(parents=True)
+    (folder / "spec.md").write_text("- **R-login-lockout** [designed]: Tras 5 intentos fallidos seguidos, la cuenta se bloquea 15 minutos. (x)\n", encoding="utf-8")
+    edit(designed, "capability-drafts.md",
+         "### R-login-lockout\n- Text: Tras 5 intentos fallidos seguidos, la cuenta se bloquea 15 minutos.\n- Example: Ana falla 5 veces a las 10:00 y puede volver a intentar a las 10:15.\n\n", "")
+    data = design_of(engine, designed)
+    areas = {area["id"]: area for area in data["areas"]}
+    assert [(chip["name"], chip["state"], chip["fact"]) for chip in areas["acceso"]["steps"][2:]] == [("iterate", "attention", "2 comments open"), ("approve", "active", "1 of 6 rules")]
+    assert [(chip["name"], chip["state"], chip["fact"]) for chip in areas["inicio"]["steps"][2:]] == [("iterate", "done", "nothing open"), ("approve", "done", "no rules")]
+    assert (areas["acceso"]["state"], areas["inicio"]["state"]) == ("drawn", "approved")
+    assert data["steps"][3]["fact"] == "2 comments open" and data["next"]["command"] == "/speckit.studio.iterate"
+    assert {"kind": "comments", "text": "2 comments on the mockup wait to be applied."} in data["attention"]
+    product(designed, "comments.md").write_text("## C-001\n- Screen: SCR-login\n- Status: open\n\n> Más grande\n", encoding="utf-8")
+    areas = {area["id"]: area for area in design_of(engine, designed)["areas"]}
+    assert areas["acceso"]["steps"][2]["fact"] == "1 comment open"
+
+
+def test_a_studio_from_before_the_approval_of_an_area_is_still_read(engine, designed, monkeypatch):
+    studio = engine.load_studio(designed.root)
+    newer = studio.status
+
+    def older(read):
+        status = newer(read)
+        status["totals"].pop("approved")
+        status["steps"] = status["steps"][:3]
+        for area in status["areas"]:
+            area.pop("comments")
+            area.pop("approved")
+            area["steps"] = {name: area["steps"][name] for name in ("map", "mockup")}
+        return status
+
+    monkeypatch.setattr(studio, "status", older)
+    data = design_of(engine, designed)
+    assert data["problem"] is None and data["totals"]["approved"] == 0
+    assert [step["name"] for step in data["steps"]] == ["define", "map", "mockup"]
+    assert [chip["name"] for chip in data["areas"][0]["steps"]] == ["map", "mockup"]
+    assert engine.design_summary(data)["totals"]["approved"] == 0
+
+
 def test_a_command_is_written_the_way_the_agent_of_the_project_takes_it(engine, designed):
     assert engine.command_text(designed.root, "speckit.studio.map", "acceso") == "/speckit.studio.map acceso"
     skills(designed)
     assert engine.command_text(designed.root, "speckit.studio.map", "acceso") == "/speckit-studio-map acceso"
     assert engine.command_text(designed.root, "speckit.studio.define") == "/speckit-studio-define"
     data = design_of(engine, designed)
-    assert data["steps"][0]["command"] == "/speckit-studio-define" and data["next"]["command"] == "/speckit-studio-mockup"
+    assert data["steps"][0]["command"] == "/speckit-studio-define" and data["next"]["command"] == "/speckit-studio-approve acceso"
 
 
 @pytest.mark.parametrize("options", ["{not json", "[]", '{"ai_skills": "yes"}', '{"ai_skills": false}'])
@@ -198,9 +254,9 @@ def test_a_step_that_was_started_and_not_closed_is_running(engine, designed):
     assert (mockup["running"], mockup["state"], mockup["who"], mockup["ts"]) == (True, "done", "claude", stamp(NOW - timedelta(minutes=5)))
     assert data["steps"][0]["running"] is False
     areas = {area["id"]: area for area in data["areas"]}
-    assert [chip["running"] for chip in areas["acceso"]["steps"]] == [False, True]
+    assert [chip["running"] for chip in areas["acceso"]["steps"]] == [False, True, False, False]
     assert areas["acceso"]["steps"][1]["state"] == "done", "what the files prove is not undone by a new run"
-    assert [chip["running"] for chip in areas["inicio"]["steps"]] == [False, False], "the step ran for another area"
+    assert [chip["running"] for chip in areas["inicio"]["steps"]] == [False] * 4, "the step ran for another area"
 
 
 def test_a_step_that_was_started_before_its_files_exist_is_active(engine, designed):
@@ -315,10 +371,11 @@ def test_drawing_everything_draws_the_design_and_puts_it_on_top_of_the_list(engi
     summary = drawn["design"]["summary"]
     assert summary == {
         "file": "design.html", "generated": "2026-01-02T03:04:05Z", "product": "Oficio", "problem": None,
-        "totals": {"areas": 2, "drawn": 2, "in_design": 0, "not_started": 0},
+        "totals": {"areas": 2, "approved": 1, "drawn": 1, "in_design": 0, "not_started": 0},
         "steps": [{"label": "Define", "state": "done", "fact": "2 decisions"}, {"label": "Map", "state": "done", "fact": "2 of 2 areas"},
-                  {"label": "Mockup", "state": "done", "fact": "6 of 6 screens"}],
-        "next": {"command": "/speckit.studio.mockup", "why": "Every area is drawn. Open the mockup and say what to change."},
+                  {"label": "Mockup", "state": "done", "fact": "6 of 6 screens"}, {"label": "Iterate", "state": "pending", "fact": "No comments yet"},
+                  {"label": "Approve", "state": "active", "fact": "1 of 2 areas"}],
+        "next": {"command": "/speckit.studio.approve acceso", "why": "Acceso is drawn. Approve its rules when the mockup is right, or say what to change first."},
         "attention": 2}
     assert page_data(drawn["index"])["design"] == summary
     assert json.loads((out / ".design.json").read_text(encoding="utf-8")) == summary
@@ -530,10 +587,13 @@ def test_the_design_page_names_and_colors_every_state(engine):
     for state in ("done", "active", "attention", "pending"):
         assert ".pipeline li.%s" % state in page and ".chips li.%s" % state in page
         assert "%s: \"" % state in page, "the page says in words what the state %s is" % state
-    for state in ("not-started", "in-design", "drawn"):
+    for state in ("not-started", "in-design", "drawn", "approved"):
         assert '"%s"' % state in page or "%s:" % state in page
+    assert ".pill.approved{" in page and ".pill.drawn{" in page and ".pill.in-design{" in page
+    assert '$("what").textContent = "areas approved";' in page and 'T.approved + " / " + T.areas' in page, "the total is what is approved"
 
 
 def test_the_list_of_specs_draws_the_design_only_when_there_is_one():
     page = (ROOT / "scripts" / "progress" / "index.html").read_text(encoding="utf-8")
     assert 'if (D.design) document.getElementById("design").appendChild(design(D.design));' in page
+    assert '(d.totals.approved || 0) + " of " + plural(d.totals.areas, "area") + " approved"' in page, "a summary from before approval has no such total"

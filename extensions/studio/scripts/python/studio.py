@@ -7,8 +7,13 @@
     studio.py build
     studio.py directions            the page that shows the looks of directions.md side by side
     studio.py pick LETTER           make one direction the look of the product
-    studio.py open [--page directions] [--no-browser]
+    studio.py open [--page directions] [--no-browser] [--stop]
     studio.py shots [--area AREA] [--page directions] [--states]
+    studio.py comments [--all]                              what the person said on the mockup
+    studio.py comments add                                  keep the comments the mockup copied, read from stdin
+    studio.py comments resolve C-1 [C-2 ...] --as applied|declined|open [--note WHY]
+    studio.py approve AREA [--by WHO] [--dry-run]           publish the draft rules of an area as approved
+    studio.py serve [--port N] [--idle SECONDS]             serve the mockup to this machine and keep its comments
 
 Everything a person decides in the design conversation is a Markdown file under specs/_product/.
 This script decides nothing. It reads those files, says whether they agree with each other and with
@@ -40,12 +45,31 @@ DATA_PLACEHOLDER = "/*DATA*/null"
 DEVICES = {"desktop": (1280, 800), "phone": (500, 1000)}
 # Either one set to anything but 0 or false: this script opens no browser.
 NO_BROWSER_ENV = ("SPECKIT_STUDIO_NO_BROWSER", "SPECKIT_PROGRESS_NO_BROWSER")
+# Set to anything but 0 or false: `open` starts no server, and opens the mockup from the disk.
+NO_SERVER_ENV = "SPECKIT_STUDIO_NO_SERVER"
 BROWSER_ENV = "SPECKIT_STUDIO_BROWSER"
 SHOT_SECONDS = 60
 # Wide and tall enough for three looks side by side, each with its two sample screens.
 DIRECTIONS_SIZE = (1440, 1560)
 # What the person can open and read, in the order the design is made.
-DOCUMENTS = ("vision.md", "actors.md", "navigation.md", "story-map.md", "capability-drafts.md", "decisions.md", "look-and-feel.md")
+DOCUMENTS = ("vision.md", "actors.md", "navigation.md", "story-map.md", "capability-drafts.md", "decisions.md", "look-and-feel.md", "comments.md")
+COMMENTS = "comments.md"
+# What became of a comment: it waits, it was applied, it was not (its note says why), or the person took it back.
+COMMENT_STATES = ("open", "applied", "declined", "withdrawn")
+# A comment is what a person typed in a page: each part is cut to what its field takes before it is kept.
+COMMENT_FIELD, COMMENT_TEXT, COMMENT_BODY = 200, 2000, 16 * 1024
+# Where the catalog keeps a design record, and the script that publishes one.
+CHANGES = CATALOG + "/_changes"
+RECORD = "capability-delta.md"
+CAPABILITIES_SCRIPT = ".specify/extensions/capabilities/scripts/python/capabilities.py"
+# The server of the mockup: the header a page of its own sends, how long it waits for a request before it stops,
+# and the ports it tries first. A project gets the same port every time, so its link stays the same.
+SESSION_HEADER = "X-Studio-Session"
+SERVER_IDLE = 6 * 60 * 60
+SERVER_PORTS = (47000, 1000)
+TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8",
+         ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".svg": "image/svg+xml",
+         ".webp": "image/webp", ".ico": "image/x-icon", ".woff2": "font/woff2"}
 
 ACTOR = r"ACT-[a-z0-9]+(?:-[a-z0-9]+)*"
 STORY = r"ST-[0-9]+"
@@ -54,6 +78,7 @@ FLOW = r"FL-[0-9]+"
 RULE = r"R-[a-z0-9]+(?:-[a-z0-9]+)*"
 SLUG = r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*"
 QUESTION = r"Q-[0-9]+"
+REMARK = r"C-[0-9]+"
 LETTER = r"[A-Z]"
 FONT = r"[A-Za-z0-9 ,'\"_-]{1,120}"
 PAGE = r"[a-z0-9][a-z0-9-]*\.html"
@@ -63,6 +88,9 @@ HEADING = re.compile(r"^(#{1,3}) (.+?)\s*$")
 FIELD = re.compile(r"^- ([A-Za-z][A-Za-z-]*): ?(.*?)\s*$")
 ELEMENT = re.compile(r'^- ([a-z][a-z-]*) "(.+?)"(?: -> (%s)(?:/(%s))?)?(?:: (.+))?$' % (SCREEN, SLUG))
 COMMENT = re.compile(r"<!--.*?-->", re.S)
+EXAMPLE = re.compile(r"^- (%s): (.+?)\s*$" % RULE)
+PASTED = re.compile(r"^C-[0-9]+: (%s)(?:\s|$)" % SCREEN)
+APPROVED_BY = re.compile(r"^Approved by: (.+) on (\d{4}-\d{2}-\d{2})\s*$")
 CATALOG_RULE = re.compile(r"^- \*\*(%s)\*\*( \[designed\])?: (.*?)(?: \([^()]*\))?\s*$" % RULE, re.M)
 NOTHING = ("none", "-")
 # The kinds of element a person presses or fills in: the page shows each one under the label its screen gives it.
@@ -171,6 +199,25 @@ def count(number, noun):
     return "%d %s%s" % (number, noun, "" if number == 1 else "s")
 
 
+def one_line(value, limit=COMMENT_FIELD):
+    """What a person typed, as one line a field can hold: no line break, no control character, nothing that opens
+    a comment of Markdown, and no longer than the field takes."""
+    text = "".join(char for char in " ".join(str(value if value is not None else "").split()) if char.isprintable())
+    return text.replace("<!--", "<! --")[:limit].strip()
+
+
+def many_lines(value, limit=COMMENT_TEXT):
+    """What a person typed, line by line, without the empty lines around it."""
+    lines = [one_line(line, limit) for line in str(value if value is not None else "").replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+    return "\n".join(lines).strip("\n")[:limit].rstrip()
+
+
+def quoted(item):
+    """The lines a block quotes with `> `: what a comment says."""
+    lines = [line.strip()[1:] for _, line in item["lines"] if line.strip().startswith(">")]
+    return "\n".join(line[1:] if line.startswith(" ") else line for line in lines).strip("\n")
+
+
 def split_title(title, pattern):
     """`ID The rest` -> (id, the rest), or (None, title) when it does not start with an id of that kind."""
     head, _, rest = title.partition(" ")
@@ -190,6 +237,7 @@ class Product:
         self.idea = ""
         self.actors, self.areas, self.flows, self.stories, self.screens = {}, {}, {}, {}, {}
         self.capabilities, self.rules, self.questions = {}, {}, []
+        self.comments = []
         self.theme = None
         self.directions, self.sample = {}, {}
         self.exists = read(self.dir / "product.md") is not None
@@ -241,6 +289,7 @@ class Product:
         self.load_screens()
         self.load_drafts()
         self.load_decisions()
+        self.load_comments()
         self.load_theme()
         self.load_directions()
 
@@ -416,6 +465,36 @@ class Product:
                 seen.add(key)
                 self.questions.append({"id": key, "scope": scope, "question": text, "status": status, "answer": fields.get("Answer", ""),
                                        "owner": fields.get("Owner", ""), "business": fields.get("Business", "").strip().lower() == "yes"})
+
+    def load_comments(self):
+        """What the person said on the mockup: `## C-<number>`, where it was said, what became of it, and the words, quoted."""
+        seen = set()
+        for item in outline(read(self.dir / COMMENTS) or ""):
+            if item["level"] != 2:
+                continue
+            key = item["title"].strip()
+            if not re.fullmatch(REMARK, key):
+                self.bad(COMMENTS, item["line"], "a comment is `## C-<number>`")
+                continue
+            fields = self.fields(COMMENTS, item, ("Screen", "Status"), ("State", "Person", "Element", "Path", "Refs", "Date", "Note"))
+            status, text = fields.get("Status", "").strip().lower(), quoted(item)
+            if status not in COMMENT_STATES:
+                self.bad(COMMENTS, item["line"], "Status is %s" % ", ".join(COMMENT_STATES[:-1]) + " or " + COMMENT_STATES[-1])
+            if not re.fullmatch(SCREEN, fields.get("Screen", "").strip()):
+                self.bad(COMMENTS, item["line"], "Screen is the id of the screen the comment was made on, such as SCR-login")
+            if not text:
+                self.bad(COMMENTS, item["line"], "a comment says what to change, in lines that start with `> `")
+            if status == "declined" and not fields.get("Note", "").strip():
+                self.bad(COMMENTS, item["line"], "a declined comment says why in its Note")
+            if key in seen:
+                self.bad(COMMENTS, item["line"], "comment %s is defined twice" % key)
+            seen.add(key)
+            self.comments.append({
+                "id": key, "screen": fields.get("Screen", "").strip(), "state": fields.get("State", "").strip() or "normal",
+                "person": fields.get("Person", "").strip(), "element": fields.get("Element", "").strip(), "path": fields.get("Path", "").strip(),
+                "refs": self.ids(COMMENTS, item, "Refs", "%s|%s" % (STORY, RULE)), "date": fields.get("Date", "").strip(),
+                "status": status, "note": fields.get("Note", "").strip(), "text": text,
+            })
 
     def look(self, name, head, modes):
         """One look: the font and the radii its heading gives, and the colors of its Light and Dark sections."""
@@ -667,10 +746,17 @@ def problems(product):
         if rule["id"] not in cited:
             hard.append("%s: no story and no screen cites %s" % (where, rule["id"]))
         known = catalog.get(rule["id"])
-        if known and known["text"] != rule["text"]:
-            hard.append("%s: %s is in the catalog with another text; a draft does not rewrite an approved rule" % (where, rule["id"]))
+        if known and known["capability"] != rule["capability"]:
+            hard.append("%s: %s belongs to the capability %s in the catalog, and to %s here" % (where, rule["id"], known["capability"], rule["capability"]))
+        elif known and known["text"] != rule["text"] and known["state"] != "designed":
+            hard.append("%s: %s is built, and the draft gives it another text; a built rule changes with a spec, not with a draft" % (where, rule["id"]))
+        elif known and known["text"] != rule["text"]:
+            notes.append("%s: %s is approved with another text; this draft is a change that waits for speckit.studio.approve" % (where, rule["id"]))
         elif known:
-            notes.append("%s: %s is already in the catalog with this text; the draft can go" % (where, rule["id"]))
+            notes.append("%s: %s is already in the catalog with this text; speckit.studio.approve takes the draft away" % (where, rule["id"]))
+    for comment in product.comments:
+        if comment["status"] == "open" and comment["screen"] not in product.screens:
+            notes.append("%s: %s was made on %s, which is not a screen any more" % (rel(COMMENTS), comment["id"], comment["screen"]))
 
     for flow in product.flows.values():
         where = rel("navigation.md", flow["line"])
@@ -776,8 +862,28 @@ def problems(product):
 # --------------------------------------------------------------------------- how far the design is
 
 def rule_state(product, catalog, rule):
-    """A rule the catalog has is past its draft, whatever capability-drafts.md still holds."""
-    return catalog[rule]["state"] if rule in catalog else "draft" if rule in product.rules else "unknown"
+    """A rule the catalog has is past its draft. An approved rule whose draft says something else has a change proposed:
+    the catalog keeps its text until the person approves the new one."""
+    known, draft = catalog.get(rule), product.rules.get(rule)
+    if known and draft and known["state"] == "designed" and draft["text"] != known["text"]:
+        return "proposed"
+    return known["state"] if known else "draft" if draft else "unknown"
+
+
+def area_rules(product, area):
+    """The rules the stories and the screens of an area cite, in order."""
+    owners = [owner for owner in list(product.stories.values()) + list(product.screens.values()) if owner["area"] == area]
+    return sorted({rule for owner in owners for rule in owner["rules"]})
+
+
+def approval_state(product, catalog, rules):
+    """How far the approval of some rules is: nothing to approve counts as done, a change or a draft left behind needs the person."""
+    states = [rule_state(product, catalog, rule) for rule in rules]
+    # A rule that is in the catalog and still in the drafts: its text changed, or its approval was cut short.
+    if any(rule in product.rules and rule in catalog for rule in rules):
+        return "attention"
+    approved = sum(1 for state in states if state not in ("draft", "unknown"))
+    return "done" if approved == len(states) else "active" if approved else "pending"
 
 
 def status(product):
@@ -797,7 +903,7 @@ def status(product):
     for area in product.areas.values():
         stories = [story for story in product.stories.values() if story["area"] == area["id"]]
         screens = [screen for screen in product.screens.values() if screen["area"] == area["id"]]
-        rules = sorted({rule for owner in stories + screens for rule in owner["rules"]})
+        rules = area_rules(product, area["id"])
         counts = {}
         for rule in rules:
             state = rule_state(product, catalog, rule)
@@ -811,30 +917,56 @@ def status(product):
         else:
             mapped = "done" if stories and screens and not orphan and not pending else "active"
         mock = "pending" if not drawn else "done" if len(drawn) == len(screens) else "active"
+        said = [comment for comment in product.comments if comment["screen"] in product.screens and product.screens[comment["screen"]]["area"] == area["id"]]
+        waiting_comments = sum(1 for comment in said if comment["status"] == "open")
+        # An area with no rule has nothing to approve: it counts as approved once it is described and drawn.
+        unready = mapped == "pending" or (not rules and (mapped != "done" or mock != "done"))
+        approve = "pending" if unready else approval_state(product, catalog, rules)
+        # Nothing asks for a round of changes once the area is approved, or once its comments were gone through.
+        settled = (approve == "done" and mock == "done") or len(said) > waiting_comments
+        iterate = "attention" if waiting_comments else "done" if settled else "pending"
         areas.append({
             "id": area["id"], "title": area["title"], "covers": area["covers"], "stories": len(stories), "screens": len(screens), "pages": len(drawn),
             "rules": counts, "asked": len(pending),
             "open": sum(1 for question in product.questions if question["scope"] == scope and question["status"] == "open"),
             "decisions": sum(1 for question in product.questions if question["scope"] == scope and question["status"] == "decided"),
             "links_pending": sum(len(pages[key].pending) for key in drawn),
-            "steps": {"map": mapped, "mockup": mock},
-            "state": "not-started" if mapped == "pending" else "drawn" if mapped == "done" and mock == "done" else "in-design",
+            "comments": waiting_comments,
+            "approved": sum(number for state, number in counts.items() if state not in ("draft", "unknown")),
+            "steps": {"map": mapped, "mockup": mock, "iterate": iterate, "approve": approve},
+            "state": "not-started" if mapped == "pending" else "in-design" if mapped != "done" or mock != "done" else "approved" if approve == "done" else "drawn",
         })
+    remarks = {state: sum(1 for comment in product.comments if comment["status"] == state) for state in COMMENT_STATES}
+    waiting_all = remarks["open"]
     if define["state"] != "done":
         step = {"command": "speckit.studio.define", "args": "", "why": "The product still lacks: %s." % ", ".join(missing) if missing
                 else "%d questions of the first conversation wait for an answer." % len(waiting)}
     else:
         unmapped = next((area for area in areas if area["steps"]["map"] != "done"), None)
         undrawn = next((area for area in areas if area["steps"]["map"] == "done" and area["steps"]["mockup"] != "done"), None)
+        changed = next((area for area in areas if area["steps"]["approve"] == "attention"), None)
+        unapproved = next((area for area in areas if area["state"] == "drawn"), None)
+        designed = sorted({catalog[rule]["capability"] for owner in list(product.stories.values()) + list(product.screens.values())
+                           for rule in owner["rules"] if rule in catalog and catalog[rule]["state"] == "designed"})
         if undrawn:
             left = undrawn["screens"] - undrawn["pages"]
             step = {"command": "speckit.studio.mockup", "args": "", "why": "%s is described and %s no page yet." % (
                 undrawn["title"], "its screen has" if undrawn["screens"] == 1 else "%d of its %d screens %s" % (left, undrawn["screens"], "has" if left == 1 else "have"))}
+        elif waiting_all:
+            step = {"command": "speckit.studio.iterate", "args": "", "why": "%s on the mockup %s to be applied." % (
+                count(waiting_all, "comment"), "waits" if waiting_all == 1 else "wait")}
+        elif changed:
+            step = {"command": "speckit.studio.approve", "args": changed["id"], "why": "A rule of %s changed after it was approved, or its approval was cut short." % changed["title"]}
+        elif unapproved:
+            step = {"command": "speckit.studio.approve", "args": unapproved["id"],
+                    "why": "%s is drawn. Approve its rules when the mockup is right, or say what to change first." % unapproved["title"]}
         elif unmapped:
             step = {"command": "speckit.studio.map", "args": unmapped["id"], "why": "%s is %s." % (
                 unmapped["title"], "not described yet" if unmapped["steps"]["map"] == "pending" else "half described")}
+        elif designed:
+            step = {"command": "speckit.capabilities.slice", "args": designed[0], "why": "Every area is approved. Cut the rules of %s into slices, and build one spec per slice." % designed[0]}
         else:
-            step = {"command": "speckit.studio.mockup", "args": "", "why": "Every area is drawn. Open the mockup and say what to change."}
+            step = {"command": "speckit.studio.iterate", "args": "", "why": "Every area is approved. To change something, say it."}
 
     # The steps a person runs, in order, each with what its files prove.
     words = {"vision.md": "the idea", "actors.md": "the people", "navigation.md": "the areas", "look-and-feel.md": "the look"}
@@ -856,7 +988,30 @@ def status(product):
          "fact": ("%d of %s" % (len(pages), count(len(product.screens), "screen")) if product.screens else "No screens yet")
                  + (", %s" % count(len(hard), "problem") if pages and hard else "")},
     ]
+    reviewed = remarks["applied"] + remarks["declined"]
+    if waiting_all:
+        fact = "%s open" % count(waiting_all, "comment") + (", %d applied" % remarks["applied"] if remarks["applied"] else "")
+    elif reviewed:
+        fact = "%s applied" % count(remarks["applied"], "comment") + (", %d not" % remarks["declined"] if remarks["declined"] else "")
+    else:
+        fact = "No comments yet"
+    steps.append({"name": "iterate", "command": "speckit.studio.iterate", "state": "attention" if waiting_all else "done" if reviewed else "pending", "fact": fact})
+    approved = [area for area in areas if area["state"] == "approved"]
+    touched = [area for area in areas if area["steps"]["approve"] in ("active", "attention")]
+    steps.append({"name": "approve", "command": "speckit.studio.approve",
+                  "state": "attention" if any(area["steps"]["approve"] == "attention" for area in areas)
+                           else "done" if areas and len(approved) == len(areas) else "active" if approved or touched else "pending",
+                  "fact": "%d of %s" % (len(approved), count(len(areas), "area")) if areas else "No areas yet"})
     attention = []
+    if waiting_all:
+        attention.append({"kind": "comments", "text": "%s on the mockup %s to be applied." % (count(waiting_all, "comment"), "waits" if waiting_all == 1 else "wait")})
+    for area in areas:
+        if area["steps"]["approve"] == "attention":
+            proposed = area["rules"].get("proposed", 0)
+            attention.append({"kind": "approve", "area": area["id"],
+                              "text": "%s of %s changed after %s approved: %s for approval." % (
+                                  count(proposed, "rule"), area["title"], "it was" if proposed == 1 else "they were", "it waits" if proposed == 1 else "they wait")
+                              if proposed else "The approval of %s was cut short: run it again." % area["title"]})
     if waiting:
         attention.append({"kind": "asked", "text": "%s about the product %s for an answer." % (count(len(waiting), "question"), "waits" if len(waiting) == 1 else "wait")})
     for area in areas:
@@ -875,9 +1030,10 @@ def status(product):
                                                                                               "leads" if area["links_pending"] == 1 else "lead")})
     return {
         "status": "ok", "product": product.name, "owner": product.owner, "language": product.language, "device": product.device,
-        "define": define, "areas": areas, "steps": steps, "attention": attention,
+        "define": define, "areas": areas, "steps": steps, "attention": attention, "comments": remarks,
         "totals": {"areas": len(areas), "not_started": sum(1 for area in areas if area["state"] == "not-started"),
                    "in_design": sum(1 for area in areas if area["state"] == "in-design"), "drawn": sum(1 for area in areas if area["state"] == "drawn"),
+                   "approved": len(approved),
                    "screens": len(product.screens), "pages": len(pages), "rules": len(product.rules),
                    "decisions": sum(1 for question in product.questions if question["status"] == "decided")},
         "summary": {"idea": product.idea, "people": [{"name": actor["name"], "role": actor["role"], "about": actor["about"]} for actor in product.actors.values()],
@@ -955,12 +1111,16 @@ def build(product, kit):
                "entrada": next((screen["id"] for screen in product.screens.values() if screen["entry"] and screen["file"]), "")}
     write(target / "screens.js", "/* Generated by studio from navigation.md and screens/. */\n" + as_script("STUDIO_SCREENS", screens))
     written.append("mockup/_studio/screens.js")
-    rules = {}
+    rules, examples = {}, record_examples(product.root)
     for rule in sorted({rule for owner in list(product.stories.values()) + list(product.screens.values()) for rule in owner["rules"]} | set(product.rules)):
         draft, known = product.rules.get(rule), catalog.get(rule)
         if draft or known:
-            rules[rule] = {"capacidad": (draft or known)["capability"], "texto": (draft or known)["text"], "estado": rule_state(product, catalog, rule),
-                           "nota": draft["example"] if draft else ""}
+            # A draft says what the person wants now: the mockup shows it, and what was approved before when that is something else.
+            state = rule_state(product, catalog, rule)
+            rules[rule] = {"capacidad": (draft or known)["capability"], "texto": (draft or known)["text"], "estado": state,
+                           "nota": draft["example"] if draft else examples.get(rule, "")}
+            if state == "proposed":
+                rules[rule]["antes"] = known["text"]
     data = {"producto": product.name, "idioma": product.language, "dispositivo": product.device,
             "personas": [{"id": actor["id"], "nombre": actor["name"], "rol": actor["role"], "descripcion": actor["about"], "correo": actor["email"]}
                          for actor in product.actors.values()],
@@ -1026,8 +1186,15 @@ def can_open(env=None, platform=None):
     return True
 
 
+def can_serve(env=None):
+    """False where the person asked for no server: the mockup then opens from the disk, and its comments stay in the browser."""
+    env = os.environ if env is None else env
+    return env.get(NO_SERVER_ENV, "").strip().lower() in ("", "0", "false")
+
+
 def show(product, kit, page=None, browser=True):
-    """Writes what is to be seen and opens it. Returns (its link, whether a browser opened it)."""
+    """Writes what is to be seen and opens it. Returns (its link, whether a browser opened it, whether a server of this project serves it).
+    The mockup is served where a browser can open it: a comment made in a page that is served is kept in the project."""
     if page == "directions":
         path = product.dir / directions(product, kit)
     else:
@@ -1035,15 +1202,18 @@ def show(product, kit, page=None, browser=True):
             raise NothingYet("no screen has a page yet: speckit.studio.mockup draws them")
         build(product, kit)
         path = product.dir / "mockup" / "index.html"
-    link = path.resolve().as_uri()
-    opened = False
+    link, opened, served = path.resolve().as_uri(), False, False
     if browser and can_open():
+        if page != "directions" and can_serve():
+            state = server_state(product.root) or start_server(product.root)
+            if state:
+                link, served = "http://127.0.0.1:%d/index.html" % state["port"], True
         import webbrowser
         try:
             opened = bool(webbrowser.open(link))
         except webbrowser.Error:
             opened = False
-    return link, opened
+    return link, opened, served
 
 
 def find_browser(env=None):
@@ -1126,6 +1296,512 @@ def shots(product, kit, area=None, page=None, states=False):
     return taken, failed
 
 
+# --------------------------------------------------------------------------- what the person says on the mockup
+
+def render_comments(comments):
+    """comments.md as this script writes it: one block per comment, its fields, and its words quoted."""
+    lines = ["# Comments", "", "<!-- What the person said on the mockup. The mockup adds a comment and `comments resolve` says what became of it: never by hand. -->", ""]
+    for comment in comments:
+        lines.append("## %s" % comment["id"])
+        for key, name in (("screen", "Screen"), ("state", "State"), ("person", "Person"), ("element", "Element"), ("path", "Path"),
+                          ("refs", "Refs"), ("date", "Date"), ("status", "Status"), ("note", "Note")):
+            value = ", ".join(comment[key]) if key == "refs" else comment[key]
+            if value:
+                lines.append("- %s: %s" % (name, value))
+        lines += [""] + ["> " + line if line else ">" for line in comment["text"].split("\n")] + [""]
+    return "\n".join(lines)
+
+
+def readable_comments(product):
+    """The comments, once the file that keeps them can be read whole: this script rewrites it, and would drop what it cannot read."""
+    wrong = [problem for problem in product.hard if problem.startswith(product.rel(COMMENTS))]
+    if wrong:
+        raise StudioError("%s cannot be read as it is written: %s" % (product.rel(COMMENTS), "; ".join(wrong)))
+    return [dict(comment) for comment in product.comments]
+
+
+def clean_comment(product, entry, stamp):
+    """(a comment as it is kept, None) or (None, why not). Whatever a comment says is data: each part is cut to what its field takes."""
+    if not isinstance(entry, dict):
+        return None, "a comment is an object with its screen and its text"
+    screen, text = one_line(entry.get("screen")), many_lines(entry.get("text"))
+    if screen not in product.screens:
+        return None, "%s is not a screen of the product" % (screen or "nothing")
+    if not text:
+        return None, "the comment on %s says nothing" % screen
+    state, person, path, date = one_line(entry.get("state")), one_line(entry.get("person")), one_line(entry.get("path"), 400), one_line(entry.get("date"))
+    refs = [part for part in re.split(r"[\s,]+", one_line(entry.get("refs"))) if re.fullmatch("%s|%s" % (STORY, RULE), part)]
+    return {"screen": screen, "state": state if re.fullmatch(SLUG, state) else "normal", "person": person if re.fullmatch(ACTOR, person) else "",
+            "element": one_line(entry.get("element")), "path": path if re.fullmatch(r"[a-z0-9:()> -]*", path) else "", "refs": refs,
+            "date": date if re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}", date) else stamp, "status": "open", "note": "", "text": text}, None
+
+
+def now_stamp():
+    import datetime
+    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+
+def add_comments(product, entries, stamp=None):
+    """Keeps new comments, each under the next number: a number is never used twice. Returns (the ones kept, why each other was not).
+    A comment already kept, with the same screen, element, words and date, is not kept again, unless the person took it back."""
+    comments = readable_comments(product)
+    known = {(comment["screen"], comment["element"], comment["text"], comment["date"]) for comment in comments if comment["status"] != "withdrawn"}
+    number = max([int(comment["id"][2:]) for comment in comments] or [0])
+    added, skipped = [], []
+    for entry in entries:
+        comment, why = clean_comment(product, entry, stamp or now_stamp())
+        if comment is None:
+            skipped.append(why)
+            continue
+        key = (comment["screen"], comment["element"], comment["text"], comment["date"])
+        if key in known:
+            skipped.append("the comment on %s is already kept: %s" % (comment["screen"], comment["text"].split("\n")[0][:60]))
+            continue
+        number += 1
+        comment["id"] = "C-%03d" % number
+        known.add(key)
+        comments.append(comment)
+        added.append(comment)
+    if added:
+        write(product.dir / COMMENTS, render_comments(comments))
+    return added, skipped
+
+
+def resolve_comments(product, keys, state, note=""):
+    """Says what became of some comments. Returns them as they are now."""
+    comments = readable_comments(product)
+    unknown = sorted(set(keys) - {comment["id"] for comment in comments})
+    if not keys or unknown:
+        raise StudioError("no comment %s in %s" % (", ".join(unknown), product.rel(COMMENTS)) if unknown else "say which comments, such as C-001")
+    note = one_line(note, 400)
+    if state == "declined" and not note:
+        raise StudioError("a declined comment says why: --note")
+    changed = [comment for comment in comments if comment["id"] in keys]
+    for comment in changed:
+        comment["status"], comment["note"] = state, note
+    write(product.dir / COMMENTS, render_comments(comments))
+    return changed
+
+
+def pasted_comments(text):
+    """The comments in the Markdown the mockup copies: `## C-001: SCR-login (Entrar)`, its fields and its quoted words."""
+    # A quoted line is what a person typed: it must not open a comment of Markdown that would hide what follows.
+    text = re.sub(r"(?m)^\s*>.*$", lambda line: line.group(0).replace("<!--", "<! --"), text)
+    found = []
+    for item in outline(text):
+        match = PASTED.match(item["title"]) if item["level"] == 2 else None
+        if match:
+            fields = item["fields"]
+            found.append({"screen": match.group(1), "state": fields.get("State"), "person": fields.get("Person"), "element": fields.get("Element"),
+                          "refs": fields.get("References"), "date": fields.get("Date"), "text": quoted(item)})
+    return found
+
+
+# --------------------------------------------------------------------------- approving the rules of an area
+
+def record_examples(root):
+    """The example each approved rule was approved with: the design records keep them under `## Examples`."""
+    found, base = {}, root / CHANGES
+    for path in sorted(base.glob("*/" + RECORD)) if base.is_dir() else []:
+        inside = False
+        for line in (read(path) or "").splitlines():
+            if line.startswith("## "):
+                inside = line.strip() == "## Examples"
+            elif inside and EXAMPLE.match(line):
+                found[EXAMPLE.match(line).group(1)] = EXAMPLE.match(line).group(2)
+    return found
+
+
+def last_approver(root):
+    """Who approved rules the last time, from the design records. The person is asked whether it is them again: it is never taken for granted."""
+    found, base = [], root / CHANGES
+    for path in sorted(base.glob("*/" + RECORD)) if base.is_dir() else []:
+        for line in (read(path) or "").splitlines():
+            match = APPROVED_BY.match(line)
+            if match:
+                found.append((match.group(2), len(path.parent.name), path.parent.name, one_line(match.group(1))))
+                break
+    return max(found)[3] if found else None
+
+
+def approval(product, area):
+    """What approving an area publishes, and what stands in the way. Reads, and writes nothing."""
+    if area not in product.areas:
+        raise StudioError("the area %s is not in navigation.md; the areas are %s" % (area, ", ".join(sorted(product.areas)) or "none"))
+    hard, _, pages = problems(product)
+    catalog = catalog_rules(product.root)
+    screens = [screen for screen in product.screens.values() if screen["area"] == area]
+    stories = [story for story in product.stories.values() if story["area"] == area]
+    capabilities, leftover, approved, blockers = {}, [], [], []
+    for key in area_rules(product, area):
+        draft, known = product.rules.get(key), catalog.get(key)
+        if draft is None:
+            if known:
+                approved.append(key)
+            continue
+        if known and known["text"] == draft["text"]:
+            leftover.append(key)
+            continue
+        elsewhere = sorted(owner["id"] for owner in list(product.stories.values()) + list(product.screens.values())
+                           if key in owner["rules"] and owner["area"] != area)
+        group = capabilities.setdefault(draft["capability"], {
+            "id": draft["capability"], "covers": product.capabilities[draft["capability"]]["covers"],
+            "new": read(product.root / CATALOG / draft["capability"] / "spec.md") is None, "rules": []})
+        group["rules"].append({"id": key, "text": draft["text"], "example": draft["example"], "from": known["text"] if known else None, "also_in": elsewhere})
+    if read(product.root / CAPABILITIES_SCRIPT) is None:
+        blockers.append("approving needs the capabilities extension, which keeps the approved rules: specify extension add capabilities")
+    if hard:
+        blockers.append("the check finds %s in the design: fix %s first, `check` lists them" % (count(len(hard), "problem"), "it" if len(hard) == 1 else "them"))
+    asked = [question["id"] for question in product.questions if question["scope"] == "map " + area and question["status"] == "asked"]
+    if asked:
+        blockers.append("%s about the area %s for an answer: %s" % (count(len(asked), "question"), "waits" if len(asked) == 1 else "wait", ", ".join(asked)))
+    warnings = []
+    waiting = [comment["id"] for comment in product.comments if comment["status"] == "open" and comment["screen"] in {screen["id"] for screen in screens}]
+    if waiting:
+        warnings.append("%s on its screens %s to be applied: %s" % (count(len(waiting), "comment"), "waits" if len(waiting) == 1 else "wait", ", ".join(waiting)))
+    undecided = [question["id"] for question in product.questions if question["scope"] == "map " + area and question["status"] == "open"]
+    if undecided:
+        warnings.append("%s about the area %s still open: %s" % (count(len(undecided), "question"), "is" if len(undecided) == 1 else "are", ", ".join(undecided)))
+    undrawn = [screen["id"] for screen in screens if screen["id"] not in pages]
+    if undrawn:
+        warnings.append("%s no page in the mockup yet: %s" % ("1 screen has" if len(undrawn) == 1 else "%d screens have" % len(undrawn), ", ".join(undrawn)))
+    groups = [capabilities[key] for key in sorted(capabilities)]
+    return {
+        "area": area, "title": product.areas[area]["title"], "covers": product.areas[area]["covers"], "owner": product.owner,
+        "last_by": last_approver(product.root),
+        "stories": [{"id": story["id"], "title": story["title"]} for story in stories],
+        "screens": [{"id": screen["id"], "title": screen["title"]} for screen in screens],
+        "capabilities": groups, "rules": sum(len(group["rules"]) for group in groups), "leftover": leftover, "approved": approved,
+        "blockers": blockers, "warnings": warnings,
+        "status": "blocked" if blockers else "ready" if groups or leftover else "nothing",
+    }
+
+
+def record_text(plan, who, day):
+    """The design record of an approval: who approved and when, the example of each rule, and the delta the catalog publishes."""
+    lines = ["# Design: %s" % plan["title"], "", "Approved by: %s on %s" % (who, day.isoformat()), "", "## Examples", ""]
+    lines += ["- %s: %s" % (rule["id"], rule["example"]) for group in plan["capabilities"] for rule in group["rules"]]
+    lines += ["", "## Capability Delta", "<!-- capability-delta:v1 -->"]
+    for group in plan["capabilities"]:
+        if group["new"]:
+            lines += ["", "### NEW-CAPABILITY %s" % group["id"], "- Covers: %s" % group["covers"]]
+        for rule in group["rules"]:
+            lines += ["", "### DESIGNED %s" % rule["id"], "- Capability: %s" % group["id"], "- From: %s" % (rule["from"] or "(none)"),
+                      "- To: %s" % rule["text"], "- Links: none"]
+    return "\n".join(lines) + "\n"
+
+
+def record_place(root, area, text, day):
+    """Where the record of today's approval of an area goes: the same place when it is the same record or one that was never published,
+    and a new one beside it otherwise. A published record is never rewritten."""
+    for number in range(1, 100):
+        name = "%s/%s-design-%s%s" % (CHANGES, day.strftime("%Y%m%d"), area, "" if number == 1 else "-%d" % number)
+        folder = root / name
+        if folder.is_symlink():
+            continue
+        published = any(path.name.endswith(".lock.json") for path in folder.iterdir()) if folder.is_dir() else False
+        if not folder.exists() or not published or read(folder / RECORD) == text:
+            return name
+    raise StudioError("too many design records for %s today" % area)
+
+
+def publish_design(root, record):
+    """Has the catalog publish a design record. Publishing the same record twice changes nothing."""
+    import subprocess
+    try:
+        done = subprocess.run([sys.executable, str(root / CAPABILITIES_SCRIPT), "publish-design", "--root", str(root), "--change", record],
+                              stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=300, check=False)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise StudioError("the catalog could not publish %s: %s" % (record, error))
+    try:
+        answer = json.loads(done.stdout.decode("utf-8"))
+    except ValueError:
+        answer = {}
+    if done.returncode != 0 or not isinstance(answer, dict) or answer.get("status") not in ("published", "unchanged"):
+        said = answer if isinstance(answer, dict) else {}
+        details = said.get("errors") or said.get("conflicts") or [said.get("status") or done.stderr.decode("utf-8", "replace").strip()[-400:] or "it said nothing"]
+        raise StudioError("the catalog did not publish %s: %s" % (record, "; ".join(str(detail) for detail in details)))
+    return answer
+
+
+def without_rules(text, rules):
+    """capability-drafts.md without those rules, and without a capability left with none."""
+    lines, items = text.split("\n"), outline(text)
+    gone = set()
+    for index, item in enumerate(items):
+        end = items[index + 1]["line"] - 1 if index + 1 < len(items) else len(lines)
+        if item["level"] == 3 and split_title(item["title"], RULE)[0] in rules:
+            gone.update(range(item["line"], end + 1))
+    for index, item in enumerate(items):
+        if item["level"] != 2:
+            continue
+        below = under(items, index)
+        if below and all(child["line"] in gone for child in below):
+            end = next((other["line"] - 1 for other in items[index + 1:] if other["level"] <= 2), len(lines))
+            gone.update(range(item["line"], end + 1))
+    kept = [line for number, line in enumerate(lines, 1) if number not in gone]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).rstrip("\n") + "\n"
+
+
+def approve(product, area, by=None, day=None):
+    """Publishes the draft rules of an area as approved, with who approved and when, and takes them out of the drafts.
+    It can be run again: cut short after publishing, the second run only takes the drafts away."""
+    import datetime
+    plan = approval(product, area)
+    if plan["status"] != "ready":
+        return plan
+    who = one_line(by) or one_line(product.owner)
+    if not who:
+        raise StudioError("say who approves: --by, or `- Owner:` in %s" % product.rel("product.md"))
+    plan["by"] = who
+    if plan["capabilities"]:
+        day = day or datetime.date.today()
+        text = record_text(plan, who, day)
+        plan["record"] = record_place(product.root, area, text, day)
+        write(product.root / plan["record"] / RECORD, text)
+        plan["published"] = publish_design(product.root, plan["record"])["status"]
+    published = [rule["id"] for group in plan["capabilities"] for rule in group["rules"]] + plan["leftover"]
+    drafts = product.dir / "capability-drafts.md"
+    write(drafts, without_rules(read(drafts) or "", set(published)))
+    plan["status"], plan["approved_now"] = "approved", published
+    return plan
+
+
+# --------------------------------------------------------------------------- the server of the mockup
+
+def root_key(root):
+    import hashlib
+    return hashlib.sha256(str(root).encode("utf-8")).hexdigest()[:16]
+
+
+def server_file(root):
+    """Where the running server of a project says its port and its session: outside the project, so it is never committed."""
+    import tempfile
+    return Path(tempfile.gettempdir()) / ("speckit-studio-%s.json" % root_key(root))
+
+
+def ask(port, method, path, session=None, body=None, timeout=3):
+    """One call to a server of studio on this machine. None when nobody answers as one."""
+    import urllib.request
+    request = urllib.request.Request("http://127.0.0.1:%d%s" % (port, path), method=method,
+                                     data=None if body is None else json.dumps(body).encode("utf-8"))
+    if session:
+        request.add_header(SESSION_HEADER, session)
+    if body is not None:
+        request.add_header("Content-Type", "application/json")
+    try:
+        # No proxy: this never leaves the machine.
+        with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(request, timeout=timeout) as response:
+            answer = json.loads(response.read(1024 * 1024).decode("utf-8"))
+    except (OSError, ValueError):
+        return None
+    return answer if isinstance(answer, dict) else None
+
+
+def server_state(root):
+    """The server of this project's mockup, when one answers: its port and its session. None otherwise."""
+    try:
+        state = json.loads(read(server_file(root)) or "")
+    except ValueError:
+        return None
+    if not isinstance(state, dict) or not isinstance(state.get("port"), int) or not isinstance(state.get("session"), str):
+        return None
+    answer = ask(state["port"], "GET", "/_api/ping")
+    return state if answer and answer.get("root") == root_key(root) else None
+
+
+def start_server(root, wait=15.0):
+    """Starts the server of this project's mockup on its own, so it outlives this command. None when it cannot."""
+    import subprocess
+    import time
+    options = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL, "close_fds": True}
+    if os.name == "nt":
+        options["creationflags"] = 0x00000008 | 0x00000200  # DETACHED_PROCESS and CREATE_NEW_PROCESS_GROUP: no console, no Ctrl+C of ours.
+    else:
+        options["start_new_session"] = True
+    try:
+        subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "serve", "--root", str(root)], **options)
+    except OSError:
+        return None
+    until = time.monotonic() + wait
+    while time.monotonic() < until:
+        time.sleep(0.1)
+        state = server_state(root)
+        if state:
+            return state
+    return None
+
+
+def stop_server(root):
+    """Tells the server of this project's mockup to stop. False when none was running."""
+    state = server_state(root)
+    return bool(state and ask(state["port"], "POST", "/_api/stop", state["session"], {}))
+
+
+def public(comment):
+    return {key: comment[key] for key in ("id", "screen", "state", "person", "element", "path", "refs", "date", "status", "note", "text")}
+
+
+def make_server(root, port=None):
+    """A server that shows the mockup of one project to this machine only, and keeps the comments made in it.
+    Returns (the server, its session). The session is a word only the pages it serves know: without it nothing is written."""
+    import hmac
+    import secrets
+    import time
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from urllib.parse import unquote
+
+    mockup = root / PRODUCT / "mockup"
+    session, key = secrets.token_urlsafe(24), root_key(root)
+    mark = ('<meta name="studio-session" content="%s">' % session).encode("ascii")
+
+    class Server(HTTPServer):
+        # On Windows this option would let another program take the port while this one listens.
+        allow_reuse_address = os.name != "nt"
+        stop = False
+        touched = time.monotonic()
+
+    class Handler(BaseHTTPRequestHandler):
+        server_version, sys_version = "studio", ""
+        timeout = 10  # One request at a time: a caller that says nothing does not keep the others waiting for long.
+
+        def log_message(self, *args):
+            pass
+
+        def answer(self, code, body, kind):
+            self.send_response(code)
+            for name, value in (("Content-Type", kind), ("Content-Length", str(len(body))), ("Cache-Control", "no-store"), ("X-Content-Type-Options", "nosniff")):
+                self.send_header(name, value)
+            self.end_headers()
+            self.wfile.write(body)
+
+        def say(self, code, data):
+            self.answer(code, json.dumps(data, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
+
+        def local(self):
+            """True when the request names this server by its own address, and comes from a page of its own.
+            A site that points one of its names at this machine names itself, and is turned away."""
+            port = self.server.server_address[1]
+            origin = self.headers.get("Origin")
+            return (self.headers.get("Host", "") in ("127.0.0.1:%d" % port, "localhost:%d" % port)
+                    and (origin is None or origin in ("http://127.0.0.1:%d" % port, "http://localhost:%d" % port)))
+
+        def trusted(self):
+            return hmac.compare_digest(self.headers.get(SESSION_HEADER, "").encode("utf-8"), session.encode("utf-8"))
+
+        def do_GET(self):
+            self.server.touched = time.monotonic()
+            if not self.local():
+                return self.say(403, {"error": "this server answers only to its own address"})
+            path = self.path.split("?", 1)[0].split("#", 1)[0]
+            if path == "/_api/ping":
+                return self.say(200, {"studio": FORMAT, "root": key})
+            if path == "/_api/comments":
+                if not self.trusted():
+                    return self.say(403, {"error": "only a page of the mockup reads the comments"})
+                try:
+                    return self.say(200, {"comments": [public(comment) for comment in Product(root).comments]})
+                except StudioError as error:
+                    return self.say(409, {"error": str(error)})
+            return self.page(unquote(path))
+
+        def page(self, path):
+            parts = [part for part in path.split("/") if part] or ["index.html"]
+            try:
+                target = mockup.joinpath(*parts)
+                inside = not any(part.startswith(".") or "\\" in part or ":" in part for part in parts) and mockup.resolve() in target.resolve().parents
+                found = inside and target.suffix.lower() in TYPES and not target.is_symlink() and target.is_file()
+                body = target.read_bytes() if found else None
+            except (OSError, ValueError):
+                body = None
+            if body is None:
+                return self.say(404, {"error": "the mockup has no such file"})
+            if target.suffix.lower() == ".html":
+                # The pages this server sends know its session; a page opened from the disk, or from another site, does not.
+                body = re.sub(br"<head[^>]*>", lambda head: head.group(0) + mark, body, count=1, flags=re.I)
+            return self.answer(200, body, TYPES[target.suffix.lower()])
+
+        def do_POST(self):
+            self.server.touched = time.monotonic()
+            try:
+                length = int(self.headers.get("Content-Length", ""))
+            except ValueError:
+                length = -1
+            # What was sent is read before anything is said, so the caller hears the answer and not a closed door.
+            sent = self.rfile.read(length) if 0 <= length <= 64 * COMMENT_BODY else b""
+            if not self.local() or not self.trusted():
+                return self.say(403, {"error": "only a page of the mockup writes here"})
+            if self.headers.get("Content-Type", "").split(";")[0].strip().lower() != "application/json":
+                return self.say(415, {"error": "the body is JSON"})
+            if length < 0:
+                return self.say(411, {"error": "the request says how long its body is"})
+            if length > COMMENT_BODY:
+                return self.say(413, {"error": "a comment is shorter than that"})
+            try:
+                body = json.loads(sent.decode("utf-8"))
+            except ValueError:
+                return self.say(400, {"error": "the body is not JSON"})
+            path = self.path.split("?", 1)[0]
+            if path == "/_api/stop":
+                self.server.stop = True
+                return self.say(200, {"stopped": True})
+            taken = re.fullmatch(r"/_api/comments/(%s)" % REMARK, path)
+            if path != "/_api/comments" and not taken:
+                return self.say(404, {"error": "nothing is written there"})
+            try:
+                product = Product(root)
+                if taken:
+                    # The person takes back a comment of theirs that nobody went through yet.
+                    if not any(comment["id"] == taken.group(1) and comment["status"] == "open" for comment in product.comments):
+                        return self.say(409, {"error": "%s is not a comment that waits" % taken.group(1)})
+                    return self.say(200, {"comment": public(resolve_comments(product, [taken.group(1)], "withdrawn")[0])})
+                # The day and the hour are the ones of this machine, not what the page says.
+                added, skipped = add_comments(product, [dict(body, date=None) if isinstance(body, dict) else body])
+            except StudioError as error:
+                return self.say(409, {"error": str(error)})
+            if not added:
+                return self.say(422, {"error": skipped[0] if skipped else "nothing to keep"})
+            return self.say(201, {"comment": public(added[0])})
+
+        def do_OPTIONS(self):
+            # No other site is told it may talk to this server, so a browser never sends its request.
+            self.say(403, {"error": "no other site talks to this server"})
+
+    first = SERVER_PORTS[0] + int(key[:8], 16) % SERVER_PORTS[1]
+    for candidate in [port] if port is not None else [first + step for step in range(20)] + [0]:
+        try:
+            return Server(("127.0.0.1", candidate), Handler), session
+        except OSError:
+            continue
+    raise StudioError("no port of this machine is free for the mockup")
+
+
+def serve(root, port=None, idle=SERVER_IDLE):
+    """Serves the mockup until it is told to stop, or nobody asks for anything for a long time."""
+    import time
+    server, session = make_server(root, port)
+    place, port = server_file(root), server.server_address[1]
+    try:
+        if place.is_symlink() or place.exists():
+            place.unlink()
+        # Only this user reads the session.
+        with os.fdopen(os.open(str(place), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w", encoding="utf-8") as handle:
+            handle.write(json.dumps({"port": port, "session": session, "pid": os.getpid()}))
+        emit({"status": "serving", "link": "http://127.0.0.1:%d/index.html" % port, "port": port})
+        sys.stdout.flush()
+        server.timeout = 0.5
+        while not server.stop and time.monotonic() - server.touched < idle:
+            server.handle_request()
+    finally:
+        server.server_close()
+        try:
+            if (json.loads(read(place) or "{}") or {}).get("session") == session:
+                place.unlink()
+        except (OSError, ValueError):
+            pass
+    return OK
+
+
 def scaffold(root, kit, name, owner, language, device=None):
     product = root / PRODUCT
     written = []
@@ -1167,8 +1843,8 @@ def main(argv=None):
         sys.stdout.reconfigure(encoding="utf-8")
 
     parser = argparse.ArgumentParser(prog="studio.py", description="The design of a product and its mockup", allow_abbrev=False)
-    parser.add_argument("command", choices=["scaffold", "status", "check", "build", "directions", "pick", "open", "shots"])
-    parser.add_argument("letter", nargs="?", help="pick: the letter of the direction")
+    parser.add_argument("command", choices=["scaffold", "status", "check", "build", "directions", "pick", "open", "shots", "comments", "approve", "serve"])
+    parser.add_argument("words", nargs="*", help="pick: the letter of the direction. approve: the area. comments: add, or resolve and the comments")
     parser.add_argument("--root", default=".")
     parser.add_argument("--name", help="scaffold: how the product is called")
     parser.add_argument("--owner", help="scaffold: who approves the design")
@@ -1178,6 +1854,14 @@ def main(argv=None):
     parser.add_argument("--area", help="shots: only the screens of this area")
     parser.add_argument("--states", action="store_true", help="shots: every state of each screen, not only the normal one")
     parser.add_argument("--no-browser", action="store_true", help="open: write the page and print its link, without opening it")
+    parser.add_argument("--stop", action="store_true", help="open: stop the server of the mockup instead")
+    parser.add_argument("--all", action="store_true", help="comments: every comment, not only the ones that wait")
+    parser.add_argument("--as", dest="outcome", choices=["applied", "declined", "open"], help="comments resolve: what became of the comments")
+    parser.add_argument("--note", help="comments resolve: what was done, or why not")
+    parser.add_argument("--by", help="approve: who approves, when it is not the owner of the product")
+    parser.add_argument("--dry-run", action="store_true", help="approve: say what would be approved, and write nothing")
+    parser.add_argument("--port", type=int, help="serve: the port, instead of the one of this project")
+    parser.add_argument("--idle", type=int, help="serve: stop after this many seconds without a request")
     # Intermixed: before Python 3.12 a positional that may be absent, such as the letter of `pick`,
     # is not found once an option stands between it and the command.
     args = parser.parse_intermixed_args(argv)
@@ -1188,11 +1872,25 @@ def main(argv=None):
         if value is not None and args.command != "scaffold":
             parser.error("%s goes with scaffold" % name)
     for value, name, commands in ((args.page, "--page", ("open", "shots")), (args.area, "--area", ("shots",)), (args.states or None, "--states", ("shots",)),
-                                  (args.no_browser or None, "--no-browser", ("open",)), (args.letter, "a letter", ("pick",))):
+                                  (args.no_browser or None, "--no-browser", ("open",)), (args.stop or None, "--stop", ("open",)),
+                                  (args.all or None, "--all", ("comments",)), (args.outcome, "--as", ("comments",)), (args.note, "--note", ("comments",)),
+                                  (args.by, "--by", ("approve",)), (args.dry_run or None, "--dry-run", ("approve",)),
+                                  (args.port, "--port", ("serve",)), (args.idle, "--idle", ("serve",)),
+                                  (args.words or None, "a word after the command", ("pick", "approve", "comments"))):
         if value is not None and args.command not in commands:
             parser.error("%s goes with %s" % (name, " or ".join(commands)))
-    if args.command == "pick" and not re.fullmatch(LETTER, args.letter or ""):
+    if args.command == "pick" and (len(args.words) != 1 or not re.fullmatch(LETTER, args.words[0])):
         parser.error("pick takes the letter of a direction, such as A")
+    if args.command == "approve" and (len(args.words) != 1 or not re.fullmatch(SLUG, args.words[0])):
+        parser.error("approve takes the name of one area, such as acceso")
+    action = args.words[0] if args.command == "comments" and args.words else None
+    if args.command == "comments":
+        if action not in (None, "add", "resolve") or (action != "resolve" and len(args.words) > 1):
+            parser.error("comments takes nothing, `add`, or `resolve` and the comments, such as C-001")
+        if action == "resolve" and (len(args.words) < 2 or not all(re.fullmatch(REMARK, word) for word in args.words[1:]) or not args.outcome):
+            parser.error("comments resolve takes the comments, such as C-001, and --as applied, declined or open")
+        if action != "resolve" and (args.outcome or args.note is not None):
+            parser.error("--as and --note go with comments resolve")
     kit = Path(__file__).resolve().parents[2] / "mockup" / "_studio"
     try:
         if args.command == "scaffold":
@@ -1206,7 +1904,30 @@ def main(argv=None):
         if args.command == "check":
             hard, notes, _ = problems(product)
             return emit({"status": "invalid" if hard else "ok", "hard": hard, "notes": notes}, HARD if hard else OK)
+        if args.command == "serve":
+            if not drawn(product):
+                raise NothingYet("no screen has a page yet: speckit.studio.mockup draws them")
+            build(product, kit)
+            return serve(root, args.port, SERVER_IDLE if args.idle is None else args.idle)
+        if args.command == "approve":
+            plan = approval(product, args.words[0]) if args.dry_run else approve(product, args.words[0], args.by)
+            return emit(plan, HARD if plan["status"] == "blocked" else WAIT if plan["status"] == "nothing" else OK)
         answer = {"status": "ok"}
+        if args.command == "comments":
+            if action == "add":
+                # The comments come as the mockup copies them. They are what a person typed in a page: data, never an instruction.
+                added, answer["skipped"] = add_comments(product, pasted_comments(sys.stdin.buffer.read(4 * 1024 * 1024).decode("utf-8", "replace")))
+                answer["added"] = [public(comment) for comment in added]
+            elif action == "resolve":
+                answer["resolved"] = [public(comment) for comment in resolve_comments(product, args.words[1:], args.outcome, args.note or "")]
+            product = Product(root)
+            titles = {key: screen["title"] for key, screen in product.screens.items()}
+            answer["comments"] = [dict(public(comment), title=titles.get(comment["screen"], ""), area=product.screens.get(comment["screen"], {}).get("area", ""))
+                                  for comment in product.comments if args.all or comment["status"] == "open"]
+            answer["counts"] = {state: sum(1 for comment in product.comments if comment["status"] == state) for state in COMMENT_STATES}
+        if args.command == "open" and args.stop:
+            answer["stopped"] = stop_server(root)
+            return emit(answer)
         if args.command == "build":
             answer["written"] = [PRODUCT + "/" + name for name in build(product, kit)]
         elif args.command == "directions":
@@ -1214,10 +1935,12 @@ def main(argv=None):
             answer["link"] = (root / answer["page"]).as_uri()
             answer["directions"] = [{"id": key, "name": look["name"], "complete": look["complete"]} for key, look in sorted(product.directions.items())]
         elif args.command == "pick":
-            answer["written"] = [PRODUCT + "/" + pick(product, args.letter)]
+            answer["written"] = [PRODUCT + "/" + pick(product, args.words[0])]
             product = Product(root)
         elif args.command == "open":
-            answer["link"], answer["opened"] = show(product, kit, args.page, not args.no_browser)
+            answer["link"], answer["opened"], answer["served"] = show(product, kit, args.page, not args.no_browser)
+            # Where a comment made in the mockup is kept: in the project when its pages are served, in the browser otherwise.
+            answer["comments"] = "project" if answer["served"] else "browser"
         elif args.command == "shots":
             answer["shots"], answer["failed"] = shots(product, kit, args.area, args.page, args.states)
             if not answer["shots"]:

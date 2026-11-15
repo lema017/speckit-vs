@@ -106,7 +106,7 @@ a.design{border-color:var(--soft)}
       a.appendChild(el("div", "nextstep", d.problem));
       return a;
     }
-    var count = el("div", "count", d.totals.drawn + " of " + plural(d.totals.areas, "area") + " drawn");
+    var count = el("div", "count", (d.totals.approved || 0) + " of " + plural(d.totals.areas, "area") + " approved" + (d.totals.drawn ? ", " + d.totals.drawn + " drawn" : ""));
     if (d.attention) count.appendChild(el("span", "flag", d.attention + " to check"));
     top.appendChild(count); a.appendChild(top);
     var steps = el("div", "steps");

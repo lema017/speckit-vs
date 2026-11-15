@@ -73,3 +73,43 @@ def test_outside_a_project_it_fails(tmp_path, monkeypatch, opened):
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["studio", "open"])
     assert result.exit_code == 1 and opened == []
+
+
+def test_where_a_server_can_run_it_opens_the_served_mockup_and_says_where_comments_go(designed, opened, monkeypatch):
+    from specify_cli.studios._script import load_script
+
+    script = load_script()
+    started = []
+    monkeypatch.delenv("SPECKIT_STUDIO_NO_SERVER")
+    monkeypatch.setattr(script, "server_state", lambda root: None)
+    monkeypatch.setattr(script, "start_server", lambda root: started.append(root) or {"port": 47123, "session": "s"})
+    result = runner.invoke(app, ["studio", "open"])
+    assert result.exit_code == 0, result.output
+    assert opened == ["http://127.0.0.1:47123/index.html"] and started == [designed.root.resolve()]
+    assert "http://127.0.0.1:47123/index.html" in plain(result)
+    assert "A comment made in the mockup is kept in the project." in plain(result) and "specify studio open --stop" in plain(result)
+
+
+def test_the_file_is_opened_when_no_server_is_asked_for(designed, opened):
+    result = runner.invoke(app, ["studio", "open"])
+    assert result.exit_code == 0 and opened == [(designed.product / "mockup" / "index.html").resolve().as_uri()]
+    assert "is kept in the project" not in plain(result)
+
+
+def test_stop_stops_the_server_of_the_project_and_opens_nothing(designed, opened, monkeypatch):
+    from specify_cli.studios._script import load_script
+
+    script = load_script()
+    asked = []
+    monkeypatch.setattr(script, "stop_server", lambda root: asked.append(root) or True)
+    result = runner.invoke(app, ["studio", "open", "--stop"])
+    assert result.exit_code == 0 and opened == [] and asked == [designed.root.resolve()]
+    assert "The server of the mockup stopped." in plain(result)
+    assert not (designed.product / "mockup" / "index.html").exists(), "stopping builds nothing"
+    monkeypatch.setattr(script, "stop_server", lambda root: False)
+    assert "No server of the mockup was running." in plain(runner.invoke(app, ["studio", "open", "--stop"]))
+
+
+def test_stop_needs_no_design(project, opened):
+    result = runner.invoke(app, ["studio", "open", "--stop"])
+    assert result.exit_code == 0 and "No server of the mockup was running." in plain(result)
