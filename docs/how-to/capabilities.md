@@ -105,6 +105,15 @@ A slice also has a size: one story, and by default at most 15 requirements, 4 ru
 
 Each designed rule goes to the one slice that builds it, or is left for later with a reason. `/speckit.specify D-login-clave` then builds exactly the rules of that slice, and the rest stay designed.
 
+**From a design with screens.** A product designed with the [studio extension](studio.md#cut-the-area-into-specs) is cut by area, with `/speckit.studio.slice <area>`. The map is the same file, and each slice also names the story it builds and the screens that show it:
+
+```markdown
+- Stories: ST-1
+- Screens: SCR-login, SCR-home
+```
+
+`/speckit.specify D-acceso-clave` then loads the design of that slice before it writes the spec: the story with its criteria, each screen with its elements and its states, and what was decided about the product and about the area. The clarify interview does not ask those decisions again.
+
 To see where everything stands, with the state of each slice read from the specs:
 
 ```bash
