@@ -161,8 +161,8 @@ def test_an_unknown_spec_name_cannot_control_the_terminal(in_project):
 
 # -- The design of the product -----------------------------------------------------------------
 
-DESIGN = ["Design of Oficio", "Steps: Define: 2 decisions; Map: 2 of 2 areas; Mockup: 6 of 6 screens",
-          "Next: /speckit.studio.mockup. Every area is drawn. Open the mockup and say what to change.", "Needs attention: 2, see the page"]
+DESIGN = ["Design of Oficio", "Steps: Define: 2 decisions; Map: 2 of 2 areas; Mockup: 6 of 6 screens; Iterate: No comments yet; Approve: 1 of 2 areas",
+          "Next: /speckit.studio.approve acceso. Acceso is drawn. Approve its rules when the mockup is right, or say what to change first.", "Needs attention: 2, see the page"]
 
 
 def test_the_design_is_shown_before_the_specs(in_project):

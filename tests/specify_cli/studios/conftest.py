@@ -83,4 +83,8 @@ def opened(monkeypatch):
 
     monkeypatch.setattr(webbrowser, "open", fake_open)
     monkeypatch.setattr("sys.platform", "darwin")
+    # No test here leaves a server of the mockup behind: where one would start, it cannot.
+    script = script_module.load_script()
+    monkeypatch.setattr(script, "server_state", lambda root: None)
+    monkeypatch.setattr(script, "start_server", lambda root: None)
     return calls

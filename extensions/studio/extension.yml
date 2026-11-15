@@ -3,8 +3,8 @@ schema_version: "1.0"
 extension:
   id: studio
   name: "Product Studio"
-  version: "0.1.0"
-  description: "Design a product before building it: a guided conversation with the product owner, and a mockup to click through in the browser."
+  version: "0.2.0"
+  description: "Design a product before building it: a guided conversation with the product owner, a mockup to click through and comment on in the browser, and the approval of its business rules."
   author: lema017
   repository: https://github.com/lema017/speckit-vs
   license: MIT
@@ -23,6 +23,12 @@ provides:
     - name: speckit.studio.mockup
       file: commands/speckit.studio.mockup.md
       description: "Draw the screens that are described as a mockup the product owner can click through in the browser, and show a picture of each one"
+    - name: speckit.studio.iterate
+      file: commands/speckit.studio.iterate.md
+      description: "Apply what the product owner wants to change in the mockup: the comments made on it and what they say in words, one change at a time and with their yes"
+    - name: speckit.studio.approve
+      file: commands/speckit.studio.approve.md
+      description: "Approve the business rules of one area of the product: show the product owner the exact text of each rule and, with their yes, publish them with their name and the date"
 
 tags:
   - "design"

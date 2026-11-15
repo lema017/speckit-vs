@@ -27,7 +27,8 @@
         'in-spec': ['en spec', 'En un spec, en implementación'],
         implemented: ['implementada', 'Implementada, con código y pruebas'],
         divergent: ['discrepante', 'Discrepante: el código no hace lo que dice'],
-        changed: ['cambiada', 'Cambiada por un spec: falta tu visto bueno']
+        changed: ['cambiada', 'Cambiada por un spec: falta tu visto bueno'],
+        proposed: ['cambio propuesto', 'Aprobada, con un cambio que espera tu aprobación']
       },
       barra: 'Barra de Studio', flujoEnCurso: 'Flujo en curso', persona: 'Persona', estado: 'Estado', sesion: 'Sesión', no: 'No', si: 'Sí',
       vista: 'Vista', ventana: 'Ventana', telefono: 'Teléfono', modo: 'Modo', sistema: 'Sistema', claro: 'Claro', oscuro: 'Oscuro',
@@ -38,6 +39,10 @@
       tocar: 'Toca el elemento que quieres comentar. Esc para salir.', comentario: 'Comentario', queCambiar: '¿Qué cambiarías aquí?',
       guardar: 'Guardar', cancelar: 'Cancelar', borrar: 'Borrar',
       guardado: 'Comentario guardado en este navegador.',
+      guardadoProyecto: 'Comentario guardado en el proyecto.',
+      sinServidor: 'No se pudo guardar: el mockup ya no responde. Ábrelo otra vez con "specify studio open" y guarda de nuevo.',
+      dondeVanProyecto: 'Se guardan en el proyecto. Para que se apliquen, pide a la IA el comando "iterate" de Studio.',
+      revisados: 'Ya revisados', aplicado: 'Aplicado', noAplicado: 'No aplicado', antes: 'Antes: {0}',
       noGuardado: 'Aquí no se puede guardar: el comentario dura mientras no cierres la pestaña. Expórtalo antes.',
       campo: 'campo', dentroDe: ', dentro de {0}', enEstado: ', estado {0}',
       sinComentarios: 'Todavía no hay comentarios. Usa "Comentar" y toca un elemento de la pantalla.',
@@ -59,7 +64,8 @@
         'in-spec': ['in a spec', 'In a spec, being built'],
         implemented: ['implemented', 'Implemented, with code and tests'],
         divergent: ['divergent', 'Divergent: the code does not do what it says'],
-        changed: ['changed', 'Changed by a spec: it waits for your approval']
+        changed: ['changed', 'Changed by a spec: it waits for your approval'],
+        proposed: ['change proposed', 'Approved, with a change that waits for your approval']
       },
       barra: 'Studio bar', flujoEnCurso: 'Flow in progress', persona: 'Person', estado: 'State', sesion: 'Signed in', no: 'No', si: 'Yes',
       vista: 'View', ventana: 'Window', telefono: 'Phone', modo: 'Theme', sistema: 'System', claro: 'Light', oscuro: 'Dark',
@@ -70,6 +76,10 @@
       tocar: 'Click the element you want to comment on. Esc to leave.', comentario: 'Comment', queCambiar: 'What would you change here?',
       guardar: 'Save', cancelar: 'Cancel', borrar: 'Delete',
       guardado: 'Comment saved in this browser.',
+      guardadoProyecto: 'Comment saved in the project.',
+      sinServidor: 'It could not be saved: the mockup no longer answers. Open it again with "specify studio open" and save once more.',
+      dondeVanProyecto: 'They are kept in the project. To have them applied, ask the AI for the "iterate" command of Studio.',
+      revisados: 'Already reviewed', aplicado: 'Applied', noAplicado: 'Not applied', antes: 'Before: {0}',
       noGuardado: 'It cannot be saved here: the comment lasts until you close the tab. Export it before.',
       campo: 'field', dentroDe: ', inside {0}', enEstado: ', state {0}',
       sinComentarios: 'No comments yet. Use "Comment" and click an element of the screen.',
@@ -94,7 +104,7 @@
     return T.estados[e] || (e.charAt(0).toUpperCase() + e.slice(1).replace(/-/g, ' '));
   }
   var OCUPADO = ['cargando', 'loading'];
-  var COLOR_REGLA = { draft: '#aab2bf', designed: '#7fa6ff', 'in-spec': '#c3a6ff', implemented: '#6fd39b', divergent: '#ff8f85', changed: '#f5c26b' };
+  var COLOR_REGLA = { draft: '#aab2bf', designed: '#7fa6ff', 'in-spec': '#c3a6ff', implemented: '#6fd39b', divergent: '#ff8f85', changed: '#f5c26b', proposed: '#f5c26b' };
   function infoRegla(estado) {
     var textos = T.regla[estado] || [estado, estado];
     return { corto: textos[0], largo: textos[1], color: COLOR_REGLA[estado] || '#aab2bf' };
@@ -126,6 +136,11 @@
   aplicarDispositivo();
 
   var CLAVE_COMENTARIOS = 'studio-mockup-comentarios-v1';
+  /* Una página que sirve el servidor de Studio trae su sesión: lo que se comenta en ella se guarda en el proyecto.
+     Abierta desde el disco no la trae, y los comentarios se quedan en el navegador. */
+  var META_SESION = document.querySelector('meta[name="studio-session"]');
+  var SESION = META_SESION ? META_SESION.getAttribute('content') || '' : '';
+  var delProyecto = null;
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -597,6 +612,7 @@
             return '<section><h3>' + esc(id) + '</h3>' +
               '<p class="chip"><i style="background:' + info.color + '"></i>' + esc(info.largo) + '</p>' +
               '<p>' + esc(rg.texto) + '</p>' +
+              (rg.antes ? '<p class="sub">' + esc(t('antes', rg.antes)) + '</p>' : '') +
               '<p class="sub">' + esc(t('capacidad', rg.capacidad)) + ' ' + esc(rg.nota || '') + '</p></section>';
           }
           if (D.historias[id]) { return '<section><h3>' + esc(id) + '</h3><p>' + esc(D.historias[id]) + '</p></section>'; }
@@ -662,11 +678,8 @@
         var txt = pop.querySelector('textarea');
         var texto = txt ? txt.value.trim() : '';
         if (!texto) { txt.focus(); return; }
-        var lista = leerComentarios();
-        var n = lista.reduce(function (m, c) { return Math.max(m, parseInt(c.id.slice(2), 10) || 0); }, 0) + 1;
         var ref = objetivo.closest('[data-ref]');
-        lista.push({
-          id: 'C-' + ('00' + n).slice(-3),
+        var nuevo = {
           pantalla: idPantalla,
           estado: state.estado,
           persona: state.persona,
@@ -675,7 +688,23 @@
           ruta: rutaDe(objetivo),
           texto: texto,
           fecha: fechaLocal()
-        });
+        };
+        if (SESION) {
+          /* El proyecto le da su número. Si no responde, el texto sigue en el editor: nada se pierde. */
+          pedir('POST', '/_api/comments', { screen: nuevo.pantalla, state: nuevo.estado, person: nuevo.persona, refs: nuevo.ref,
+            element: nuevo.elemento, path: nuevo.ruta, text: nuevo.texto }).then(function (d) {
+            delProyecto = (delProyecto || []).concat([delServidor(d.comment)]);
+            contar();
+            cerrarPop();
+            modoComentar(false);
+            aviso(t('guardadoProyecto'));
+          }).catch(function () { aviso(t('sinServidor')); });
+          return;
+        }
+        var lista = leerComentarios();
+        var n = lista.reduce(function (m, c) { return Math.max(m, parseInt(c.id.slice(2), 10) || 0); }, 0) + 1;
+        nuevo.id = 'C-' + ('00' + n).slice(-3);
+        lista.push(nuevo);
         var guardado = escribirComentarios(lista);
         cerrarPop();
         modoComentar(false);
@@ -689,14 +718,36 @@
           '<div class="acciones"><button type="button" data-p="borrar" data-id="' + esc(c.id) + '">' + esc(t('borrar')) + '</button></div></div>', ancla.getBoundingClientRect());
       }
 
-      function borrarComentario(id) {
+      function borrarComentario(id, luego) {
+        if (SESION) {
+          /* En el proyecto un comentario no se borra: queda como retirado, y su número no se vuelve a usar. */
+          pedir('POST', '/_api/comments/' + id, {}).then(function (d) {
+            delProyecto = (delProyecto || []).map(function (c) { return c.id === id ? delServidor(d.comment) : c; });
+            contar();
+            repintar();
+            if (luego) { luego(); }
+          }).catch(function () { aviso(t('sinServidor')); });
+          return;
+        }
         escribirComentarios(leerComentarios().filter(function (c) { return c.id !== id; }));
+        if (luego) { luego(); }
+      }
+
+      function pedir(metodo, ruta, cuerpo) {
+        var opciones = { method: metodo, headers: { 'X-Studio-Session': SESION } };
+        if (cuerpo) { opciones.headers['Content-Type'] = 'application/json'; opciones.body = JSON.stringify(cuerpo); }
+        return fetch(ruta, opciones).then(function (r) { return r.ok ? r.json() : Promise.reject(new Error(String(r.status))); });
+      }
+      function delServidor(c) {
+        return { id: c.id, pantalla: c.screen, estado: c.state, persona: c.person, ref: (c.refs || []).join(' '), elemento: c.element,
+          ruta: c.path, texto: c.text, fecha: c.date, situacion: c.status, nota: c.note };
       }
 
       /* Los comentarios van a localStorage. Si el navegador no lo deja (por ejemplo, en un visor con sandbox),
          van a window.name, que sobrevive al cambiar de pantalla en la misma pestaña pero no al cerrarla. */
       var MARCA_NOMBRE = 'studio-comentarios:';
       function leerComentarios() {
+        if (SESION) { return (delProyecto || []).filter(function (c) { return c.situacion === 'open'; }); }
         try { return JSON.parse(localStorage.getItem(CLAVE_COMENTARIOS) || '[]'); } catch (e) { /* sin localStorage */ }
         try { return window.name.indexOf(MARCA_NOMBRE) === 0 ? JSON.parse(window.name.slice(MARCA_NOMBRE.length)) : []; } catch (e) { return []; }
       }
@@ -753,7 +804,7 @@
         if (d === 'cerrar') { dlg.close(); }
         if (d === 'copiar') { copiar(markdown()); }
         if (d === 'bajar') { bajar(markdown()); }
-        if (d === 'borrar') { borrarComentario(b.dataset.id); abrirLista(); }
+        if (d === 'borrar') { borrarComentario(b.dataset.id, abrirLista); }
         if (d === 'flujo') { irAPaso(b.dataset.id, 1); }
         if (d === 'ir') { e.preventDefault(); dlg.close(); navegar(b.dataset.archivo, b.dataset.estado ? { estado: b.dataset.estado } : {}); }
       });
@@ -766,7 +817,14 @@
             '<p class="texto">' + esc(c.texto) + '</p><p class="sub">' + esc(c.elemento) + '. ' + esc(c.fecha) + '</p></div>' +
             '<button type="button" data-d="borrar" data-id="' + esc(c.id) + '">' + esc(t('borrar')) + '</button></li>';
         }).join('') + '</ol>' : '<p>' + esc(t('sinComentarios')) + '</p>';
-        html += '<p class="sub">' + esc(t('dondeVan')) + '</p>' +
+        var hechos = (delProyecto || []).filter(function (c) { return c.situacion === 'applied' || c.situacion === 'declined'; });
+        if (hechos.length) {
+          html += '<h3>' + esc(t('revisados')) + '</h3><ol class="coms">' + hechos.map(function (c) {
+            return '<li><div><b>' + esc(c.id) + '</b> ' + esc(t(c.situacion === 'applied' ? 'aplicado' : 'noAplicado')) + (c.nota ? ': ' + esc(c.nota) : '') +
+              '<p class="texto">' + esc(c.texto) + '</p></div></li>';
+          }).join('') + '</ol>';
+        }
+        html += '<p class="sub">' + esc(t(SESION ? 'dondeVanProyecto' : 'dondeVan')) + '</p>' +
           '<div class="acciones"><button type="button" data-d="copiar" class="fuerte"' + (lista.length ? '' : ' disabled') + '>' + esc(t('copiarMd')) + '</button>' +
           '<button type="button" data-d="bajar"' + (lista.length ? '' : ' disabled') + '>' + esc(t('descargar')) + '</button></div>';
         abrirDialogo(t('comentarios'), html);
@@ -839,6 +897,14 @@
       }
 
       contar();
+      if (SESION) {
+        /* Los comentarios del proyecto, con lo que pasó con cada uno. */
+        pedir('GET', '/_api/comments').then(function (d) {
+          delProyecto = (d.comments || []).map(delServidor);
+          contar();
+          repintar();
+        }).catch(function () { delProyecto = []; });
+      }
       return {
         aviso: aviso,
         refrescar: function () {

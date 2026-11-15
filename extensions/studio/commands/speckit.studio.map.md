@@ -36,7 +36,7 @@ The input is the name of an area, such as `acceso`, or its title. It can be empt
    - If `define.state` is not `done`, say in one line what the product still lacks, and go on: an area can be designed while a general question is open.
 2. **Record the start.** Run `{PROGRESS} design map in_progress --area <id>`.
 3. **Read what is there.** Read every file of `specs/_product/`: the idea, the people, the glossary, the decisions, and what this area already has in `story-map.md`, `screens/`, `navigation.md` and `capability-drafts.md`. Go on from it: do not ask again what `decisions.md` answers, and ask first the questions of `## map <id>` that are still `asked`.
-4. **Read what is approved.** The rules in `specs/_capabilities/*/spec.md` are already approved: they are facts. Cite them by their id where they apply, never write a draft for one, and tell the person when what they ask goes against one.
+4. **Read what is approved.** The rules in `specs/_capabilities/*/spec.md` are already approved: they are facts. Cite them by their id where they apply, never write a draft for one, and tell the person when what they ask goes against one: changing a rule that is approved is `speckit.studio.iterate`, and it passes through them again.
 5. **Say what you understood about the area,** in three or four lines: who comes here and to do what. Then ask. The rounds of this command cover seven topics:
 
    | Topic | What gets decided | Where it is kept |

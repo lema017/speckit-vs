@@ -1188,7 +1188,12 @@ def load_studio(root):
 
         spec = importlib.util.spec_from_file_location("speckit_studio_script", key)
         module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        previous = sys.dont_write_bytecode
+        sys.dont_write_bytecode = True  # Reading the script leaves no __pycache__ in the project, for git to list.
+        try:
+            spec.loader.exec_module(module)
+        finally:
+            sys.dont_write_bytecode = previous
         _STUDIO_MODULES[key] = module
     return _STUDIO_MODULES[key]
 
@@ -1219,6 +1224,11 @@ def _area_fact(area, name):
     if name == "map":
         fact = "%d %s" % (area["stories"], "story" if area["stories"] == 1 else "stories")
         return fact + (", %d waiting" % area["asked"] if area["asked"] else "")
+    if name == "iterate":
+        return "%s open" % _count(area["comments"], "comment") if area.get("comments") else "nothing open"
+    if name == "approve":
+        rules = sum(area["rules"].values())
+        return "%d of %s" % (area.get("approved", 0), _count(rules, "rule")) if rules else "no rules"
     return "%d of %s" % (area["pages"], _count(area["screens"], "screen"))
 
 
@@ -1307,7 +1317,8 @@ def build_design(root, out_dir, now=None, include_documents=True):
     data.update({
         "product": status["product"] or "",
         "owner": status["owner"],
-        "totals": status["totals"],
+        # A studio from before the approval of an area counts none as approved.
+        "totals": dict(status["totals"], approved=status["totals"].get("approved", 0)),
         "steps": steps,
         "areas": areas,
         "summary": status["summary"],
@@ -1328,7 +1339,7 @@ def design_summary(data):
     summary = {"file": DESIGN_TEMPLATE, "generated": data["generated"], "product": data["product"], "problem": data["problem"]}
     if not data["problem"]:
         summary.update({
-            "totals": {key: data["totals"][key] for key in ("areas", "drawn", "in_design", "not_started")},
+            "totals": {key: data["totals"][key] for key in ("areas", "approved", "drawn", "in_design", "not_started")},
             "steps": [{"label": step["label"], "state": step["state"], "fact": step["fact"]} for step in data["steps"]],
             "next": data["next"],
             "attention": len(data["attention"]),

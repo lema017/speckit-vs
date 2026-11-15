@@ -15,6 +15,9 @@ from specify_cli.presets import PresetRegistry
 # Commands under test can draw a progress page, and the first one for a spec opens a browser.
 # Set here so that every process any test starts inherits it, and nothing opens on a dev machine.
 os.environ["SPECKIT_PROGRESS_NO_BROWSER"] = "1"
+# `specify studio open` starts a server of the mockup that outlives the command. No test leaves one behind:
+# the ones that are about that server start it themselves, and stop it.
+os.environ["SPECKIT_STUDIO_NO_SERVER"] = "1"
 
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
