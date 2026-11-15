@@ -172,7 +172,7 @@ and a check that can stop a pull request that disagrees with that record.
 | A pull request can change a recorded rule or its tested code without a spec, or two branches can change the same rule | It compares the pull request with the catalog and your test report, and fails if they do not agree | [`check`](#catch-drift-at-the-pull-request) |
 | Code written before Spec Kit has no recorded rules | It proposes a capability map from the code and waits for your approval. Rules stay `[inferred]` until you validate them | `/speckit.capabilities.bootstrap` |
 | While agents work, you cannot see what the whole plan is, which tasks are done, or which agent did what | Each spec gets a page that stays current, with every task, the totals, who did what, and the notes on each task | [Progress page](#see-how-far-a-spec-has-come) |
-| A product owner with an idea has nothing to look at before the first spec is built, and business rules are decided inside specs, one at a time | It asks the product owner in rounds, keeps every decision, and builds a mockup to click through in the browser, with each business rule on the element that applies it | [Design the product first](#design-the-product-first) |
+| A product owner with an idea has nothing to look at before the first spec is built, and business rules are decided inside specs, one at a time | It asks the product owner in rounds, keeps every decision, builds a mockup to click through and comment on in the browser, with each business rule on the element that applies it, and has the product owner approve the rules before a spec builds them | [Design the product first](#design-the-product-first) |
 
 `/speckit.clarify`, `/speckit.plan`, `/speckit.tasks`, `/speckit.converge`, and
 `/speckit.analyze` do the same work, and only record that they ran and link to the
@@ -361,13 +361,17 @@ Each answer says which part came from the graph or the code.
 
 ### Design the product first
 
-In a new project, a product owner can start from an idea, before any spec. Three commands, in order:
+In a new project, a product owner can start from an idea, before any spec. Five commands, in order:
 
 | Step | Command | What you do | What is there afterwards |
 | --- | --- | --- | --- |
 | 1 | `/speckit-studio-define <your idea>` | Tell the idea and answer questions. Choose one of three looks | The idea in words, the people who use the product, its areas and its look |
 | 2 | `/speckit-studio-map <area>` | Answer questions about one area | Each screen described, with every button, and the business rules in draft |
 | 3 | `/speckit-studio-mockup` | Nothing: the agent builds it | The mockup open in your browser, and a picture of each screen |
+| 4 | `/speckit-studio-iterate` | Comment on the mockup, or say the change in words, and say yes to each change | The design and the mockup changed |
+| 5 | `/speckit-studio-approve <area>` | Read the exact text of each rule and say yes | The rules of the area approved, with your name and the date |
+
+Steps 3 and 4 repeat until the mockup is right.
 
 - **The agent asks, you decide.** Questions come in rounds of at most 10. Each one is a single decision, with options, a recommended one and why it matters. "I don't know" is an answer: the question stays open with who decides it.
 - **Business decisions are yours.** Prices, policies, deadlines and permissions are marked, and the agent never takes them.
@@ -377,7 +381,10 @@ In a new project, a product owner can start from an idea, before any spec. Three
 
 The mockup has no logic and no real data. In it you click through the screens, change the person and the state of each screen, see it as a phone or a window, and see which business rule each element applies. `specify studio open` opens it again, and `/speckit-progress design` shows which steps ran, how each area stands and which command comes next.
 
-This version stops at the mockup: approving the rules and cutting an area into specs come next. See the [guide](docs/how-to/studio.md).
+- **Comment where you see it.** Press **Comment** in the mockup and click an element. `specify studio open` serves the mockup from your computer, so the comment is kept in the project, and `/speckit-studio-iterate` shows each one with the change it would make.
+- **Approved rules are the reference.** `/speckit-studio-approve` publishes the rules of an area in the catalog of capabilities as `[designed]`: approved, and not built yet. A spec builds them as they are written, and changing one passes through you again.
+
+This version stops at the approved rules. To build them, `/speckit-capabilities-slice <capability>` cuts them into slices of one spec each; cutting an area with its screens comes next. See the [guide](docs/how-to/studio.md).
 
 ### One spec, one slice
 

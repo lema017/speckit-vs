@@ -86,6 +86,7 @@ specify init my-project --integration copilot --preset compliance
 | `SPECKIT_PROGRESS_NO_BROWSER` | Set to `1` or `true` to stop [progress pages](../how-to/progress.md) from opening by themselves. They are still drawn. |
 | `SPECKIT_STUDIO_NO_BROWSER` | Set to `1` or `true` to stop the [mockup of a design](../how-to/studio.md) from opening in the browser. It is still built, and its link printed. `SPECKIT_PROGRESS_NO_BROWSER` does the same |
 | `SPECKIT_STUDIO_BROWSER` | The path of the browser that takes the pictures of the mockup, when it is not Chrome, Chromium, Edge or Brave in their usual place |
+| `SPECKIT_STUDIO_NO_SERVER` | Set to `1` or `true` to open the mockup from the disk, with no server. The comments made in it then stay in the browser |
 | `SPECIFY_FEATURE_NO_PERSIST` | Set to `1` or `true` to stop every core script from writing `.specify/feature.json`, even when it would otherwise persist `SPECIFY_FEATURE_DIRECTORY` on read. Useful when multiple agents run concurrently against the same checkout, each with its own `SPECIFY_FEATURE_DIRECTORY`: without it, each invocation's persist step can overwrite another agent's pinned feature directory. |
 
 > **Two resolution axes.** `SPECIFY_INIT_DIR` selects the **project** (which directory contains `.specify/`); `SPECIFY_FEATURE_DIRECTORY` / `.specify/feature.json` select the **feature** — its default location is under `specs/` in that project, but an explicitly selected feature directory is not restricted to living inside it. They are independent — project first, then feature.
@@ -213,7 +214,7 @@ specify studio open
 
 | Command | Description |
 | --- | --- |
-| `specify studio open` | Build the mockup of the product and open it in your browser. `--directions` opens the looks to choose from, `--no-browser` only prints the link |
+| `specify studio open` | Build the mockup of the product, serve it from this computer and open it in your browser. A comment made in it is kept in the project. `--directions` opens the looks to choose from, `--no-browser` only prints the link of the file, `--stop` stops the server |
 | `specify studio status` | Show how far the design is and which command comes next. Read-only |
 | `specify studio check` | Check that the design and the pages of the mockup agree. Read-only. Exits with 1 when something has to be fixed |
 

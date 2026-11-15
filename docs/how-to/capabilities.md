@@ -97,7 +97,7 @@ The spec review gate shows the size of the slice. When a slice is over its budge
 
 A slice also has a size: one story, and by default at most 15 requirements, 4 rules and 25 tasks. After `specify`, before `plan` and after `tasks`, the spec is measured. Over the budget you get a proposal to split it, and you decide: split it, or go on with a reason that is recorded next to the spec. The numbers are in `capabilities-config.yml`.
 
-**From a design.** When the rules were approved before the code (`[designed]`), cut them the same way:
+**From a design.** When the rules were approved before the code (`[designed]`), as [`/speckit.studio.approve`](studio.md#approve-the-rules) leaves them, cut them the same way:
 
 ```text
 /speckit.capabilities.slice login

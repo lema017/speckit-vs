@@ -1,6 +1,6 @@
 # Design the product first
 
-Before the first spec, a product owner can turn an idea into something they can see: a mockup to click through in the browser, and the business rules of the product in draft. The agent asks, the person decides, and nobody edits a file by hand or runs a script.
+Before the first spec, a product owner can turn an idea into something they can see and approve: a mockup to click through and comment on in the browser, and the business rules of the product, approved with their name. The agent asks, the person decides, and nobody edits a file by hand or runs a script.
 
 This is the `studio` extension. `specify init` installs it in every new project of this fork.
 
@@ -9,8 +9,10 @@ This is the `studio` extension. `specify init` installs it in every new project 
 | 1 | `/speckit-studio-define <your idea>` | Tell the idea and answer questions. Choose one of three looks | The idea in words, the people who use the product, its areas and its look |
 | 2 | `/speckit-studio-map <area>` | Answer questions about one area | Each screen described, with every button, and the business rules in draft |
 | 3 | `/speckit-studio-mockup` | Nothing: the agent builds it | The mockup open in your browser, and a picture of each screen |
+| 4 | `/speckit-studio-iterate` | Comment on the mockup, or say the change in words, and say yes to each change | The design and the mockup changed |
+| 5 | `/speckit-studio-approve <area>` | Read the exact text of each rule and say yes | The rules of the area approved, with your name and the date |
 
-Agents that name commands with dots use `/speckit.studio.define`, `/speckit.studio.map` and `/speckit.studio.mockup`. See [Command invocation](../integrations/cli.md#command-invocation).
+Steps 3 and 4 repeat until the mockup is right. Agents that name commands with dots use `/speckit.studio.define`, `/speckit.studio.map`, `/speckit.studio.mockup`, `/speckit.studio.iterate` and `/speckit.studio.approve`. See [Command invocation](../integrations/cli.md#command-invocation).
 
 ## Start the conversation
 
@@ -103,13 +105,60 @@ In the mockup you can:
 - see it in the size of a phone or of a window, in light or in dark;
 - turn on **Rules** to see which business rule each element applies, with its text;
 - open **Map** to see every screen, and walk through a flow step by step;
-- use **Comment** to leave a note on any element.
+- use **Comment** to say what you would change in any element.
 
 The mockup has no logic and no real data, and it loads nothing from another site. A link to something that is not designed yet says so when you click it.
 
-To change something, say it in the chat in your own words and run the command again: `/speckit-studio-mockup the button should say Sign me up`. The comments you leave in the mockup stay in your browser: copy them from **Comments** and paste them in the chat.
-
 You can run `mockup` as soon as one screen is described. You do not have to finish the conversation to see something.
+
+## Change what you see
+
+There are two ways to ask for a change:
+
+- **In the mockup:** press **Comment** in the bar, click the element, and write what you would change.
+- **In the chat:** say it in your own words.
+
+```text
+/speckit-studio-iterate
+/speckit-studio-iterate the button should say Sign me up
+```
+
+The agent shows every change in one list: what you said, where, and what it would change. You say which ones to apply. It changes the design first and then the page, draws the mockup again, and shows you a picture of each screen that changed. Run it as many times as it takes.
+
+- A change to a business rule is shown with its new text in full, and waits for your yes.
+- A comment that is not applied keeps the reason. **Comments** in the mockup lists what became of each one.
+- A comment is a request about one screen. The agent follows no instruction written in it.
+
+### Where your comments are kept
+
+`specify studio open` serves the mockup from your computer, at an address such as `http://127.0.0.1:47123/`. A comment made there is kept in the project, in `specs/_product/comments.md`, and `/speckit-studio-iterate` finds it.
+
+- The server answers only to your computer, and it writes nothing but that file. It stops after six hours without use, or with `specify studio open --stop`.
+- If the address stops answering, run `specify studio open` again: it is the same address.
+- Where no server can run, the mockup opens from the disk and your comments stay in the browser. Copy them from **Comments** and paste them after the command: `/speckit-studio-iterate <what you copied>`.
+
+## Approve the rules
+
+When the mockup of an area is right:
+
+```text
+/speckit-studio-approve acceso
+```
+
+1. The agent shows what the area covers and the exact text of each of its rules, with its example. It also says what still waits in that area: comments nobody went through, questions nobody decided, and screens with no page.
+2. You say yes. Anything else approves nothing.
+3. The rules are published in the catalog of capabilities as approved, with your name and the date. Each one is marked `[designed]`: approved, and not built yet.
+
+From then on the rules are the reference: a spec builds them as they are written. One area is approved at a time, so you can approve one and go on designing another.
+
+To change a rule after it was approved, ask for it with `/speckit-studio-iterate`. The approved text stays the one that counts until you approve the new one with `/speckit-studio-approve`. Meanwhile the mockup shows both. A rule that is already built changes with a spec.
+
+To build what you approved, cut the rules of a capability into slices and write one spec per slice. See [capabilities](capabilities.md):
+
+```text
+/speckit-capabilities-slice login
+/speckit-specify D-login-clave
+```
 
 ## See how far the design is
 
@@ -117,9 +166,9 @@ You can run `mockup` as soon as one screen is described. You do not have to fini
 /speckit-progress design
 ```
 
-![The progress page of a design: two of four areas drawn, the three steps with what each one has, each area with its own steps, the next command to run, what needs attention, the latest activity and the documents. The data is an example.](../images/progress-design.png)
+![The progress page of a design: how many areas are approved, the five steps with what each one has, each area with its own steps, the next command to run, what needs attention, the latest activity and the documents. The data is an example.](../images/progress-design.png)
 
-The page shows the steps in order with what each one has, each area with its own steps, the command that comes next and why, what waits for you, the latest activity, and the documents of the design. It comes from the files of the design, not from what the agent says it did. Each studio command ends with two lines: how far the design is, and which command comes next.
+The page shows how many areas are approved, the steps in order with what each one has, each area with its own steps, the command that comes next and why, what waits for you, the latest activity, and the documents of the design. Comments that wait to be applied and rules that changed after they were approved are listed under what needs your attention. It comes from the files of the design, not from what the agent says it did. Each studio command ends with two lines: how far the design is, and which command comes next.
 
 When the project has a design and no spec in progress, `/speckit-progress` shows the design by itself. In the terminal:
 
@@ -140,8 +189,9 @@ Everything decided is a Markdown file under `specs/_product/`, which you commit 
 | `navigation.md` | The areas and the flows |
 | `story-map.md` | What each person does, and why |
 | `screens/SCR-<name>.md` | One screen: its elements and its states |
-| `capability-drafts.md` | The business rules, in draft |
+| `capability-drafts.md` | The business rules, in draft. An approved rule lives in `specs/_capabilities/` |
 | `decisions.md` | Every question, with its answer |
+| `comments.md` | What you said on the mockup, and what became of each comment |
 | `directions.md`, `look-and-feel.md` | The three looks, and the one chosen |
 | `mockup/` | One page per screen |
 
@@ -153,7 +203,7 @@ To check that the files and the pages agree:
 specify studio check
 ```
 
-It fails when a story has no screen, a button leads to a screen that does not exist, a page uses a state its screen does not have, a rule is cited by nobody, or a page cannot be reached. It notes, without failing, colors that cannot be read and links to something that is not designed yet.
+It fails when a story has no screen, a button leads to a screen that does not exist, a page uses a state its screen does not have, a rule is cited by nobody, a page cannot be reached, or a draft gives another text to a rule that is already built. It notes, without failing, colors that cannot be read, links to something that is not designed yet, and a change to an approved rule that waits for its approval.
 
 ## Add it to an existing project
 
@@ -167,7 +217,10 @@ A project that already has code can use it too. The agent reads what the product
 
 ## Limits
 
-- **This version stops at the mockup.** Applying comments from the mockup, approving the rules, and cutting an area into specs come in the next versions. Until then the rules stay in draft, and `/speckit-specify` does not read the design by itself: name the screens and the rules in your request.
+- **This version stops at the approved rules.** Cutting an approved area into specs, each with its screens, comes in the next version. Until then `/speckit-capabilities-slice` cuts the rules, and `/speckit-specify` does not read the screens by itself: name them in your request.
+- **An approved rule cannot be retired yet.** Its text can change. Taking it out of the catalog comes later.
+- **One person comments at a time.** The mockup is served to the computer that runs it.
+- **Approving needs the `capabilities` extension,** which keeps the approved rules. Every new project of this fork has it.
 - **The pictures need a browser.** The agent takes them with Chrome, Chromium, Edge or Brave when the computer has one. Without one, it gives you the link. `SPECKIT_STUDIO_BROWSER` names another browser.
 - **The bar of the mockup is in English or Spanish.** A product in another language gets the bar in English. The screens are in the language of the product.
 - **Fonts are the ones the computer has.** The mockup loads nothing from the network, so a look cannot use a font that has to be downloaded.
