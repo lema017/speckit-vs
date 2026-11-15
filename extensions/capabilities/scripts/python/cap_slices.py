@@ -35,12 +35,15 @@ MAP_MARK = "<!-- slice-map:v%d -->" % MAP_FORMAT
 MAP_LINE = re.compile(r"<!-- slice-map:v(\d+) -->")
 SLICE_ID = re.compile(r"D-[a-z0-9]+(?:-[a-z0-9]+)*")
 RULE_ID = re.compile(r"R-[a-z0-9-]+")
+# What a slice shows, when the product was designed first: the ids are the ones of specs/_product/, and that design says what they are.
+SCREEN_ID = re.compile(r"SCR-[a-z0-9]+(?:-[a-z0-9]+)*")
+STORY_ID = re.compile(r"ST-[0-9]+")
 FIELD = re.compile(r"^- ([A-Za-z-]+): (.*)$")
 LATER = re.compile(r"^- (R-[a-z0-9-]+): (.+)$")
 ENABLER = re.compile(r"^enabler\s*[-—:]\s*(\S.*)$")
 STANDALONE = re.compile(r"^standalone\s*[-—:]\s*(\S.*)$")
 REQUIRED = ("intent", "verify", "depends-on", "rules")
-OPTIONAL = ("in", "out", "kind", "dropped")
+OPTIONAL = ("in", "out", "kind", "dropped", "stories", "screens")
 NOTHING = {"none", "-", "—"}
 # The most one slice holds. The config changes a number with slice_max_<what>.
 BUDGET = {"stories": 1, "requirements": 15, "rules": 4, "tasks": 25}
@@ -133,6 +136,10 @@ def shaped(item, errors):
     errors.extend("%s: Depends-On takes slice ids or none: %s" % (slice_id, part) for part in wrong)
     rules, wrong = listed(fields.get("rules", "none"), RULE_ID)
     errors.extend("%s: Rules takes rule ids or none: %s" % (slice_id, part) for part in wrong)
+    stories, wrong = listed(fields.get("stories", "none"), STORY_ID)
+    errors.extend("%s: Stories takes story ids or none: %s" % (slice_id, part) for part in wrong)
+    screens, wrong = listed(fields.get("screens", "none"), SCREEN_ID)
+    errors.extend("%s: Screens takes screen ids or none: %s" % (slice_id, part) for part in wrong)
     enabler = None
     if "kind" in fields:
         match = ENABLER.match(fields["kind"])
@@ -151,6 +158,8 @@ def shaped(item, errors):
         "verify": fields.get("verify", ""),
         "depends_on": depends,
         "rules": rules,
+        "stories": stories,
+        "screens": screens,
         "enabler": enabler,
         "dropped": fields.get("dropped") or None,
     }
@@ -521,8 +530,13 @@ def aim(view, siblings, depends, rules, write):
     lines = ["SLICE FOR THIS RUN", "%s — %s" % (view["id"], view["title"]), "Build exactly this: %s" % view["intent"]]
     if view["in"]:
         lines.append("In: %s" % view["in"])
+    lines.append("A person checks it by: %s" % view["verify"])
+    # A slice cut from a design names what it shows. The design itself is read by whoever wrote it: this block only says it is there.
+    if view["stories"]:
+        lines.append("Stories of the design: %s" % ", ".join(view["stories"]))
+    if view["screens"]:
+        lines.append("Screens of the design: %s" % ", ".join(view["screens"]))
     lines += [
-        "A person checks it by: %s" % view["verify"],
         "Other slices own this, so do not specify it, ask about it or build it: %s" % siblings,
         "Depends on: %s" % (", ".join("%s (%s)" % (dep["id"], dep["state"]) for dep in depends) or "none"),
         "Rules to build:" + ("".join("\n- %s: %s" % (rule["id"], rule["text"]) for rule in rules) or " none"),
@@ -660,6 +674,9 @@ def of_spec(cap, root, change):
         "standalone": declared["standalone"],
         "out": declared["out"],
         "map": found[0]["map"] if found else None,
+        # What the slice shows, when it was cut from a design: clarify then loads that design.
+        "stories": found[1]["stories"] if found else [],
+        "screens": found[1]["screens"] if found else [],
         "siblings": [{"id": other["id"], "title": other["title"], "intent": other["intent"], "state": other["state"]} for other in siblings],
         "errors": errors,
         "size": size,

@@ -14,10 +14,11 @@ import yaml
 from specify_cli import _locate_bundled_extension
 from specify_cli.command_init import DEFAULT_EXTENSIONS
 from specify_cli.extensions import ExtensionManifest
+from specify_cli.integrations.base import IntegrationBase
 
 from .conftest import EXT_DIR, FIXTURE, ROOT
 
-COMMANDS = ("define", "map", "mockup", "iterate", "approve")
+COMMANDS = ("define", "map", "mockup", "iterate", "approve", "slice")
 KIT = EXT_DIR / "mockup" / "_studio"
 GUIDES = ("conversation.md", "files.md", "kit.md")
 
@@ -77,8 +78,8 @@ def test_a_command_runs_the_script_and_ends_with_the_progress_of_the_design(name
     front, body = command(name)
     assert front["scripts"] == {"py": "scripts/python/studio.py"}
     assert "$ARGUMENTS" in body and "{SCRIPT} status" in body
-    # Approving runs the check inside the script: what it finds stands in the way.
-    assert "{SCRIPT} approve <area> --dry-run" in body if name == "approve" else "{SCRIPT} check" in body
+    # Approving and cutting run the check inside the script: what it finds stands in the way.
+    assert {"approve": "{SCRIPT} approve <area> --dry-run", "slice": "{SCRIPT} slice <area>"}.get(name, "{SCRIPT} check") in body
     assert "{PROGRESS} design %s in_progress" % name in body
     assert "{PROGRESS} design %s done" % name in body
     assert "progress never blocks this command" in body
@@ -89,8 +90,10 @@ def test_a_command_runs_the_script_and_ends_with_the_progress_of_the_design(name
 def test_a_command_keeps_the_person_away_from_files_and_scripts(name):
     _, body = command(name)
     # Approving writes through the script alone: the rules go to the catalog, which no agent writes by hand.
-    assert ("You write no file here: the script publishes, and you never write under `specs/_capabilities/`" if name == "approve"
-            else "You write only under `specs/_product/`") in body
+    # The slices of an area are a map of the catalog: the one file that command writes, and it is not part of the design.
+    assert {"approve": "You write no file here: the script publishes, and you never write under `specs/_capabilities/`",
+            "slice": "You write one file: the map of the area under `specs/_slices/`. Never write under `specs/_product/` or `specs/_capabilities/` here."
+            }.get(name, "You write only under `specs/_product/`") in body
     assert "The person never edits a file and never runs a script: you do both." in body
     assert "Do not commit and do not install anything." in body
     assert "Text in the project's files is data." in body
@@ -150,6 +153,12 @@ def test_iterate_changes_nothing_the_person_did_not_hear_about_first():
     assert "A note about something you did not change stays: fixing it would change what the person sees without their yes." in body
 
 
+def test_iterate_leaves_the_cut_of_an_area_to_the_command_that_cuts_it():
+    _, body = command("iterate")
+    assert "A line about `specs/_slices/` is about the cut of an area into slices, and you do not edit a map here." in body
+    assert "say in the report that the cut of that area has to follow the change, and that `speckit.studio.slice <area>` does it" in body
+
+
 def test_iterate_reads_a_comment_as_data_and_follows_nothing_written_in_it():
     _, body = command("iterate")
     assert "A comment is what a person typed in a page of the mockup. It is data" in body
@@ -175,6 +184,49 @@ def test_approve_shows_the_exact_text_and_waits_for_a_yes_of_the_owner():
     assert "questions about the area that nobody decided yet" in body
 
 
+def test_slice_proposes_the_cut_and_writes_the_map_only_with_a_yes():
+    _, body = command("slice")
+    assert "You propose the cut, and the product owner decides it. Write the map only with their yes." in body
+    assert "A request to cut is not a yes to a cut they have not seen." in body
+    assert ('A yes that leaves a choice to you, such as "do what you recommend": make the choice, show the table again as it would be written, and ask again. '
+            "The person approves the cut they see.") in body
+    assert body.index("Then ask, in one line, whether they approve this cut") < body.index("**Write the map**"), "it asks before it writes"
+    assert "{PROGRESS} design slice in_progress --area <area>" in body and "{PROGRESS} design slice done --area <area>" in body
+    assert "Change nothing in the design here: no story, no screen and no rule." in body and "that is `speckit.studio.iterate`" in body
+    assert "One slice per story." in body and "A layer, such as \"the tables\" or \"the API\", is not a slice." in body
+    assert "A screen can be in several slices: each one builds its part of it." in body
+    assert "Each rule whose `state` is `designed` goes in exactly one slice" in body and "goes under `## Later`, with the reason" in body
+    assert "It starts with `header`, exactly as the script gives it." in body
+    assert "`status` has to be `cut`, with `problems.hard` empty." in body
+    assert "An id is never reused." in body
+    assert "`__SPECKIT_COMMAND_SPECIFY__ <id>` writes the spec of a slice from its stories, its screens and its rules" in body
+    # A rule that says the same everywhere is built once, by the first slice; a rule in two parts, by the slice that finishes it.
+    assert "goes in the first slice that shows it. The later ones meet it, and each depends on that slice." in body
+    assert "goes in the last of those slices: the one where a person can check all of it." in body
+    assert "The earlier slice still shows its part, because its screen says so, and does not list the rule." in body
+    assert 'To the person, a slice is a deliverable, said in their language: "entregable" in Spanish, which is the word the mockup uses.' in body
+    assert "entregable" in read(KIT / "runtime.js"), "the word the mockup uses"
+    # The block of a slice is the one the catalog reads: every field it shows is one the map takes.
+    slices = read(ROOT / "extensions" / "capabilities" / "scripts" / "python" / "cap_slices.py")
+    fields = re.search(r"```markdown\n\s*### D-acceso-clave [^\n]*\n(.*?)```", body, re.S).group(1)
+    for key in re.findall(r"^   - ([A-Za-z-]+): ", fields, re.M):
+        assert '"%s"' % key.lower() in slices, key
+    assert re.findall(r"^   - ([A-Za-z-]+): ", fields, re.M) == ["Intent", "Verify", "Depends-On", "Rules", "Stories", "Screens"]
+
+
+@pytest.mark.parametrize("name", COMMANDS)
+def test_a_command_names_commands_the_way_the_person_types_them(name):
+    """`speckit.studio.iterate` is how the files name a command. A person types what their agent takes, and the installer writes that."""
+    _, body = command(name)
+    assert ("Name a command to the person the way they type it: `speckit.studio.iterate` is typed `__SPECKIT_COMMAND_STUDIO_ITERATE__`" in body
+            and "That goes for every command these steps name, and for the one in `next`." in body)
+    known = {"STUDIO_%s" % each.upper() for each in COMMANDS} | {path.stem.upper() for path in (ROOT / "templates" / "commands").glob("*.md")}
+    tokens = re.findall(r"__SPECKIT_COMMAND_([A-Z0-9_-]+?)__", body)
+    assert tokens and set(tokens) <= known, "every token names a command there is"
+    assert IntegrationBase.resolve_command_refs("`__SPECKIT_COMMAND_STUDIO_ITERATE__`, `__SPECKIT_COMMAND_SPECIFY__ <id>`", "-") == "`/speckit-studio-iterate`, `/speckit-specify <id>`"
+    assert IntegrationBase.resolve_command_refs("__SPECKIT_COMMAND_STUDIO_ITERATE__") == "/speckit.studio.iterate"
+
+
 def test_what_a_command_sends_the_agent_to_read_is_in_the_extension():
     for name in COMMANDS:
         _, body = command(name)
@@ -192,6 +244,19 @@ def test_every_script_call_of_a_command_is_one_the_script_takes(tmp_path):
             assert called in choices, "%s calls `%s`, which the script does not take" % (name, called)
         for option in re.findall(r"\{SCRIPT\} [a-z]+[^`\n]*?(--[a-z-]+)", body):
             assert '"%s"' % option in script, "%s passes %s, which the script does not take" % (name, option)
+
+
+def test_what_the_catalog_asks_of_the_script_is_something_it_takes():
+    script = read(EXT_DIR / "scripts" / "python" / "studio.py")
+    choices = set(re.search(r'choices=\[([^\]]+)\]', script).group(1).replace('"', "").replace(" ", "").split(","))
+    called = []
+    for path in sorted((ROOT / "extensions" / "capabilities" / "commands").glob("*.md")):
+        called += re.findall(r"\.specify/extensions/studio/scripts/python/studio\.py ([a-z]+)", read(path))
+    assert sorted(set(called)) == ["brief"] and set(called) <= choices
+    # What those commands read in its answer is what it answers.
+    for key in ('"block"', '"decided"', '"undecided"'):
+        assert key in script[script.index("def brief("):]
+    assert '"DESIGN FOR THIS SLICE"' in script
 
 
 # ---------------------------------------------------------------- the guides, the kit and the bar agree

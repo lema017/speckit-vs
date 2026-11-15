@@ -90,6 +90,7 @@ specs/_slices/
 ```
 
 - `Intent`, `Verify`, `Depends-On` and `Rules` are required, one line each. `In`, `Out`, `Kind: enabler — <reason>` and `Dropped: <reason>` are optional.
+- `Stories: ST-1` and `Screens: SCR-login, SCR-home` are optional too. A slice cut from a design made with the `studio` extension names there the story it builds and the screens that show it. `slices show` relays them in the block that aims a run, and `speckit.capabilities.context` and `speckit.capabilities.clarify-context` then load that design with the script of `studio`.
 - `Verify` is what a person does and sees. A layer has no such sentence, so it is not a slice.
 - A slice depends only on slices above it in its map, or on slices of another map.
 - `Rules` names the `[designed]` rules the slice builds. A rule is in one slice, or under `## Later` with the reason.

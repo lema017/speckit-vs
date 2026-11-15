@@ -98,7 +98,13 @@ def test_scaffold_does_not_write_through_a_link(empty, tmp_path):
     (("status", "--name", "Oficio"), "--name goes with scaffold"),
     (("check", "--owner", "Ana"), "--owner goes with scaffold"),
     (("build", "--language", "es"), "--language goes with scaffold"),
-    (("slice",), "invalid choice"),
+    (("handoff",), "invalid choice"),
+    (("slice",), "slice takes the name of one area, such as acceso"),
+    (("slice", "Acceso"), "slice takes the name of one area, such as acceso"),
+    (("slice", "acceso", "inicio"), "slice takes the name of one area, such as acceso"),
+    (("brief",), "brief takes one slice, such as D-acceso-clave"),
+    (("brief", "acceso"), "brief takes one slice, such as D-acceso-clave"),
+    (("status", "acceso"), "a word after the command goes with pick or approve or comments or slice or brief"),
 ])
 def test_a_wrong_call_is_refused(oficio, args, needle):
     rc, out = oficio.run(*args)
@@ -121,7 +127,8 @@ def test_status_says_how_far_the_product_and_each_area_are(oficio):
     assert oficio.area("acceso") == {
         "id": "acceso", "title": "Acceso", "covers": "Entrar, crear una cuenta y recuperar la contraseña", "state": "drawn", "stories": 4, "screens": 5,
         "pages": 5, "rules": {"draft": 6}, "asked": 0, "open": 0, "decisions": 1, "links_pending": 0, "comments": 0, "approved": 0,
-        "steps": {"map": "done", "mockup": "done", "iterate": "pending", "approve": "pending"}}
+        "slices": {"total": 0, "delivered": 0, "underway": 0, "next": None, "loose": ["ST-1", "ST-2", "ST-3", "ST-4"]},
+        "steps": {"map": "done", "mockup": "done", "iterate": "pending", "approve": "pending", "slice": "pending"}}
     assert out["check"] == {"hard": 0, "notes": 1}
     assert out["next"] == {"command": "speckit.studio.approve", "args": "acceso",
                            "why": "Acceso is drawn. Approve its rules when the mockup is right, or say what to change first."}
@@ -166,13 +173,13 @@ def test_an_area_nobody_described_comes_next(oficio):
     assert (area["state"], area["steps"]["map"], area["steps"]["mockup"], area["stories"], area["screens"]) == ("not-started", "pending", "pending", 0, 0)
     assert area["steps"]["iterate"] == area["steps"]["approve"] == "pending"
     assert oficio.status()["next"]["command"] == "speckit.studio.approve", "the area that is drawn is approved before another one is described"
-    assert approved_by_hand(oficio).status()["next"] == {"command": "speckit.studio.map", "args": "talleres", "why": "Talleres is not described yet."}
+    assert approved_by_hand(oficio).status()["next"]["command"] == "speckit.studio.slice", "and it is cut into slices before another one is described"
 
 
 def test_an_area_is_half_described_while_a_story_has_no_screen(oficio):
     oficio.edit(HOME, "- Stories: ST-5", "- Stories: none")
     assert oficio.area("inicio")["steps"]["map"] == "active"
-    assert approved_by_hand(oficio).status()["next"] == {"command": "speckit.studio.map", "args": "inicio", "why": "Inicio is half described."}
+    assert approved_by_hand(oficio).status()["next"]["command"] == "speckit.studio.slice", "the area that is approved is cut first"
 
 
 def test_an_area_is_drawn_when_every_screen_has_its_page(oficio):
@@ -600,8 +607,10 @@ def test_status_lists_the_steps_with_what_their_files_prove(oficio):
         {"name": "map", "command": "speckit.studio.map", "state": "done", "fact": "2 of 2 areas"},
         {"name": "mockup", "command": "speckit.studio.mockup", "state": "done", "fact": "6 of 6 screens"},
         {"name": "iterate", "command": "speckit.studio.iterate", "state": "pending", "fact": "No comments yet"},
-        {"name": "approve", "command": "speckit.studio.approve", "state": "active", "fact": "1 of 2 areas"}]
-    assert out["totals"] == {"areas": 2, "not_started": 0, "in_design": 0, "drawn": 1, "approved": 1, "screens": 6, "pages": 6, "rules": 6, "decisions": 3}
+        {"name": "approve", "command": "speckit.studio.approve", "state": "active", "fact": "1 of 2 areas"},
+        {"name": "slice", "command": "speckit.studio.slice", "state": "pending", "fact": "0 of 2 areas"}]
+    assert out["totals"] == {"areas": 2, "not_started": 0, "in_design": 0, "drawn": 1, "approved": 1, "cut": 0, "slices": 0, "delivered": 0,
+                             "screens": 6, "pages": 6, "rules": 6, "decisions": 3}
     assert out["comments"] == {"open": 0, "applied": 0, "declined": 0, "withdrawn": 0}
 
 
@@ -609,7 +618,7 @@ def test_a_product_that_only_has_a_name_has_every_step_ahead(empty):
     empty.run("scaffold", "--name", "Oficio")
     out = empty.status()
     assert [(step["state"], step["fact"]) for step in out["steps"]] == [("active", "Not started"), ("pending", "No areas yet"), ("pending", "No screens yet"),
-                                                                        ("pending", "No comments yet"), ("pending", "No areas yet")]
+                                                                        ("pending", "No comments yet"), ("pending", "No areas yet"), ("pending", "No areas yet")]
     assert out["totals"]["areas"] == 0 and out["attention"] == [] and out["mockup"] is False and out["documents"] == []
     assert out["summary"] == {"idea": "", "people": [], "look": ""}
 
@@ -830,7 +839,7 @@ def test_a_product_of_one_screen_can_be_seen_early(empty):
     rc, out = empty.check()
     assert rc == 0 and out["hard"] == [], "one screen has nowhere else to lead"
     out = empty.status()
-    assert [step["state"] for step in out["steps"]] == ["active", "done", "done", "pending", "done"], "an area with no rule has nothing to approve"
+    assert [step["state"] for step in out["steps"]] == ["active", "done", "done", "pending", "done", "pending"], "an area with no rule has nothing to approve"
     assert out["next"]["command"] == "speckit.studio.define", "the look is not chosen yet"
     rc, out = empty.run("build")
     assert rc == 0 and empty.built("screens.js")["entrada"] == "SCR-notas" and empty.built("product.js")["personas"] == []
@@ -1541,15 +1550,14 @@ def test_approve_publishes_the_rules_with_who_approved_and_when(ready):
     assert ready.check()[0] == 0
 
 
-def test_an_approved_area_is_approved_and_its_rules_are_cut_into_slices_next(ready):
+def test_an_approved_area_is_approved_and_is_cut_into_slices_next(ready):
     ready.run("approve", "acceso")
     area = ready.area("acceso")
     assert (area["state"], area["rules"], area["approved"], area["steps"]["approve"], area["steps"]["iterate"]) == ("approved", {"designed": 6}, 6, "done", "done")
     out = ready.status()
     assert out["steps"][4] == {"name": "approve", "command": "speckit.studio.approve", "state": "done", "fact": "2 of 2 areas"}
     assert (out["totals"]["approved"], out["totals"]["drawn"], out["totals"]["rules"]) == (2, 0, 0)
-    assert out["next"] == {"command": "speckit.capabilities.slice", "args": "login",
-                           "why": "Every area is approved. Cut the rules of login into slices, and build one spec per slice."}
+    assert out["next"] == {"command": "speckit.studio.slice", "args": "acceso", "why": "Acceso is approved. Cut it into slices: one spec builds each."}
 
 
 def test_the_mockup_keeps_the_example_of_an_approved_rule(ready):
@@ -2084,3 +2092,525 @@ def test_open_says_where_a_comment_is_kept(oficio):
     rc, out = oficio.run("open", "--no-browser")
     assert rc == 0 and (out["served"], out["comments"], out["opened"]) == (False, "browser", False)
     assert out["link"] == (oficio.product / "mockup" / "index.html").resolve().as_uri()
+
+
+# ---------------------------------------------------------------- slice: an approved area is cut into slices, and one spec builds each
+
+ACCESO_MAP = "specs/_slices/acceso.md"
+REGISTRO, CLAVE, SOCIAL, RECUPERAR, MIS = "D-acceso-registro", "D-acceso-clave", "D-acceso-social", "D-acceso-recuperar", "D-inicio-talleres"
+UNREAD = "specs/_slices: nothing read the slice maps: the capabilities extension reads them, and it is not installed or it gave no answer"
+
+
+def piece(slice_id, title, rules="none", stories="none", screens="none", depends="none", more=""):
+    return ("### %s %s\n- Intent: Una persona hace una cosa.\n- Verify: La hago y veo que quedó hecha.\n- Depends-On: %s\n- Rules: %s\n- Stories: %s\n- Screens: %s\n%s"
+            % (slice_id, title, depends, rules, stories, screens, more + "\n" if more else ""))
+
+
+PIECES = {
+    REGISTRO: piece(REGISTRO, "Crear una cuenta", "R-signup-unique-email, R-password-length", "ST-3", "SCR-signup"),
+    CLAVE: piece(CLAVE, "Entrar con correo", "R-login-lockout, R-login-attempts-warning", "ST-1", "SCR-login, SCR-login-locked", REGISTRO),
+    SOCIAL: piece(SOCIAL, "Entrar con un proveedor", "R-login-oauth", "ST-2", "SCR-login, SCR-signup", CLAVE),
+    RECUPERAR: piece(RECUPERAR, "Recuperar la contraseña", "R-reset-link", "ST-4", "SCR-forgot, SCR-reset", CLAVE),
+}
+MIS_TALLERES = piece(MIS, "Ver mis talleres", stories="ST-5", screens="SCR-home", depends=CLAVE)
+
+
+def put_map(project, area, *pieces, later=""):
+    path = project.path / "specs" / "_slices" / (area + ".md")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("# Slices: %s\n\n<!-- slice-map:v1 -->\n\nRequest: Lo que cubre.\n\n%s%s" % (area, "\n".join(pieces), "\n## Later\n\n" + later if later else ""),
+                    encoding="utf-8")
+
+
+def spec_of(project, name, slice_id, tasks=None):
+    """A spec that says which slice it builds: specified with no tasks, building with one open, delivered with all of them closed."""
+    folder = project.path / "specs" / name
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "spec.md").write_text("# Feature\n\n## Slice\n\n- Slice: %s\n- Out: none\n" % slice_id, encoding="utf-8")
+    if tasks is not None:
+        (folder / "tasks.md").write_text(tasks, encoding="utf-8")
+
+
+def unbuilt(project, capability, rule):
+    """The catalog says a rule is built: its line loses `[designed]`."""
+    path = project.path / "specs" / "_capabilities" / capability / "spec.md"
+    text = path.read_text(encoding="utf-8")
+    assert "**%s** [designed]:" % rule in text
+    path.write_text(text.replace("**%s** [designed]:" % rule, "**%s**:" % rule), encoding="utf-8")
+
+
+@pytest.fixture
+def approved(ready):
+    """Oficio with the rules of Acceso approved for real. Inicio has no rule: both areas are ready to be cut."""
+    rc, out = ready.run("approve", "acceso")
+    assert rc == 0 and out["status"] == "approved", out
+    return ready
+
+
+@pytest.fixture
+def cut(approved):
+    """Both areas cut: Acceso into four slices, Inicio into one."""
+    put_map(approved, "acceso", *PIECES.values())
+    put_map(approved, "inicio", MIS_TALLERES)
+    return approved
+
+
+def test_slice_says_what_an_approved_area_is_cut_from(approved):
+    rc, out = approved.run("slice", "acceso")
+    assert rc == 0 and (out["status"], out["area"], out["title"], out["covers"], out["map"]) == (
+        "ready", "acceso", "Acceso", "Entrar, crear una cuenta y recuperar la contraseña", ACCESO_MAP)
+    assert out["header"] == "# Slices: Acceso\n\n<!-- slice-map:v1 -->\n\nRequest: Entrar, crear una cuenta y recuperar la contraseña\n"
+    assert out["blockers"] == [] and out["warnings"] == [] and out["slices"] == [] and out["problems"] == {"hard": [], "notes": []}
+    assert out["loose"] == ["ST-1", "ST-2", "ST-3", "ST-4"], "no story is in a slice yet"
+    assert [story["id"] for story in out["stories"]] == ["ST-1", "ST-2", "ST-3", "ST-4"], "the stories of this area, and of no other"
+    assert out["stories"][0] == {
+        "id": "ST-1", "title": "Entrar con correo", "story": "Como vecina, entro con mi correo y mi contraseña para apuntarme a un taller.",
+        "criteria": "Con el correo y la contraseña correctos veo mi inicio. Con la contraseña mala veo un error.",
+        "actors": ["ACT-vecina", "ACT-tallerista"], "rules": ["R-login-lockout", "R-login-attempts-warning"], "screens": ["SCR-login-locked", "SCR-login"], "slices": []}
+    assert [(screen["id"], screen["stories"]) for screen in out["screens"]] == [
+        ("SCR-forgot", ["ST-4"]), ("SCR-login-locked", ["ST-1"]), ("SCR-login", ["ST-1", "ST-2"]), ("SCR-reset", ["ST-4"]), ("SCR-signup", ["ST-2", "ST-3"])]
+    assert out["screens"][2] == {"id": "SCR-login", "title": "Entrar", "states": ["normal", "error", "cargando"], "stories": ["ST-1", "ST-2"],
+                                 "rules": ["R-login-lockout", "R-login-oauth", "R-login-attempts-warning"], "entry": True, "slices": []}
+    assert [flow["id"] for flow in out["flows"]] == ["FL-1", "FL-2", "FL-3", "FL-4"]
+    assert out["flows"][1] == {"id": "FL-2", "title": "Bloqueo por intentos fallidos", "steps": ["SCR-login", "SCR-login/error", "SCR-login-locked"]}
+    assert [rule["id"] for rule in out["rules"]] == sorted(rule for rules in RULES.values() for rule in rules)
+    assert out["rules"][1] == {"id": "R-login-lockout", "capability": "login", "text": LOCKOUT, "state": "designed",
+                               "cited_by": ["ST-1", "SCR-login-locked", "SCR-login"], "slices": []}
+
+
+def test_slice_shows_the_flows_that_pass_through_the_screens_of_the_area(approved):
+    rc, out = approved.run("slice", "inicio")
+    assert rc == 0 and out["status"] == "ready" and out["rules"] == [] and [story["id"] for story in out["stories"]] == ["ST-5"]
+    assert [flow["id"] for flow in out["flows"]] == ["FL-1", "FL-3", "FL-4"], "a flow of another area that ends here counts"
+
+
+def test_slice_waits_for_the_rules_of_the_area_to_be_approved(ready):
+    rc, out = ready.run("slice", "acceso")
+    assert rc == 1 and out["status"] == "blocked"
+    assert out["blockers"] == ["the rules of the area are not all approved: speckit.studio.approve acceso comes first"]
+    assert ready.run("slice", "inicio")[1]["status"] == "ready", "an area with no rule has nothing to approve"
+    assert not (ready.path / "specs" / "_slices").exists(), "it writes nothing"
+
+
+def test_slice_needs_the_extension_that_keeps_the_slices(oficio):
+    rc, out = approved_by_hand(oficio).run("slice", "acceso")
+    assert rc == 1 and out["blockers"] == ["cutting needs the capabilities extension, which keeps the slices: specify extension add capabilities"]
+
+
+def test_slice_needs_an_area_with_stories_and_a_design_with_no_problem(approved):
+    approved.edit("navigation.md", "## Flows", "### talleres Talleres\n- Covers: Ver los talleres y apuntarse\n\n## Flows")
+    rc, out = approved.run("slice", "talleres")
+    assert rc == 1 and out["blockers"] == ["the area has no story yet: speckit.studio.map talleres describes it"]
+    approved.edit(LOGIN, "- States: normal, error, cargando", "- States: normal, error, cargando, vacio")
+    rc, out = approved.run("slice", "acceso")
+    assert rc == 1 and out["blockers"] == ["the design has 1 problem the check finds: fix it first, `check` lists them"]
+    approved.edit(HOME, "- States: normal, vacio, cargando", "- States: normal, vacio, cargando, lleno")
+    assert approved.run("slice", "acceso")[1]["blockers"] == ["the design has 2 problems the check finds: fix them first, `check` lists them"]
+    rc, out = approved.run("slice", "pagos")
+    assert rc == 2 and out["errors"] == ["the area pagos is not in navigation.md; the areas are acceso, inicio, talleres"]
+
+
+def test_slice_says_what_still_waits_in_the_area(approved):
+    approved.write("comments.md", "# Comments\n\n## C-001\n- Screen: SCR-login\n- Status: open\n\n> Cambia el botón.\n\n## C-002\n- Screen: SCR-home\n- Status: open\n\n> Otra cosa.\n"
+                                  "\n## C-003\n- Screen: SCR-signup\n- Status: applied\n\n> Ya está.\n")
+    approved.edit("decisions.md", "## map acceso\n", "## map acceso\n\n### Q-009 ¿Se avisa por correo al bloquear?\n- Status: open\n- Owner: Ana Pérez\n")
+    out = approved.run("slice", "acceso")[1]
+    assert out["status"] == "ready", "what waits is said, and stops nothing"
+    assert out["warnings"] == ["1 comment on its screens waits to be applied: C-001", "1 question about the area is not decided: Q-009"]
+    approved.edit("comments.md", "## C-003\n- Screen: SCR-signup\n- Status: applied", "## C-003\n- Screen: SCR-signup\n- Status: open")
+    approved.edit("decisions.md", "## map acceso\n", "## map acceso\n\n### Q-010 ¿Y por SMS?\n- Status: asked\n")
+    assert approved.run("slice", "acceso")[1]["warnings"] == ["2 comments on its screens wait to be applied: C-001, C-003",
+                                                              "2 questions about the area are not decided: Q-010, Q-009"]
+
+
+def test_an_area_is_cut_once_every_story_is_in_a_slice(approved):
+    put_map(approved, "acceso", *PIECES.values())
+    rc, out = approved.run("slice", "acceso")
+    assert rc == 0 and (out["status"], out["loose"], out["problems"]) == ("cut", [], {"hard": [], "notes": []})
+    assert [(item["id"], item["state"], item["spec"]) for item in out["slices"]] == [(key, "pending", None) for key in (REGISTRO, CLAVE, SOCIAL, RECUPERAR)]
+    assert out["slices"][1] == {"id": CLAVE, "title": "Entrar con correo", "intent": "Una persona hace una cosa.", "verify": "La hago y veo que quedó hecha.",
+                                "state": "pending", "spec": None, "stories": ["ST-1"], "screens": ["SCR-login", "SCR-login-locked"],
+                                "rules": ["R-login-lockout", "R-login-attempts-warning"], "depends_on": [REGISTRO]}
+    assert out["stories"][0]["slices"] == [CLAVE] and out["rules"][1]["slices"] == [CLAVE]
+    assert out["screens"][2]["slices"] == [CLAVE, SOCIAL], "a screen can be in several slices"
+    assert approved.check()[0] == 0
+
+
+def test_a_story_in_no_slice_leaves_the_area_half_cut(approved):
+    put_map(approved, "acceso", PIECES[REGISTRO], PIECES[CLAVE], PIECES[SOCIAL])
+    rc, out = approved.run("slice", "acceso")
+    assert rc == 0 and (out["status"], out["loose"], out["problems"]["hard"]) == ("ready", ["ST-4"], [])
+    loose = ["specs/_slices/acceso.md: ST-4 of the area acceso is in no slice", "specs/_slices/acceso.md: SCR-forgot of the area acceso is in no slice",
+             "specs/_slices/acceso.md: SCR-reset of the area acceso is in no slice"]
+    assert out["problems"]["notes"] == loose
+    assert approved.notes("is in no slice") == loose, "the check of the design says it too"
+    assert approved.notes("inicio") == [PENDING], "an area that was not cut yet has nothing loose"
+    put_map(approved, "acceso", PIECES[REGISTRO], PIECES[CLAVE], PIECES[SOCIAL], piece(RECUPERAR, "Recuperar", "R-reset-link", "ST-4", "SCR-forgot, SCR-reset", CLAVE, "- Dropped: no se hará"))
+    assert approved.run("slice", "acceso")[1]["loose"] == ["ST-4"], "a slice that was dropped builds nothing"
+
+
+def test_a_rule_left_for_nobody_is_said_by_the_catalog(approved):
+    put_map(approved, "acceso", PIECES[REGISTRO], piece(CLAVE, "Entrar con correo", "R-login-lockout", "ST-1", "SCR-login, SCR-login-locked", REGISTRO),
+            PIECES[SOCIAL], PIECES[RECUPERAR])
+    out = approved.run("slice", "acceso")[1]
+    assert out["status"] == "cut" and out["problems"]["notes"] == ["R-login-attempts-warning is [designed] and in no slice and not in ## Later"]
+    put_map(approved, "acceso", PIECES[REGISTRO], piece(CLAVE, "Entrar con correo", "R-login-lockout", "ST-1", "SCR-login, SCR-login-locked", REGISTRO),
+            PIECES[SOCIAL], PIECES[RECUPERAR], later="- R-login-attempts-warning: espera a medir los intentos\n")
+    assert approved.run("slice", "acceso")[1]["problems"] == {"hard": [], "notes": []}
+
+
+def test_a_map_that_names_what_the_design_does_not_have_is_wrong(approved):
+    put_map(approved, "acceso", piece(REGISTRO, "Crear una cuenta", "R-signup-unique-email, R-password-length", "ST-3, ST-9", "SCR-signup, SCR-pagos"),
+            PIECES[CLAVE], PIECES[SOCIAL], PIECES[RECUPERAR])
+    rc, out = approved.run("slice", "acceso")
+    wrong = ["specs/_slices/acceso.md: D-acceso-registro names ST-9, which is not in story-map.md",
+             "specs/_slices/acceso.md: D-acceso-registro names SCR-pagos, which is not a screen"]
+    assert rc == 1 and out["status"] == "invalid" and out["problems"]["hard"] == wrong
+    rc, check = approved.check()
+    assert rc == 1 and check["hard"] == wrong
+    put_map(approved, "acceso", piece(REGISTRO, "Crear una cuenta", "R-signup-unique-email, R-password-length", "ST-3, ST-9", "SCR-signup", more="- Dropped: no se hará"),
+            PIECES[SOCIAL].replace(CLAVE, "none"), PIECES[RECUPERAR].replace(CLAVE, "none"))
+    assert approved.hard("ST-9") == [], "what a dropped slice names is not checked"
+
+
+def test_slice_reports_what_the_catalog_finds_in_the_map(approved):
+    put_map(approved, "acceso", *PIECES.values(), piece("D-acceso-otra", "Otra", more="- Status: done"))
+    rc, out = approved.run("slice", "acceso")
+    assert rc == 1 and out["status"] == "invalid" and out["problems"]["hard"] == ["specs/_slices/acceso.md: D-acceso-otra: unknown field Status"]
+
+
+def test_one_slice_builds_a_story(approved):
+    put_map(approved, "acceso", *PIECES.values())
+    put_map(approved, "inicio", piece(MIS, "Ver mis talleres", stories="ST-5, ST-1", screens="SCR-home, SCR-login", depends=CLAVE))
+    assert approved.hard("several slices") == ["specs/_slices: ST-1 is in several slices: D-acceso-clave, D-inicio-talleres; one slice builds a story"]
+    assert approved.hard("SCR-login") == [], "a screen can be in several slices"
+
+
+def test_a_slice_comes_after_the_one_that_builds_a_rule_its_story_cites(approved):
+    clave = piece(CLAVE, "Entrar con correo", "R-login-lockout", "ST-1", "SCR-login, SCR-login-locked")
+    social = piece(SOCIAL, "Entrar con un proveedor", "R-login-oauth, R-login-attempts-warning", "ST-2", "SCR-login, SCR-signup")
+    recuperar = PIECES[RECUPERAR]
+    put_map(approved, "acceso", PIECES[REGISTRO], clave, social, recuperar)
+    assert approved.notes("does not depend on it") == [
+        "specs/_slices/acceso.md: D-acceso-clave shows ST-1, which cites R-login-attempts-warning; D-acceso-social builds that rule, and D-acceso-clave does not depend on it"]
+    put_map(approved, "acceso", PIECES[REGISTRO], social, piece(CLAVE, "Entrar con correo", "R-login-lockout", "ST-1", "SCR-login, SCR-login-locked", SOCIAL), recuperar)
+    assert approved.notes("does not depend on it") == [], "it depends on the slice that builds the rule"
+    registro = piece(REGISTRO, "Crear una cuenta", "R-signup-unique-email, R-password-length, R-login-attempts-warning", "ST-3", "SCR-signup")
+    social = piece(SOCIAL, "Entrar con un proveedor", "R-login-oauth", "ST-2", "SCR-login, SCR-signup", REGISTRO)
+    put_map(approved, "acceso", registro, social, piece(CLAVE, "Entrar con correo", "R-login-lockout", "ST-1", "SCR-login, SCR-login-locked", SOCIAL), recuperar)
+    assert approved.notes("does not depend on it") == [], "a slice it depends on depends on the one that builds the rule"
+    unbuilt(approved, "login", "R-login-attempts-warning")
+    put_map(approved, "acceso", registro, social, clave, recuperar)
+    assert approved.notes("does not depend on it") == [], "a rule that is built already holds nobody back"
+
+
+def test_a_rule_in_two_parts_is_built_by_the_slice_that_finishes_it(approved):
+    """ST-1 cites the warning, and the slice of ST-2 builds it: that slice comes after, so the first one shows its part and waits for nobody."""
+    clave = piece(CLAVE, "Entrar con correo", "R-login-lockout", "ST-1", "SCR-login, SCR-login-locked", REGISTRO)
+    builds = "R-login-oauth, R-login-attempts-warning"
+    put_map(approved, "acceso", PIECES[REGISTRO], clave, piece(SOCIAL, "Entrar con un proveedor", builds, "ST-2", "SCR-login, SCR-signup", CLAVE), PIECES[RECUPERAR])
+    assert approved.notes("does not depend on it") == [], "the slice that builds the rule depends on this one"
+    put_map(approved, "acceso", PIECES[REGISTRO], clave, PIECES[RECUPERAR], piece(SOCIAL, "Entrar con un proveedor", builds, "ST-2", "SCR-login, SCR-signup", RECUPERAR))
+    assert approved.notes("does not depend on it") == [], "it depends on a slice that depends on this one"
+    put_map(approved, "acceso", PIECES[REGISTRO], clave, piece(SOCIAL, "Entrar con un proveedor", builds, "ST-2", "SCR-login, SCR-signup", REGISTRO), PIECES[RECUPERAR])
+    assert len(approved.notes("does not depend on it")) == 1, "two slices side by side: neither one waits for the other, and one of them needs the rule"
+
+
+def test_maps_nothing_can_read_are_said_and_nothing_is_cut(approved):
+    put_map(approved, "acceso", *PIECES.values())
+    (approved.path / ".specify" / "extensions" / "capabilities" / "scripts" / "python" / "capabilities.py").write_text("print('not json')\n", encoding="utf-8")
+    assert approved.notes("nothing read") == [UNREAD]
+    rc, out = approved.run("slice", "acceso")
+    assert rc == 1 and out["blockers"] == ["nothing read the slice maps under specs/_slices: `capabilities.py slices status` says why"]
+    assert approved.area("acceso")["steps"]["slice"] == "pending"
+    rc, out = approved.run("brief", CLAVE)
+    assert rc == 2 and out["errors"] == ["nothing read the slice maps under specs/_slices: the capabilities extension reads them"]
+
+
+def test_maps_in_a_project_without_the_catalog_are_said(oficio):
+    put_map(approved_by_hand(oficio), "acceso", *PIECES.values())
+    assert oficio.notes("nothing read") == [UNREAD]
+    assert oficio.status()["check"] == {"hard": 0, "notes": 2}
+
+
+def test_the_design_says_how_far_the_cut_is(approved):
+    put_map(approved, "acceso", *PIECES.values())
+    area = approved.area("acceso")
+    assert area["steps"]["slice"] == "done" and area["state"] == "approved"
+    assert area["slices"] == {"total": 4, "delivered": 0, "underway": 0, "next": {"id": REGISTRO, "title": "Crear una cuenta"}, "loose": []}
+    out = approved.status()
+    assert out["steps"][5] == {"name": "slice", "command": "speckit.studio.slice", "state": "active", "fact": "1 of 2 areas, 0 of 4 slices delivered"}
+    assert out["next"] == {"command": "speckit.studio.slice", "args": "inicio", "why": "Inicio is approved. Cut it into slices: one spec builds each."}
+    put_map(approved, "inicio", MIS_TALLERES)
+    out = approved.status()
+    assert out["steps"][5] == {"name": "slice", "command": "speckit.studio.slice", "state": "done", "fact": "2 of 2 areas, 0 of 5 slices delivered"}
+    assert (out["totals"]["cut"], out["totals"]["slices"], out["totals"]["delivered"]) == (2, 5, 0)
+    assert out["next"] == {"command": "speckit.specify", "args": REGISTRO, "why": "Acceso is cut into 4 slices. Write the spec of the next one: Crear una cuenta."}
+    assert [item for item in out["attention"] if item["kind"] == "slices"] == []
+
+
+def test_an_area_nobody_described_comes_after_the_cut(cut):
+    cut.edit("navigation.md", "## Flows", "### talleres Talleres\n- Covers: Ver los talleres y apuntarse\n\n## Flows")
+    out = cut.status()
+    assert out["next"] == {"command": "speckit.studio.map", "args": "talleres", "why": "Talleres is not described yet."}
+    assert out["steps"][5] == {"name": "slice", "command": "speckit.studio.slice", "state": "active", "fact": "2 of 3 areas, 0 of 5 slices delivered"}
+    cut.edit(HOME, "- Stories: ST-5", "- Stories: none")
+    assert cut.status()["next"] == {"command": "speckit.studio.map", "args": "inicio", "why": "Inicio is half described."}
+
+
+def test_a_half_cut_area_asks_for_the_rest(approved):
+    put_map(approved, "acceso", PIECES[REGISTRO], PIECES[CLAVE], PIECES[SOCIAL])
+    area = approved.area("acceso")
+    assert (area["steps"]["slice"], area["slices"]["loose"], area["slices"]["total"]) == ("active", ["ST-4"], 3)
+    out = approved.status()
+    assert out["next"] == {"command": "speckit.studio.slice", "args": "acceso", "why": "1 story of Acceso is in no slice yet."}
+    assert [item for item in out["attention"] if item["kind"] == "slices"] == [
+        {"kind": "slices", "area": "acceso", "text": "1 story of Acceso is in no slice yet: ST-4."}], "an area with no slice yet is not asked for the rest"
+    put_map(approved, "acceso", PIECES[REGISTRO], PIECES[CLAVE])
+    out = approved.status()
+    assert out["next"]["why"] == "2 stories of Acceso are in no slice yet."
+    assert {"kind": "slices", "area": "acceso", "text": "2 stories of Acceso are in no slice yet: ST-2, ST-4."} in out["attention"]
+
+
+def test_a_problem_in_the_slices_needs_attention_and_stops_no_approval(cut):
+    put_map(cut, "inicio", piece(MIS, "Ver mis talleres", stories="ST-5, ST-9", screens="SCR-home", depends=CLAVE))
+    out = cut.status()
+    assert out["steps"][5]["state"] == "attention" and out["steps"][2]["state"] == "done", "the mockup is as right as it was"
+    assert {"kind": "slices", "text": "The check found 1 problem in the slices.",
+            "details": ["specs/_slices/inicio.md: D-inicio-talleres names ST-9, which is not in story-map.md"]} in out["attention"]
+    assert out["check"] == {"hard": 1, "notes": 1}
+    cut.write("capability-drafts.md", CHANGE)
+    assert cut.run("approve", "acceso", "--dry-run")[1]["blockers"] == [], "a slice that is wrong does not stop the approval of a rule"
+
+
+def test_a_rule_is_in_a_spec_until_the_spec_of_its_slice_is_delivered(cut):
+    spec_of(cut, "001-registro", REGISTRO)
+    area = cut.area("acceso")
+    assert (area["rules"], area["approved"], area["steps"]["approve"]) == ({"designed": 4, "in-spec": 2}, 6, "done")
+    assert area["slices"] == {"total": 4, "delivered": 0, "underway": 1, "next": None, "loose": []}
+    assert cut.status()["next"] == {"command": "speckit.progress", "args": "", "why": "1 slice is being built. The list of specs shows how far each one is, and what comes next."}
+    spec_of(cut, "001-registro", REGISTRO, tasks="- [ ] T001 Una tarea\n")
+    spec_of(cut, "002-clave", CLAVE)
+    assert cut.area("acceso")["rules"] == {"in-spec": 4, "designed": 2}, "a spec with tasks left is still building"
+    assert cut.status()["next"]["why"] == "2 slices are being built. The list of specs shows how far each one is, and what comes next."
+    spec_of(cut, "001-registro", REGISTRO, tasks="- [x] T001 Una tarea\n")
+    area = cut.area("acceso")
+    assert (area["slices"]["delivered"], area["slices"]["underway"]) == (1, 1)
+    assert area["rules"] == {"designed": 4, "in-spec": 2}, "the rules of a delivered slice are in no spec any more"
+    assert cut.status()["steps"][5]["fact"] == "2 of 2 areas, 1 of 5 slices delivered"
+
+
+def test_the_next_slice_is_the_first_one_that_waits_for_nothing(cut):
+    spec_of(cut, "001-registro", REGISTRO, tasks="- [x] T001 Una tarea\n")
+    assert cut.status()["next"] == {"command": "speckit.specify", "args": CLAVE, "why": "Acceso is cut into 4 slices. Write the spec of the next one: Entrar con correo."}
+    spec_of(cut, "002-clave", CLAVE, tasks="- [x] T001 Una tarea\n")
+    spec_of(cut, "003-social", SOCIAL, tasks="- [x] T001 Una tarea\n")
+    spec_of(cut, "004-recuperar", RECUPERAR, tasks="- [x] T001 Una tarea\n")
+    assert cut.status()["next"] == {"command": "speckit.specify", "args": MIS, "why": "Inicio is cut into 1 slice. Write the spec of the next one: Ver mis talleres."}
+    put_map(cut, "inicio", piece("D-inicio-vieja", "Una vieja", more="- Dropped: no se hará"), piece(MIS, "Ver mis talleres", stories="ST-5", screens="SCR-home", depends="D-inicio-vieja"))
+    assert cut.status()["next"] == {"command": "speckit.studio.iterate", "args": "", "why": "Every area is approved. To change something, say it."}
+    put_map(cut, "inicio", MIS_TALLERES)
+    spec_of(cut, "005-talleres", MIS, tasks="- [x] T001 Una tarea\n")
+    out = cut.status()
+    assert out["next"] == {"command": "speckit.studio.iterate", "args": "", "why": "Every area is approved and every slice is delivered. To change something, say it."}
+    assert out["steps"][5] == {"name": "slice", "command": "speckit.studio.slice", "state": "done", "fact": "2 of 2 areas, 5 of 5 slices delivered"}
+
+
+def test_the_mockup_says_which_slice_builds_each_rule(cut):
+    spec_of(cut, "001-registro", REGISTRO)
+    put_map(cut, "acceso", PIECES[REGISTRO], PIECES[CLAVE], PIECES[SOCIAL])
+    cut.run("build")
+    rules = cut.built("product.js")["reglas"]
+    assert (rules["R-password-length"]["estado"], rules["R-password-length"]["entregable"], rules["R-password-length"]["spec"]) == ("in-spec", REGISTRO, "001-registro")
+    assert (rules["R-login-lockout"]["estado"], rules["R-login-lockout"]["entregable"]) == ("designed", CLAVE) and "spec" not in rules["R-login-lockout"]
+    assert "entregable" not in rules["R-reset-link"], "no slice builds it yet"
+
+
+def test_a_change_that_waits_for_approval_shows_before_the_spec(cut):
+    spec_of(cut, "001-clave", CLAVE)
+    assert cut.area("acceso")["rules"] == {"designed": 4, "in-spec": 2}
+    cut.write("capability-drafts.md", CHANGE)
+    assert cut.area("acceso")["rules"] == {"designed": 4, "in-spec": 1, "proposed": 1}
+
+
+BRIEF_CLAVE = """DESIGN FOR THIS SLICE
+D-acceso-clave — Entrar con correo
+The product owner designed this in a mockup and approved its rules. The spec says what is here, in the words that are here.
+Language of the design: es. Write the spec in it, and speak to the person in it: each question and each report.
+To the person, a slice is a deliverable, said in that language: "entregable" in Spanish.
+
+Stories:
+- ST-1 Entrar con correo
+  Who: Ana (vecina), Tomás (tallerista)
+  Story: Como vecina, entro con mi correo y mi contraseña para apuntarme a un taller.
+  Criteria: Con el correo y la contraseña correctos veo mi inicio. Con la contraseña mala veo un error.
+
+Screens:
+- SCR-login Entrar, page specs/_product/mockup/entrar.html
+  Purpose: Entrar a la cuenta con correo y contraseña, o con un proveedor.
+  Seen by: anyone. Signed in: no.
+  States:
+  - normal
+  - error: El correo o la contraseña no coinciden. Avisa cuántos intentos quedan.
+  - cargando: El botón dice "Entrando…".
+  Elements:
+  - field "Correo"
+  - field "Contraseña"
+  - button "Entrar" -> SCR-home
+  - button "Continuar con Google" -> SCR-home
+  - button "Continuar con Facebook" -> SCR-home
+  - button "Continuar con GitHub" -> SCR-home
+  - link "¿Olvidaste tu contraseña?" -> SCR-forgot
+  - link "Crea tu cuenta" -> SCR-signup
+  Also in D-acceso-social: specify only what this slice needs of the screen.
+- SCR-login-locked Cuenta bloqueada, page specs/_product/mockup/bloqueada.html
+  Purpose: Decir que la cuenta quedó bloqueada y cuándo se puede volver a intentar.
+  Seen by: anyone. Signed in: no.
+  States:
+  - normal
+  Elements:
+  - text "Hubo 5 intentos fallidos seguidos"
+  - link "Restablecer contraseña" -> SCR-forgot
+  - link "Volver a la entrada" -> SCR-login
+
+Flows through its screens:
+- FL-1 Entrar con correo: SCR-login > SCR-home
+- FL-2 Bloqueo por intentos fallidos: SCR-login > SCR-login/error > SCR-login-locked
+- FL-3 Crear cuenta: SCR-login > SCR-signup > SCR-home/vacio
+- FL-4 Recuperar la contraseña: SCR-login > SCR-forgot > SCR-forgot/enviado > SCR-reset > SCR-home
+
+Rules this slice builds, each with the example it was approved with:
+- R-login-lockout: Tras 5 intentos fallidos seguidos, la cuenta se bloquea 15 minutos.
+  Example: Ana falla 5 veces a las 10:00 y puede volver a intentar a las 10:15.
+- R-login-attempts-warning: Desde el tercer intento fallido, se avisa cuántos intentos quedan antes del bloqueo.
+  Example: Al tercer fallo Ana lee "Te quedan 2 intentos".
+
+Rules its stories and screens also cite. They are built elsewhere: the spec meets them and does not build them again:
+- R-login-oauth (built by D-acceso-social): Se puede entrar con una cuenta de Google, Facebook o GitHub.
+
+Decided for the whole product. Do not ask it again:
+- Q-001 ¿Quién puede publicar un taller? -> Cualquier vecino con cuenta
+- Q-002 ¿El taller se paga dentro de la app? -> No. Es gratis o se paga en persona.
+
+Decided in the design. Do not ask it again:
+- Q-004 ¿Cuántos intentos fallidos antes de bloquear, y por cuánto tiempo? -> 5 intentos seguidos, 15 minutos
+
+Not decided in the design. The spec marks it, it does not guess:
+- Q-003 ¿Hay cupo por taller? (decides: Ana Pérez)
+
+Write the spec from this:
+- Its user story is the story above, with its criteria as the acceptance scenarios.
+- Each state of a screen and each example of a rule is one more acceptance scenario.
+- Name each screen with its page, so that who builds it opens the mockup.
+- An element keeps its label and where it leads: that is what the product owner approved.
+- What is not here was not designed: mark it [NEEDS CLARIFICATION], do not invent it.
+"""
+
+
+def test_brief_gives_the_spec_of_a_slice_what_was_designed(cut):
+    rc, out = cut.run("brief", CLAVE)
+    assert rc == 0 and (out["status"], out["slice"], out["title"], out["map"], out["language"]) == ("ok", CLAVE, "Entrar con correo", ACCESO_MAP, "es")
+    assert out["block"] == BRIEF_CLAVE
+    assert out["stories"] == [{"id": "ST-1", "title": "Entrar con correo", "story": "Como vecina, entro con mi correo y mi contraseña para apuntarme a un taller.",
+                               "criteria": "Con el correo y la contraseña correctos veo mi inicio. Con la contraseña mala veo un error.",
+                               "actors": ["ACT-vecina", "ACT-tallerista"]}]
+    assert out["screens"] == [
+        {"id": "SCR-login", "title": "Entrar", "page": "specs/_product/mockup/entrar.html", "states": ["normal", "error", "cargando"], "shared_with": [SOCIAL]},
+        {"id": "SCR-login-locked", "title": "Cuenta bloqueada", "page": "specs/_product/mockup/bloqueada.html", "states": ["normal"], "shared_with": []}]
+    assert [(rule["id"], rule["mine"], rule["built_by"], rule["state"]) for rule in out["rules"]] == [
+        ("R-login-lockout", True, None, "designed"), ("R-login-attempts-warning", True, None, "designed"), ("R-login-oauth", False, SOCIAL, "designed")]
+    assert out["rules"][0]["text"] == LOCKOUT and out["rules"][0]["example"] == "Ana falla 5 veces a las 10:00 y puede volver a intentar a las 10:15."
+    assert out["decided"] == [
+        {"id": "Q-001", "question": "¿Quién puede publicar un taller?", "answer": "Cualquier vecino con cuenta"},
+        {"id": "Q-002", "question": "¿El taller se paga dentro de la app?", "answer": "No. Es gratis o se paga en persona."},
+        {"id": "Q-004", "question": "¿Cuántos intentos fallidos antes de bloquear, y por cuánto tiempo?", "answer": "5 intentos seguidos, 15 minutos"}]
+    assert out["undecided"] == [{"id": "Q-003", "question": "¿Hay cupo por taller?", "owner": "Ana Pérez"}] and out["missing"] == []
+    assert [flow["id"] for flow in out["flows"]] == ["FL-1", "FL-2", "FL-3", "FL-4"]
+
+
+def test_brief_of_a_slice_of_another_area_brings_what_that_area_decided(cut):
+    block = cut.run("brief", MIS)[1]["block"]
+    assert "\n  Seen by: anyone. Signed in: yes.\n" in block, "the screen asks for a session"
+    assert "Decided in the design" not in block and "Rules this slice builds" not in block and "Rules its stories" not in block, "a part with nothing in it is left out"
+    assert "\nDecided for the whole product. Do not ask it again:\n- Q-001 ¿Quién puede publicar un taller? -> Cualquier vecino con cuenta\n- Q-002 " in block
+    assert "Q-004" not in block, "what another area decided is not of this slice"
+    assert "\nFlows through its screens:\n- FL-1 Entrar con correo: SCR-login > SCR-home\n- FL-3 " in block and "FL-2" not in block
+    cut.edit(HOME, "- Session: required", "- Session: required\n- Seen-By: ACT-vecina, ACT-tallerista")
+    assert "\n  Seen by: Ana (vecina), Tomás (tallerista). Signed in: yes.\n" in cut.run("brief", MIS)[1]["block"]
+
+
+def test_brief_says_where_each_rule_it_meets_is_built(cut):
+    out = cut.run("brief", RECUPERAR)[1]
+    assert "\nRules this slice builds, each with the example it was approved with:\n- R-reset-link: " in out["block"]
+    assert "\n- R-password-length (built by D-acceso-registro): La contraseña tiene al menos 8 caracteres.\n" in out["block"]
+    put_map(cut, "acceso", piece(REGISTRO, "Crear una cuenta", "R-signup-unique-email", "ST-3", "SCR-signup"), PIECES[CLAVE], PIECES[SOCIAL], PIECES[RECUPERAR])
+    assert "\n- R-password-length (approved, in no slice yet): La contraseña" in cut.run("brief", RECUPERAR)[1]["block"]
+    unbuilt(cut, "signup", "R-password-length")
+    out = cut.run("brief", RECUPERAR)[1]
+    assert "\n- R-password-length (already built): La contraseña" in out["block"]
+    assert [(rule["id"], rule["state"], rule["built_by"]) for rule in out["rules"]] == [("R-reset-link", "designed", None), ("R-password-length", "implemented", None)]
+
+
+def test_brief_says_who_finishes_a_rule_in_two_parts_and_who_started_it(cut):
+    """The warning is cited by ST-1 and built by the slice of ST-2, which comes after: the first shows its part, the second builds the rule."""
+    clave = piece(CLAVE, "Entrar con correo", "R-login-lockout", "ST-1", "SCR-login, SCR-login-locked", REGISTRO)
+    social = piece(SOCIAL, "Entrar con un proveedor", "R-login-oauth, R-login-attempts-warning", "ST-2", "SCR-login, SCR-signup", CLAVE)
+    put_map(cut, "acceso", PIECES[REGISTRO], clave, social, PIECES[RECUPERAR])
+    out = cut.run("brief", CLAVE)[1]
+    assert ("\nRules a later slice finishes. The spec builds what its own screens show of them, and leaves the rule to that slice: it does not claim it:\n"
+            "- R-login-attempts-warning (finished by D-acceso-social): Desde el tercer intento fallido, se avisa cuántos intentos quedan antes del bloqueo.\n") in out["block"]
+    assert "\n- R-login-oauth (built by D-acceso-social): " in out["block"], "only its screen cites this one: the screen is shared, and the rule is of the other slice"
+    assert [(rule["id"], rule["mine"], rule["built_by"], rule["finished_later"], rule["started_by"]) for rule in out["rules"]] == [
+        ("R-login-lockout", True, None, False, []), ("R-login-attempts-warning", False, SOCIAL, True, []), ("R-login-oauth", False, SOCIAL, False, [])]
+    out = cut.run("brief", SOCIAL)[1]
+    assert ("- R-login-attempts-warning: Desde el tercer intento fallido, se avisa cuántos intentos quedan antes del bloqueo.\n"
+            "  Example: Al tercer fallo Ana lee \"Te quedan 2 intentos\".\n"
+            "  D-acceso-clave already shows part of it: with this slice the rule is whole.\n") in out["block"]
+    assert "Rules a later slice finishes" not in out["block"] and out["block"].count("already show") == 1, "its own rule, and nobody before it shows the other one"
+    assert [(rule["id"], rule["started_by"]) for rule in out["rules"] if rule["mine"]] == [("R-login-oauth", []), ("R-login-attempts-warning", [CLAVE])]
+    assert all(rule["started_by"] == [] and not rule["finished_later"] for rule in out["rules"] if not rule["mine"]), "a rule it meets was built before it"
+    assert "\n- R-login-lockout (built by D-acceso-clave): " in out["block"]
+    # A story of the slice cites a rule that an earlier slice builds: it meets the rule, nobody finishes it later.
+    cut.edit("story-map.md", "- Rules: R-login-oauth\n", "- Rules: R-login-oauth, R-login-lockout\n")
+    out = cut.run("brief", SOCIAL)[1]
+    assert "\n- R-login-lockout (built by D-acceso-clave): " in out["block"] and "Rules a later slice finishes" not in out["block"]
+    # Two slices before it show a part each.
+    cut.edit("story-map.md", "- Rules: R-login-lockout, R-login-attempts-warning\n", "- Rules: R-login-lockout, R-login-attempts-warning, R-reset-link\n")
+    cut.edit("story-map.md", "- Rules: R-login-oauth, R-login-lockout\n", "- Rules: R-login-oauth, R-login-lockout, R-reset-link\n")
+    put_map(cut, "acceso", PIECES[REGISTRO], clave, social, piece(RECUPERAR, "Recuperar la contraseña", "R-reset-link", "ST-4", "SCR-forgot, SCR-reset", "%s, %s" % (SOCIAL, CLAVE)))
+    out = cut.run("brief", RECUPERAR)[1]
+    assert "  D-acceso-clave, D-acceso-social already show part of it: with this slice the rule is whole.\n" in out["block"]
+
+
+def test_brief_says_what_the_design_left_open_and_what_it_no_longer_has(cut):
+    cut.edit("decisions.md", "## map acceso\n", "## map acceso\n\n### Q-009 ¿Se avisa por correo al bloquear?\n- Status: open\n- Owner: Ana Pérez\n\n### Q-010 ¿Y por SMS?\n- Status: asked\n")
+    put_map(cut, "acceso", PIECES[REGISTRO], piece(CLAVE, "Entrar con correo", "R-login-lockout, R-login-attempts-warning", "ST-1, ST-9", "SCR-login, SCR-login-locked", REGISTRO),
+            PIECES[SOCIAL], PIECES[RECUPERAR])
+    out = cut.run("brief", CLAVE)[1]
+    assert ("\nNot decided in the design. The spec marks it, it does not guess:\n- Q-003 ¿Hay cupo por taller? (decides: Ana Pérez)\n"
+            "- Q-009 ¿Se avisa por correo al bloquear? (decides: Ana Pérez)\n- Q-010 ¿Y por SMS?\n"
+            "\nThe map names ST-9, and the design no longer has it.\n\nWrite the spec from this:\n") in out["block"]
+    assert out["missing"] == ["ST-9"] and [question["id"] for question in out["undecided"]] == ["Q-003", "Q-009", "Q-010"]
+    assert [question["id"] for question in cut.run("brief", MIS)[1]["undecided"]] == ["Q-003"], "what another area left open is not of this slice"
+    put_map(cut, "acceso", PIECES[REGISTRO], piece(CLAVE, "Entrar con correo", "R-login-lockout, R-login-attempts-warning", "ST-1, ST-9", "SCR-login, SCR-pagos", REGISTRO),
+            PIECES[SOCIAL], PIECES[RECUPERAR])
+    assert "\nThe map names ST-9, SCR-pagos, and the design no longer has them.\n" in cut.run("brief", CLAVE)[1]["block"]
+
+
+def test_brief_of_a_slice_with_only_screens_or_only_stories(cut):
+    put_map(cut, "acceso", PIECES[REGISTRO], piece(CLAVE, "Entrar con correo", "R-login-lockout", screens="SCR-login-locked", depends=REGISTRO),
+            piece(SOCIAL, "Entrar con un proveedor", "R-login-oauth", stories="ST-2", depends=CLAVE), PIECES[RECUPERAR])
+    block = cut.run("brief", CLAVE)[1]["block"]
+    assert "\nStories:\n" not in block and "\nScreens:\n- SCR-login-locked Cuenta bloqueada, page " in block and "Also in" not in block
+    block = cut.run("brief", SOCIAL)[1]["block"]
+    assert "\nScreens:\n" not in block and "\nStories:\n- ST-2 Entrar con un proveedor\n  Who: Ana (vecina)\n" in block and "Flows through" not in block
+
+
+def test_brief_is_for_a_slice_that_was_cut_from_a_design(cut):
+    put_map(cut, "acceso", *PIECES.values(), piece("D-acceso-tablas", "Las tablas", depends=REGISTRO), piece("D-acceso-vieja", "Una vieja", stories="ST-9", more="- Dropped: no se hará"))
+    rc, out = cut.run("brief", "D-acceso-tablas")
+    assert rc == 3 and out == {"status": "nothing", "errors": ["the slice D-acceso-tablas names no story and no screen: it was not cut from a design"]}
+    rc, out = cut.run("brief", "D-acceso-vieja")
+    assert rc == 2 and out["errors"] == ["the slice D-acceso-vieja was dropped: nothing builds it"]
+    rc, out = cut.run("brief", "D-acceso-otra")
+    assert rc == 2 and out["errors"] == ["the slice D-acceso-otra is in no map under specs/_slices"]

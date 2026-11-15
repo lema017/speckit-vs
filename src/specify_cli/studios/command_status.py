@@ -57,10 +57,13 @@ def studio_status(
         areas.add_column("Screens", justify="right", no_wrap=True)
         areas.add_column("Drawn", justify="right", no_wrap=True)
         areas.add_column("Rules approved", justify="right", no_wrap=True)
+        areas.add_column("Slices delivered", justify="right", no_wrap=True)
         for area in status["areas"]:
             rules = sum(area["rules"].values())
+            cut = area.get("slices") or {}  # A studio script from before an area was cut into slices says nothing about them.
             areas.add_row(Text(terminal_text(area["title"])), _AREA_STATES.get(area["state"], area["state"]), str(area["screens"]), str(area["pages"]),
-                          "%d of %d" % (area["approved"], rules) if rules else "-")
+                          "%d of %d" % (area["approved"], rules) if rules else "-",
+                          "%d of %d" % (cut.get("delivered", 0), cut["total"]) if cut.get("total") else "-")
         console.print(areas)
     console.print()
     _line("Next: ", command(root, step["command"], step["args"]), ". ", step["why"])

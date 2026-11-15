@@ -193,10 +193,20 @@ def test_a_field_takes_one_line(design):
     ("Depends-On", "login-clave", "Depends-On takes slice ids or none: login-clave"),
     ("Rules", "lockout", "Rules takes rule ids or none: lockout"),
     ("Kind", "technical", "Kind takes `enabler"),
+    ("Stories", "ST-1, entrar", "Stories takes story ids or none: entrar"),
+    ("Screens", "login", "Screens takes screen ids or none: login"),
 ])
 def test_a_field_takes_only_what_it_is_for(design, field, value, needle):
     put(design, block(CLAVE, more={field: value}))
     assert hard(design, CLAVE, needle)
+
+
+def test_a_slice_cut_from_a_design_names_its_stories_and_its_screens(design):
+    put(design, block(CLAVE, more={"Stories": "ST-1, ST-2", "Screens": "SCR-login"}), block(SOCIAL, "Entrar con Google", more={"Screens": "none"}))
+    assert check(design)[0] == 0
+    found = slices(design)
+    assert (found[CLAVE]["stories"], found[CLAVE]["screens"]) == (["ST-1", "ST-2"], ["SCR-login"])
+    assert (found[SOCIAL]["stories"], found[SOCIAL]["screens"]) == ([], []), "a slice that names none has none"
 
 
 def test_what_sits_in_a_comment_is_not_part_of_the_map(design):
@@ -557,6 +567,17 @@ def test_the_block_names_what_the_slice_takes_in_and_what_it_waits_for(design):
     assert "\nDepends on: %s (pending)\nRules to build: none\n\nWrite under ## Slice in the spec:\n%s" % (CLAVE, out["write"]) in out["aim"]
     assert out["aim"].endswith("- Out: Entrar (%s); Crear una cuenta (%s)\n" % (CLAVE, REGISTRO))
     assert "\nDepends on: %s (pending), %s (pending)\n" % (CLAVE, SOCIAL) in design.cap("slices", "show", REGISTRO)[1]["aim"]
+
+
+def test_the_block_names_the_stories_and_the_screens_of_a_slice_cut_from_a_design(design):
+    put(design, block(CLAVE, more={"Stories": "ST-1", "Screens": "SCR-login, SCR-home"}), block(SOCIAL, "Entrar con Google", more={"Stories": "ST-2"}),
+        block(REGISTRO, "Crear una cuenta", more={"Screens": "SCR-signup"}))
+    assert ("\nA person checks it by: Entro y veo mi cuenta.\nStories of the design: ST-1\nScreens of the design: SCR-login, SCR-home\nOther slices own this"
+            in design.cap("slices", "show", CLAVE)[1]["aim"])
+    stories = design.cap("slices", "show", SOCIAL)[1]["aim"]
+    assert "\nStories of the design: ST-2\nOther slices own this" in stories and "Screens of the design" not in stories
+    screens = design.cap("slices", "show", REGISTRO)[1]["aim"]
+    assert "\nScreens of the design: SCR-signup\nOther slices own this" in screens and "Stories of the design" not in screens
 
 
 @pytest.mark.parametrize("slice_id, needle", [("D-login-otra", "slice not found: D-login-otra"), (SOCIAL, "slice %s was dropped: no se hará" % SOCIAL)])
@@ -1011,6 +1032,19 @@ def test_clarify_context_says_what_other_slices_own(design):
         (CLAVE, "Entrar con usuario y clave", "pending"), (SOCIAL, "Entrar con Google, Facebook o GitHub", "pending"), (RECUPERAR, "Recuperar la clave", "pending")]
     assert found["siblings"][0]["intent"] == "Una persona entra a su cuenta."
     assert found["size"] == {"status": "over", "summary": size(design)["summary"]}
+
+
+def test_clarify_context_says_what_the_slice_shows_when_it_was_cut_from_a_design(design):
+    put(design, block(CLAVE, more={"Stories": "ST-1", "Screens": "SCR-login, SCR-home"}), block(REGISTRO, "Crear una cuenta"))
+    design.write(BIG + "/spec.md", sized(value=CLAVE))
+    found = design.cap("clarify-context", "--change", BIG)[1]["slice"]
+    assert (found["stories"], found["screens"]) == (["ST-1"], ["SCR-login", "SCR-home"])
+    design.write(BIG + "/spec.md", sized(value=REGISTRO))
+    found = design.cap("clarify-context", "--change", BIG)[1]["slice"]
+    assert (found["stories"], found["screens"]) == ([], []), "a slice that was not cut from a design shows nothing"
+    design.write(BIG + "/spec.md", sized())
+    found = design.cap("clarify-context", "--change", BIG)[1]["slice"]
+    assert (found["stories"], found["screens"]) == ([], []), "nor does a spec on its own"
 
 
 def test_clarify_context_leaves_dropped_slices_out(design):

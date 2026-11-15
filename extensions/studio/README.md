@@ -1,6 +1,6 @@
 # Product Studio
 
-Design a product before building it. A product owner tells their idea, answers questions in rounds, gets a mockup they can click through and comment on in the browser, and approves the business rules. Nobody edits a file by hand or runs a script: five commands do it.
+Design a product before building it. A product owner tells their idea, answers questions in rounds, gets a mockup they can click through and comment on in the browser, approves the business rules, and gets each area cut into specs. Nobody edits a file by hand or runs a script: six commands do it.
 
 | Step | Command | What the person does | What is there afterwards |
 |---|---|---|---|
@@ -9,8 +9,9 @@ Design a product before building it. A product owner tells their idea, answers q
 | 3 | `/speckit-studio-mockup` | Nothing: the agent builds it | The mockup, open in the browser, and a picture of each screen |
 | 4 | `/speckit-studio-iterate` | Comments on the mockup, or says the change in words, and says yes to each change | The design and the mockup changed, and what became of each comment |
 | 5 | `/speckit-studio-approve <area>` | Reads the exact text of each rule and says yes | The rules of the area approved in the catalog of capabilities, with who approved them and when |
+| 6 | `/speckit-studio-slice <area>` | Reads the list of slices and says yes | The area cut into slices: each is one thing a person can do and check, with its screens and its rules |
 
-Steps 3 and 4 repeat until the mockup is right. Agents that name commands with dots use `/speckit.studio.define`, `/speckit.studio.map`, `/speckit.studio.mockup`, `/speckit.studio.iterate` and `/speckit.studio.approve`.
+Steps 3 and 4 repeat until the mockup is right. After step 6, `/speckit-specify D-…` writes the spec of one slice from what was designed. Agents that name commands with dots use `/speckit.studio.define`, `/speckit.studio.map`, `/speckit.studio.mockup`, `/speckit.studio.iterate`, `/speckit.studio.approve` and `/speckit.studio.slice`.
 
 To see the mockup again at any time:
 
@@ -34,7 +35,7 @@ The rules the agent follows are in [guide/conversation.md](guide/conversation.md
 
 - One page per screen. The buttons lead where the design says.
 - A bar at the bottom changes the person who is looking, the state of the screen (empty, loading, wrong), phone or window, and light or dark.
-- **Rules** shows which business rule each element applies, with its text and whether it is a draft or approved. **Map** lists every screen and walks through a flow.
+- **Rules** shows which business rule each element applies, with its text and how far it is: in draft, approved, in a spec or built. Once the area is cut, it also says which slice builds the rule. **Map** lists every screen and walks through a flow.
 - **Comment** keeps a note on any element, and **Comments** lists them with what became of each one.
 - It has no logic and no real data, and it loads nothing from another site.
 
@@ -54,6 +55,16 @@ The rules the agent follows are in [guide/conversation.md](guide/conversation.md
 - To change an approved rule, `/speckit-studio-iterate` writes the new text as a draft with the same id. The approved text stays until the person approves the new one.
 - A rule that is already built changes with a spec.
 - Approving needs the `capabilities` extension, which every project of this fork has.
+
+## From the design to the specs
+
+`/speckit-studio-slice <area>` cuts an approved area into slices and keeps them in `specs/_slices/<area>.md`, the slice map of the `capabilities` extension. A slice is one story, with the screens that show it and the rules it needs, and one spec builds it.
+
+- The agent proposes the cut and the person decides it. A screen can be in several slices: each one builds its part of it.
+- `/speckit-specify D-acceso-clave` writes the spec of that slice. Besides its rules, it receives the story with its criteria, each screen with its elements, its states and the page of the mockup, and what was decided about the product and about the area.
+- `/speckit-clarify-deep` does not ask again what the design decided, and it asks in the language of the product.
+- `specify workflow run sliced --input map=<area>` builds the slices one after another, with a stop at each one.
+- The progress page counts the slices delivered, and the list of specs groups the specs of an area under its map.
 
 ## Where the design lives
 
@@ -91,6 +102,8 @@ The commands run `scripts/python/studio.py`. It uses the standard library only, 
 | `comments add` | Keeps the comments the mockup copied, read from standard input | 0 |
 | `comments resolve C-1 [C-2 ...] --as applied\|declined\|open [--note WHY]` | Says what became of some comments | 0 |
 | `approve AREA [--by WHO] [--dry-run]` | Publishes the draft rules of an area as approved. `--dry-run` says what it would publish | 1 when something stands in the way, 3 when there is nothing to approve |
+| `slice AREA` | What cutting an area into slices starts from, how the cut stands and what is wrong in it. Writes nothing | 1 when something stands in the way or the map is wrong |
+| `brief D-SLICE` | The design of one slice, for the spec that builds it: its stories, its screens, the rules they cite and what was decided | 3 when the slice names no story and no screen |
 | `serve [--port N] [--idle SECONDS]` | Serves the mockup to this computer until it is stopped. `open` starts it on its own | 3 when no screen has a page |
 
 Exit 2 means the call or a file cannot be used.
@@ -105,13 +118,13 @@ Exit 2 means the call or a file cannot be used.
 - A page that is not the one of its screen, that loads something from another site, that uses a state its screen does not have, or that does not cite a rule its screen applies.
 - A page nobody can reach from a screen where a person starts, and a page that leads nowhere.
 
-It notes, without stopping anything: colors that cannot be read, a field without a label, a page with its own colors or fonts, links to something that is not designed yet, and a draft that changes an approved rule and waits for its approval.
+- A slice that names a story or a screen the design does not have, and a story that is in two slices.
+
+It notes, without stopping anything: colors that cannot be read, a field without a label, a page with its own colors or fonts, links to something that is not designed yet, and a draft that changes an approved rule and waits for its approval. Once an area is cut, it also notes a story or a screen of that area that is in no slice, and a slice whose story cites a rule that another slice builds and that it does not come after.
 
 ## What comes later
 
-This version goes from the idea to the approved rules. Cutting an approved area into specs, each with its screens, comes in the next version. Until then, `/speckit-capabilities-slice <capability>` cuts the approved rules of a capability into slices, and `/speckit-specify <slice>` writes the spec of each one.
-
-Not in this version: retiring a rule that was approved, and several people commenting at the same time.
+Not in this version: retiring a rule that was approved, several people commenting at the same time, and telling the person when a spec changed the text of a rule they approved.
 
 ## Development
 

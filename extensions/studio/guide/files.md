@@ -22,6 +22,8 @@ A field is one line: `- Key: value`. Ids are written exactly as shown: `ACT-veci
 
 The product keeps no `spec.md`, no `capability-delta.md` and no requirement lines (`- **FR-001**`): those belong to a spec.
 
+One file is outside `specs/_product/`: `specs/_slices/<area>.md`, the slices an approved area is cut into. It is described at the end.
+
 ## product.md
 
 ```markdown
@@ -249,3 +251,34 @@ A group is `## define` or `## map <area>`. `Status` is `asked` (it waits for an 
 - `Radius` is the corner of a card, `Radius-Control` the corner of a button or a field, both in px, up to three digits: `999px` makes a pill.
 - The `Sample-` fields put the words of the product on the two sample screens: a title, three things with their second line, and the main action.
 - `check` notes every pair of colors that cannot be read: text and `muted` on `bg` and `surface`, `link` on both, `on-primary` on `primary`, `danger` on `danger-bg` and `success` on `success-bg` need a contrast of 4.5; `field-border` on `surface` and `ring` on both need 3. Fix the colors until `check` has no note about `directions.md`.
+
+## specs/_slices/&lt;area&gt;.md
+
+The slices of one area: what each spec builds, in the order they are built. `speckit.studio.slice` writes it, with the yes of the person. The `capabilities` extension owns its format and reads it, so the file starts with the lines the script gives in `header`.
+
+```markdown
+# Slices: Acceso
+
+<!-- slice-map:v1 -->
+
+Request: Entrar, crear una cuenta y recuperar la contraseña
+
+### D-acceso-clave Entrar con correo y contraseña
+- Intent: Una persona registrada entra con su correo y su contraseña.
+- Verify: Entro con ana@ejemplo.com y su contraseña y veo mi inicio.
+- Depends-On: D-acceso-registro
+- Rules: R-login-lockout
+- Stories: ST-1
+- Screens: SCR-login, SCR-home
+
+## Later
+
+- R-login-oauth: espera a tener las cuentas de los proveedores
+```
+
+- A slice is `### D-<area>-<name> <title>`. Its fields take one line each, and `none` is an empty list.
+- `Intent` is what the slice builds. `Verify` is what a person does and sees to check it: a slice with no such sentence is a layer, not a slice.
+- `Depends-On` names slices above it, or of another map.
+- `Rules` are the approved rules the slice builds. A rule is in one slice, or under `## Later` with the reason. A rule that is already built is in none. A rule in two parts that two slices show is in the later one, where all of it can be checked.
+- `Stories` is the story the slice builds: a story is in one slice. `Screens` are the screens that show it: a screen can be in several slices.
+- A slice that will not be built keeps its block and gets `- Dropped: <why>`. An id is never reused.

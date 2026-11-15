@@ -13,6 +13,8 @@
     studio.py comments add                                  keep the comments the mockup copied, read from stdin
     studio.py comments resolve C-1 [C-2 ...] --as applied|declined|open [--note WHY]
     studio.py approve AREA [--by WHO] [--dry-run]           publish the draft rules of an area as approved
+    studio.py slice AREA                                    what cutting an approved area into slices starts from, and how the cut stands
+    studio.py brief D-SLICE                                 the design of one slice, for the spec that builds it
     studio.py serve [--port N] [--idle SECONDS]             serve the mockup to this machine and keep its comments
 
 Everything a person decides in the design conversation is a Markdown file under specs/_product/.
@@ -62,6 +64,11 @@ COMMENT_FIELD, COMMENT_TEXT, COMMENT_BODY = 200, 2000, 16 * 1024
 CHANGES = CATALOG + "/_changes"
 RECORD = "capability-delta.md"
 CAPABILITIES_SCRIPT = ".specify/extensions/capabilities/scripts/python/capabilities.py"
+# The slices an area is cut into: one spec builds each. The catalog owns the format of a map and reads it; the map of an area is named after it.
+SLICES = "specs/_slices"
+SLICE_MARK = "<!-- slice-map:v1 -->"
+# A slice with a spec that is not delivered yet: its rules are being built.
+UNDERWAY = ("specified", "building")
 # The server of the mockup: the header a page of its own sends, how long it waits for a request before it stops,
 # and the ports it tries first. A project gets the same port every time, so its link stays the same.
 SESSION_HEADER = "X-Studio-Session"
@@ -77,6 +84,7 @@ SCREEN = r"SCR-[a-z0-9]+(?:-[a-z0-9]+)*"
 FLOW = r"FL-[0-9]+"
 RULE = r"R-[a-z0-9]+(?:-[a-z0-9]+)*"
 SLUG = r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*"
+SLICE = r"D-[a-z0-9]+(?:-[a-z0-9]+)*"
 QUESTION = r"Q-[0-9]+"
 REMARK = r"C-[0-9]+"
 LETTER = r"[A-Z]"
@@ -196,7 +204,7 @@ def first_paragraph(text, limit=600):
 
 
 def count(number, noun):
-    return "%d %s%s" % (number, noun, "" if number == 1 else "s")
+    return "%d %s" % (number, noun if number == 1 else noun[:-1] + "ies" if noun.endswith("y") else noun + "s")
 
 
 def one_line(value, limit=COMMENT_FIELD):
@@ -240,6 +248,7 @@ class Product:
         self.comments = []
         self.theme = None
         self.directions, self.sample = {}, {}
+        self.cut = False
         self.exists = read(self.dir / "product.md") is not None
         if self.exists:
             self.load()
@@ -275,6 +284,12 @@ class Product:
             self.bad(name, line, "%s %s is defined twice" % (what, key))
         else:
             store[key] = value
+
+    def maps(self):
+        """The slice maps of the project, read once: the catalog reads them, and that takes a process."""
+        if self.cut is False:
+            self.cut = slice_maps(self.root)
+        return self.cut
 
     # -- the files
 
@@ -406,6 +421,7 @@ class Product:
                 else:
                     self.bad(name, number, 'an element is `- <kind> "<label>"`, with ` -> SCR-<name>` when it leads to a screen')
             described = sections.get("States", {"fields": {}})["fields"]
+            purpose = " ".join(line.strip() for _, line in sections.get("Purpose", {"lines": []})["lines"])
             for state in described:
                 if state not in states:
                     self.bad(name, sections["States"]["line"], "## States describes %s, which is not in States" % state)
@@ -414,6 +430,7 @@ class Product:
                 "session": session == "required", "states": states, "seen_by": [] if seen.lower() == "anyone" else self.ids(name, items[0], "Seen-By", ACTOR),
                 "stories": self.ids(name, items[0], "Stories", STORY), "rules": self.ids(name, items[0], "Rules", RULE),
                 "entry": fields.get("Entry", "").strip().lower() == "yes", "elements": elements, "described": sorted(described), "source": name,
+                "purpose": purpose, "shows": {state: text.strip() for state, text in described.items()},
             }, name, 1, "screen")
 
     def load_drafts(self):
@@ -859,14 +876,132 @@ def problems(product):
     return hard, notes, pages
 
 
+# --------------------------------------------------------------------------- the slices an area is cut into
+
+def ask_catalog(root, *words):
+    """What the script of the catalog answers to `slices <words>`, or None when it is not there or says nothing that can be read."""
+    import subprocess
+    if read(root / CAPABILITIES_SCRIPT) is None:
+        return None
+    try:
+        done = subprocess.run([sys.executable, str(root / CAPABILITIES_SCRIPT), "slices"] + list(words) + ["--root", str(root)],
+                              stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120, check=False)
+        answer = json.loads(done.stdout.decode("utf-8"))
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return None
+    return answer if isinstance(answer, dict) else None
+
+
+def slice_maps(root):
+    """The slice maps of the project as the catalog reads them: each slice with its stories, its screens, its rules, the spec
+    that builds it and how far that spec is. An empty list when there is no map, None when nothing here can read them."""
+    folder = root / SLICES
+    if not folder.is_dir() or not any(path.is_file() for path in folder.glob("*.md")):
+        return []
+    answer = ask_catalog(root, "status")
+    maps = answer.get("maps") if answer else None
+    if not isinstance(maps, list):
+        return None
+    for found in maps:
+        for item in found["slices"]:
+            # A catalog from before a slice named what it shows says nothing about it.
+            item.setdefault("stories", [])
+            item.setdefault("screens", [])
+    return maps
+
+
+def live(found):
+    """The slices of a map that are built or still to build. A dropped one keeps its id, and nothing else counts."""
+    return [item for item in found["slices"] if item["state"] != "dropped"]
+
+
+def slice_owners(product):
+    """The id of a rule, a story or a screen -> the slices that name it, over every map."""
+    owners = {}
+    for found in product.maps() or []:
+        for item in live(found):
+            for key in item["rules"] + item["stories"] + item["screens"]:
+                owners.setdefault(key, []).append(item)
+    return owners
+
+
+def area_slices(product, area):
+    """The slices of an area: the ones of the map that carries its name. None when the area has no map yet."""
+    found = next((found for found in product.maps() or [] if found["name"] == area), None)
+    return live(found) if found else None
+
+
+def needs(product, item, known):
+    """The slices a slice depends on, and the ones those depend on."""
+    seen, frontier = set(), list(item["depends_on"])
+    while frontier:
+        key = frontier.pop()
+        if key not in seen and key in known:
+            seen.add(key)
+            frontier.extend(known[key]["depends_on"])
+    return seen
+
+
+def story_rules(product, item):
+    """The rules the stories of a slice cite. Its screens cite more: a screen is shared, and it lists the rules of every slice that shows it."""
+    return {rule for key in item["stories"] for rule in product.stories.get(key, {"rules": []})["rules"]}
+
+
+def slice_problems(product):
+    """(what must be fixed, what is worth knowing) in the slice maps, about what only the design knows: the stories and
+    the screens a slice names. The catalog checks the rest of a map: `capabilities.py slices check`."""
+    hard, notes = [], []
+    maps = product.maps()
+    if maps is None:
+        return hard, ["%s: nothing read the slice maps: the capabilities extension reads them, and it is not installed or it gave no answer" % SLICES]
+    catalog, owners = catalog_rules(product.root), slice_owners(product)
+    known = {item["id"]: item for found in maps for item in live(found)}
+    for found in maps:
+        for item in live(found):
+            for story in item["stories"]:
+                if story not in product.stories:
+                    hard.append("%s: %s names %s, which is not in story-map.md" % (found["map"], item["id"], story))
+            for screen in item["screens"]:
+                if screen not in product.screens:
+                    hard.append("%s: %s names %s, which is not a screen" % (found["map"], item["id"], screen))
+            # The story of a slice cites a rule another slice builds: that slice comes first.
+            before = needs(product, item, known)
+            for story in item["stories"]:
+                for rule in product.stories.get(story, {"rules": []})["rules"]:
+                    builders = [other["id"] for other in owners.get(rule, [])]
+                    # A rule in two parts goes in the last slice that shows a part of it: that slice comes after, and finishes it.
+                    later = any(item["id"] in needs(product, known[other], known) for other in builders if other in known)
+                    if rule in catalog and catalog[rule]["state"] == "designed" and builders and item["id"] not in builders and not before & set(builders) and not later:
+                        notes.append("%s: %s shows %s, which cites %s; %s builds that rule, and %s does not depend on it" % (
+                            found["map"], item["id"], story, rule, builders[0], item["id"]))
+    for story in sorted(product.stories, key=lambda key: product.stories[key]["line"]):
+        named = [item["id"] for item in owners.get(story, [])]
+        if len(named) > 1:
+            hard.append("%s: %s is in several slices: %s; one slice builds a story" % (SLICES, story, ", ".join(named)))
+    for area in product.areas:
+        if not area_slices(product, area):
+            continue
+        where = "%s/%s.md" % (SLICES, area)
+        for story in product.stories.values():
+            if story["area"] == area and story["id"] not in owners:
+                notes.append("%s: %s of the area %s is in no slice" % (where, story["id"], area))
+        for screen in product.screens.values():
+            if screen["area"] == area and screen["id"] not in owners:
+                notes.append("%s: %s of the area %s is in no slice" % (where, screen["id"], area))
+    return hard, notes
+
+
 # --------------------------------------------------------------------------- how far the design is
 
-def rule_state(product, catalog, rule):
+def rule_state(product, catalog, rule, owners=None):
     """A rule the catalog has is past its draft. An approved rule whose draft says something else has a change proposed:
-    the catalog keeps its text until the person approves the new one."""
+    the catalog keeps its text until the person approves the new one. An approved rule is in a spec once the slice
+    that builds it has one, and until that spec is delivered."""
     known, draft = catalog.get(rule), product.rules.get(rule)
     if known and draft and known["state"] == "designed" and draft["text"] != known["text"]:
         return "proposed"
+    if known and known["state"] == "designed" and any(item["state"] in UNDERWAY for item in (owners or {}).get(rule, ())):
+        return "in-spec"
     return known["state"] if known else "draft" if draft else "unknown"
 
 
@@ -892,6 +1027,8 @@ def status(product):
         return {"status": "none", "next": {"command": "speckit.studio.define", "args": "", "why": "The product has no design yet."}}
     hard, notes, pages = problems(product)
     catalog = catalog_rules(product.root)
+    owners = slice_owners(product)
+    cut_hard, cut_notes = slice_problems(product)
     asked = [question for question in product.questions if question["status"] == "asked"]
     missing = [name for name, there in (("vision.md", product.vision), ("actors.md", bool(product.actors)), ("navigation.md", bool(product.areas)),
                                         ("look-and-feel.md", bool(product.theme and product.theme.get("complete")))) if not there]
@@ -906,7 +1043,7 @@ def status(product):
         rules = area_rules(product, area["id"])
         counts = {}
         for rule in rules:
-            state = rule_state(product, catalog, rule)
+            state = rule_state(product, catalog, rule, owners)
             counts[state] = counts.get(state, 0) + 1
         scope = "map " + area["id"]
         pending = [question for question in asked if question["scope"] == scope]
@@ -925,6 +1062,10 @@ def status(product):
         # Nothing asks for a round of changes once the area is approved, or once its comments were gone through.
         settled = (approve == "done" and mock == "done") or len(said) > waiting_comments
         iterate = "attention" if waiting_comments else "done" if settled else "pending"
+        # An area is cut into slices, and one spec builds each. It is cut once every one of its stories is in a slice.
+        pieces = area_slices(product, area["id"]) or []
+        loose = [story["id"] for story in stories if story["id"] not in owners]
+        cut = "pending" if not pieces else "active" if loose else "done"
         areas.append({
             "id": area["id"], "title": area["title"], "covers": area["covers"], "stories": len(stories), "screens": len(screens), "pages": len(drawn),
             "rules": counts, "asked": len(pending),
@@ -933,7 +1074,10 @@ def status(product):
             "links_pending": sum(len(pages[key].pending) for key in drawn),
             "comments": waiting_comments,
             "approved": sum(number for state, number in counts.items() if state not in ("draft", "unknown")),
-            "steps": {"map": mapped, "mockup": mock, "iterate": iterate, "approve": approve},
+            "slices": {"total": len(pieces), "delivered": sum(1 for item in pieces if item["state"] == "delivered"),
+                       "underway": sum(1 for item in pieces if item["state"] in UNDERWAY),
+                       "next": next(({"id": item["id"], "title": item["title"]} for item in pieces if item["ready"]), None), "loose": loose},
+            "steps": {"map": mapped, "mockup": mock, "iterate": iterate, "approve": approve, "slice": cut},
             "state": "not-started" if mapped == "pending" else "in-design" if mapped != "done" or mock != "done" else "approved" if approve == "done" else "drawn",
         })
     remarks = {state: sum(1 for comment in product.comments if comment["status"] == state) for state in COMMENT_STATES}
@@ -946,8 +1090,9 @@ def status(product):
         undrawn = next((area for area in areas if area["steps"]["map"] == "done" and area["steps"]["mockup"] != "done"), None)
         changed = next((area for area in areas if area["steps"]["approve"] == "attention"), None)
         unapproved = next((area for area in areas if area["state"] == "drawn"), None)
-        designed = sorted({catalog[rule]["capability"] for owner in list(product.stories.values()) + list(product.screens.values())
-                           for rule in owner["rules"] if rule in catalog and catalog[rule]["state"] == "designed"})
+        uncut = next((area for area in areas if area["state"] == "approved" and area["steps"]["slice"] != "done"), None)
+        ready = next((area for area in areas if area["slices"]["next"]), None)
+        underway = sum(area["slices"]["underway"] for area in areas)
         if undrawn:
             left = undrawn["screens"] - undrawn["pages"]
             step = {"command": "speckit.studio.mockup", "args": "", "why": "%s is described and %s no page yet." % (
@@ -960,13 +1105,25 @@ def status(product):
         elif unapproved:
             step = {"command": "speckit.studio.approve", "args": unapproved["id"],
                     "why": "%s is drawn. Approve its rules when the mockup is right, or say what to change first." % unapproved["title"]}
+        elif uncut:
+            left = uncut["slices"]["loose"]
+            step = {"command": "speckit.studio.slice", "args": uncut["id"],
+                    "why": "%s of %s %s in no slice yet." % (count(len(left), "story"), uncut["title"], "is" if len(left) == 1 else "are") if uncut["slices"]["total"]
+                    else "%s is approved. Cut it into slices: one spec builds each." % uncut["title"]}
         elif unmapped:
             step = {"command": "speckit.studio.map", "args": unmapped["id"], "why": "%s is %s." % (
                 unmapped["title"], "not described yet" if unmapped["steps"]["map"] == "pending" else "half described")}
-        elif designed:
-            step = {"command": "speckit.capabilities.slice", "args": designed[0], "why": "Every area is approved. Cut the rules of %s into slices, and build one spec per slice." % designed[0]}
+        elif ready:
+            piece = ready["slices"]["next"]
+            step = {"command": "speckit.specify", "args": piece["id"], "why": "%s is cut into %s. Write the spec of the next one: %s." % (
+                ready["title"], count(ready["slices"]["total"], "slice"), piece["title"])}
+        elif underway:
+            step = {"command": "speckit.progress", "args": "", "why": "%s being built. The list of specs shows how far each one is, and what comes next." % (
+                "1 slice is" if underway == 1 else "%d slices are" % underway)}
         else:
-            step = {"command": "speckit.studio.iterate", "args": "", "why": "Every area is approved. To change something, say it."}
+            built = sum(area["slices"]["total"] for area in areas) and all(area["slices"]["delivered"] == area["slices"]["total"] for area in areas)
+            step = {"command": "speckit.studio.iterate", "args": "",
+                    "why": "Every area is approved%s. To change something, say it." % (" and every slice is delivered" if built else "")}
 
     # The steps a person runs, in order, each with what its files prove.
     words = {"vision.md": "the idea", "actors.md": "the people", "navigation.md": "the areas", "look-and-feel.md": "the look"}
@@ -1002,6 +1159,13 @@ def status(product):
                   "state": "attention" if any(area["steps"]["approve"] == "attention" for area in areas)
                            else "done" if areas and len(approved) == len(areas) else "active" if approved or touched else "pending",
                   "fact": "%d of %s" % (len(approved), count(len(areas), "area")) if areas else "No areas yet"})
+    cut_areas = [area for area in areas if area["steps"]["slice"] == "done"]
+    pieces = sum(area["slices"]["total"] for area in areas)
+    delivered = sum(area["slices"]["delivered"] for area in areas)
+    steps.append({"name": "slice", "command": "speckit.studio.slice",
+                  "state": "attention" if cut_hard else "pending" if not pieces else "done" if len(cut_areas) == len(areas) else "active",
+                  "fact": ("%d of %s" % (len(cut_areas), count(len(areas), "area")) + (", %d of %s delivered" % (delivered, count(pieces, "slice")) if pieces else ""))
+                          if areas else "No areas yet"})
     attention = []
     if waiting_all:
         attention.append({"kind": "comments", "text": "%s on the mockup %s to be applied." % (count(waiting_all, "comment"), "waits" if waiting_all == 1 else "wait")})
@@ -1023,6 +1187,13 @@ def status(product):
             attention.append({"kind": "open", "text": "Open, %s decides: %s" % (question["owner"], question["question"])})
     if hard:
         attention.append({"kind": "check", "text": "The check found %s in the design." % count(len(hard), "problem"), "details": hard[:5]})
+    if cut_hard:
+        attention.append({"kind": "slices", "text": "The check found %s in the slices." % count(len(cut_hard), "problem"), "details": cut_hard[:5]})
+    for area in areas:
+        left = area["slices"]["loose"]
+        if area["slices"]["total"] and left:
+            attention.append({"kind": "slices", "area": area["id"],
+                              "text": "%s of %s %s in no slice yet: %s." % (count(len(left), "story"), area["title"], "is" if len(left) == 1 else "are", ", ".join(left))})
     for area in areas:
         if area["links_pending"]:
             attention.append({"kind": "pending", "area": area["id"],
@@ -1033,7 +1204,7 @@ def status(product):
         "define": define, "areas": areas, "steps": steps, "attention": attention, "comments": remarks,
         "totals": {"areas": len(areas), "not_started": sum(1 for area in areas if area["state"] == "not-started"),
                    "in_design": sum(1 for area in areas if area["state"] == "in-design"), "drawn": sum(1 for area in areas if area["state"] == "drawn"),
-                   "approved": len(approved),
+                   "approved": len(approved), "cut": len(cut_areas), "slices": pieces, "delivered": delivered,
                    "screens": len(product.screens), "pages": len(pages), "rules": len(product.rules),
                    "decisions": sum(1 for question in product.questions if question["status"] == "decided")},
         "summary": {"idea": product.idea, "people": [{"name": actor["name"], "role": actor["role"], "about": actor["about"]} for actor in product.actors.values()],
@@ -1042,7 +1213,7 @@ def status(product):
         "mockup": bool(pages) and read(product.dir / "mockup" / "index.html") is not None,
         "open": [{"id": question["id"], "scope": question["scope"], "question": question["question"], "owner": question["owner"]}
                  for question in product.questions if question["status"] == "open"],
-        "check": {"hard": len(hard), "notes": len(notes)}, "next": step,
+        "check": {"hard": len(hard) + len(cut_hard), "notes": len(notes) + len(cut_notes)}, "next": step,
     }
 
 
@@ -1111,16 +1282,22 @@ def build(product, kit):
                "entrada": next((screen["id"] for screen in product.screens.values() if screen["entry"] and screen["file"]), "")}
     write(target / "screens.js", "/* Generated by studio from navigation.md and screens/. */\n" + as_script("STUDIO_SCREENS", screens))
     written.append("mockup/_studio/screens.js")
-    rules, examples = {}, record_examples(product.root)
+    rules, examples, owners = {}, record_examples(product.root), slice_owners(product)
     for rule in sorted({rule for owner in list(product.stories.values()) + list(product.screens.values()) for rule in owner["rules"]} | set(product.rules)):
         draft, known = product.rules.get(rule), catalog.get(rule)
         if draft or known:
             # A draft says what the person wants now: the mockup shows it, and what was approved before when that is something else.
-            state = rule_state(product, catalog, rule)
+            state = rule_state(product, catalog, rule, owners)
             rules[rule] = {"capacidad": (draft or known)["capability"], "texto": (draft or known)["text"], "estado": state,
                            "nota": draft["example"] if draft else examples.get(rule, "")}
             if state == "proposed":
                 rules[rule]["antes"] = known["text"]
+            # The slice that builds the rule, and the spec of that slice once it has one.
+            builder = next(iter(owners.get(rule, [])), None)
+            if builder:
+                rules[rule]["entregable"] = builder["id"]
+                if builder["spec"]:
+                    rules[rule]["spec"] = builder["spec"].split("/")[-1]
     data = {"producto": product.name, "idioma": product.language, "dispositivo": product.device,
             "personas": [{"id": actor["id"], "nombre": actor["name"], "rol": actor["role"], "descripcion": actor["about"], "correo": actor["email"]}
                          for actor in product.actors.values()],
@@ -1567,6 +1744,179 @@ def approve(product, area, by=None, day=None):
     return plan
 
 
+# --------------------------------------------------------------------------- from an approved area to its specs
+
+def cut(product, area):
+    """What cutting an area into slices starts from, how the cut stands, and what is in the way. Reads, and writes nothing."""
+    if area not in product.areas:
+        raise StudioError("the area %s is not in navigation.md; the areas are %s" % (area, ", ".join(sorted(product.areas)) or "none"))
+    hard = problems(product)[0]
+    catalog, owners = catalog_rules(product.root), slice_owners(product)
+    stories = [story for story in product.stories.values() if story["area"] == area]
+    screens = [screen for screen in product.screens.values() if screen["area"] == area]
+    rules = area_rules(product, area)
+    blockers, warnings = [], []
+    if read(product.root / CAPABILITIES_SCRIPT) is None:
+        blockers.append("cutting needs the capabilities extension, which keeps the slices: specify extension add capabilities")
+    elif product.maps() is None:
+        blockers.append("nothing read the slice maps under %s: `capabilities.py slices status` says why" % SLICES)
+    if not stories:
+        blockers.append("the area has no story yet: speckit.studio.map %s describes it" % area)
+    elif approval_state(product, catalog, rules) != "done":
+        blockers.append("the rules of the area are not all approved: speckit.studio.approve %s comes first" % area)
+    if hard:
+        blockers.append("the design has %s the check finds: fix %s first, `check` lists them" % (count(len(hard), "problem"), "it" if len(hard) == 1 else "them"))
+    said = [comment["id"] for comment in product.comments if comment["status"] == "open" and comment["screen"] in {screen["id"] for screen in screens}]
+    if said:
+        warnings.append("%s on its screens %s to be applied: %s" % (count(len(said), "comment"), "waits" if len(said) == 1 else "wait", ", ".join(said)))
+    unsettled = [question["id"] for question in product.questions if question["scope"] == "map " + area and question["status"] != "decided"]
+    if unsettled:
+        warnings.append("%s about the area %s not decided: %s" % (count(len(unsettled), "question"), "is" if len(unsettled) == 1 else "are", ", ".join(unsettled)))
+    pieces = area_slices(product, area) or []
+    found = ask_catalog(product.root, "check") if product.maps() else None
+    cut_hard, cut_notes = slice_problems(product)
+    wrong = [str(line) for line in (found or {}).get("hard", [])] + cut_hard
+    loose = [story["id"] for story in stories if story["id"] not in owners]
+
+    def named(key):
+        return [item["id"] for item in owners.get(key, [])]
+
+    return {
+        "area": area, "title": product.areas[area]["title"], "covers": product.areas[area]["covers"],
+        "map": "%s/%s.md" % (SLICES, area),
+        # How the map starts. The catalog reads no map without its marker.
+        "header": "# Slices: %s\n\n%s\n\nRequest: %s\n" % (product.areas[area]["title"], SLICE_MARK, product.areas[area]["covers"]),
+        "stories": [{"id": story["id"], "title": story["title"], "story": story["story"], "criteria": story["criteria"], "actors": story["actors"],
+                     "rules": story["rules"], "screens": [screen["id"] for screen in product.screens.values() if story["id"] in screen["stories"]],
+                     "slices": named(story["id"])} for story in stories],
+        "screens": [{"id": screen["id"], "title": screen["title"], "states": screen["states"], "stories": screen["stories"], "rules": screen["rules"],
+                     "entry": screen["entry"], "slices": named(screen["id"])} for screen in screens],
+        "flows": [{"id": flow["id"], "title": flow["title"], "steps": [key if state == "normal" else "%s/%s" % (key, state) for key, state in flow["steps"]]}
+                  for flow in product.flows.values() if flow["area"] == area or any(key in {screen["id"] for screen in screens} for key, _ in flow["steps"])],
+        "rules": [{"id": rule, "capability": catalog[rule]["capability"], "text": catalog[rule]["text"], "state": rule_state(product, catalog, rule, owners),
+                   "cited_by": [owner["id"] for owner in stories + screens if rule in owner["rules"]],
+                   "slices": named(rule)} for rule in rules if rule in catalog],
+        "slices": [{key: item[key] for key in ("id", "title", "intent", "verify", "state", "spec", "stories", "screens", "rules", "depends_on")} for item in pieces],
+        "loose": loose, "blockers": blockers, "warnings": warnings,
+        "problems": {"hard": wrong, "notes": [str(line) for line in (found or {}).get("notes", [])] + cut_notes},
+        "status": "blocked" if blockers else "invalid" if wrong else "cut" if pieces and not loose else "ready",
+    }
+
+
+def element_line(element):
+    """An element as its screen writes it."""
+    target = " -> %s%s" % (element["to"], "/" + element["state"] if element["state"] else "") if element["to"] else ""
+    return '%s "%s"%s%s' % (element["kind"], element["label"], target, ": " + element["note"] if element["note"] else "")
+
+
+def brief(product, slice_id):
+    """The design of one slice, for the spec that builds it: its stories, its screens with every element and state, the rules
+    they cite and what was decided about its area. Reads, and writes nothing."""
+    maps = product.maps()
+    if maps is None:
+        raise StudioError("nothing read the slice maps under %s: the capabilities extension reads them" % SLICES)
+    found, item = next(((found, item) for found in maps for item in found["slices"] if item["id"] == slice_id), (None, None))
+    if item is None:
+        raise StudioError("the slice %s is in no map under %s" % (slice_id, SLICES))
+    if item["state"] == "dropped":
+        raise StudioError("the slice %s was dropped: nothing builds it" % slice_id)
+    if not item["stories"] and not item["screens"]:
+        raise NothingYet("the slice %s names no story and no screen: it was not cut from a design" % slice_id)
+    catalog, owners, examples = catalog_rules(product.root), slice_owners(product), record_examples(product.root)
+    stories = [product.stories[key] for key in item["stories"] if key in product.stories]
+    screens = [product.screens[key] for key in item["screens"] if key in product.screens]
+    missing = [key for key in item["stories"] + item["screens"] if key not in product.stories and key not in product.screens]
+    areas = sorted({owner["area"] for owner in stories + screens if owner["area"] in product.areas})
+    known = {other["id"]: other for each in maps for other in live(each)}
+    before = needs(product, item, known)
+    rules = []
+    for key in item["rules"] + [rule for owner in stories + screens for rule in owner["rules"]]:
+        if key in catalog and key not in [rule["id"] for rule in rules]:
+            builder = next(iter(owners.get(key, [])), None)
+            mine = key in item["rules"]
+            # A rule in two parts is built by the last slice that shows a part of it: the ones before it show theirs.
+            started = sorted(other for other in before if mine and key in story_rules(product, known[other]))
+            rules.append({"id": key, "text": catalog[key]["text"], "example": examples.get(key, ""), "state": rule_state(product, catalog, key, owners),
+                          "mine": mine, "built_by": builder["id"] if builder and builder["id"] != slice_id else None, "started_by": started,
+                          "finished_later": bool(builder and not mine and key in story_rules(product, item) and slice_id in needs(product, builder, known))})
+    # What was decided for the whole product holds for every slice, and so does what its area decided.
+    scopes = ["define"] + ["map " + area for area in areas]
+    whole = [question["id"] for question in product.questions if question["scope"] == "define"]
+    decided = [{"id": question["id"], "question": question["question"], "answer": question["answer"]} for question in product.questions
+               if question["status"] == "decided" and question["scope"] in scopes]
+    undecided = [{"id": question["id"], "question": question["question"], "owner": question["owner"]} for question in product.questions
+                 if question["status"] != "decided" and question["scope"] in scopes]
+    shown = {screen["id"] for screen in screens}
+    flows = [{"id": flow["id"], "title": flow["title"], "steps": [key if state == "normal" else "%s/%s" % (key, state) for key, state in flow["steps"]]}
+             for flow in product.flows.values() if any(key in shown for key, _ in flow["steps"])]
+    people = {actor["id"]: "%s (%s)" % (actor["name"], actor["role"]) for actor in product.actors.values()}
+
+    lines = ["DESIGN FOR THIS SLICE", "%s — %s" % (slice_id, item["title"]),
+             "The product owner designed this in a mockup and approved its rules. The spec says what is here, in the words that are here.",
+             "Language of the design: %s. Write the spec in it, and speak to the person in it: each question and each report." % product.language,
+             'To the person, a slice is a deliverable, said in that language: "entregable" in Spanish.']
+    if stories:
+        lines += ["", "Stories:"]
+        for story in stories:
+            lines += ["- %s %s" % (story["id"], story["title"]),
+                      "  Who: %s" % (", ".join(people.get(actor, actor) for actor in story["actors"]) or "anyone"),
+                      "  Story: %s" % story["story"], "  Criteria: %s" % story["criteria"]]
+    if screens:
+        lines += ["", "Screens:"]
+        for screen in screens:
+            others = sorted({other["id"] for other in owners.get(screen["id"], []) if other["id"] != slice_id})
+            lines.append("- %s %s%s" % (screen["id"], screen["title"], ", page %s/mockup/%s" % (PRODUCT, screen["file"]) if screen["file"] else ""))
+            if screen["purpose"]:
+                lines.append("  Purpose: %s" % screen["purpose"])
+            lines.append("  Seen by: %s. Signed in: %s." % (", ".join(people.get(actor, actor) for actor in screen["seen_by"]) or "anyone", "yes" if screen["session"] else "no"))
+            lines.append("  States:")
+            lines += ["  - %s" % (state if state not in screen["shows"] else "%s: %s" % (state, screen["shows"][state])) for state in screen["states"]]
+            lines.append("  Elements:")
+            lines += ["  - %s" % element_line(element) for element in screen["elements"]]
+            if others:
+                lines.append("  Also in %s: specify only what this slice needs of the screen." % ", ".join(others))
+    if flows:
+        lines += ["", "Flows through its screens:"] + ["- %s %s: %s" % (flow["id"], flow["title"], " > ".join(flow["steps"])) for flow in flows]
+    mine = [rule for rule in rules if rule["mine"]]
+    part = [rule for rule in rules if rule["finished_later"]]
+    met = [rule for rule in rules if not rule["mine"] and not rule["finished_later"]]
+    if mine:
+        lines += ["", "Rules this slice builds, each with the example it was approved with:"]
+        for rule in mine:
+            lines += ["- %s: %s" % (rule["id"], rule["text"])] + (["  Example: %s" % rule["example"]] if rule["example"] else [])
+            if rule["started_by"]:
+                lines.append("  %s already %s part of it: with this slice the rule is whole." % (", ".join(rule["started_by"]), "shows" if len(rule["started_by"]) == 1 else "show"))
+    if part:
+        lines += ["", "Rules a later slice finishes. The spec builds what its own screens show of them, and leaves the rule to that slice: it does not claim it:"]
+        lines += ["- %s (finished by %s): %s" % (rule["id"], rule["built_by"], rule["text"]) for rule in part]
+    if met:
+        lines += ["", "Rules its stories and screens also cite. They are built elsewhere: the spec meets them and does not build them again:"]
+        for rule in met:
+            where = "built by %s" % rule["built_by"] if rule["built_by"] else "already built" if rule["state"] == "implemented" else "approved, in no slice yet"
+            lines.append("- %s (%s): %s" % (rule["id"], where, rule["text"]))
+    for title, group in (("Decided for the whole product. Do not ask it again:", [question for question in decided if question["id"] in whole]),
+                         ("Decided in the design. Do not ask it again:", [question for question in decided if question["id"] not in whole])):
+        if group:
+            lines += ["", title] + ["- %s %s -> %s" % (question["id"], question["question"], question["answer"]) for question in group]
+    if undecided:
+        lines += ["", "Not decided in the design. The spec marks it, it does not guess:"]
+        lines += ["- %s %s%s" % (question["id"], question["question"], " (decides: %s)" % question["owner"] if question["owner"] else "") for question in undecided]
+    if missing:
+        lines += ["", "The map names %s, and the design no longer has %s." % (", ".join(missing), "it" if len(missing) == 1 else "them")]
+    lines += ["", "Write the spec from this:",
+              "- Its user story is the story above, with its criteria as the acceptance scenarios.",
+              "- Each state of a screen and each example of a rule is one more acceptance scenario.",
+              "- Name each screen with its page, so that who builds it opens the mockup.",
+              "- An element keeps its label and where it leads: that is what the product owner approved.",
+              "- What is not here was not designed: mark it [NEEDS CLARIFICATION], do not invent it."]
+    return {"status": "ok", "slice": slice_id, "title": item["title"], "map": found["map"], "language": product.language,
+            "stories": [{"id": story["id"], "title": story["title"], "story": story["story"], "criteria": story["criteria"], "actors": story["actors"]} for story in stories],
+            "screens": [{"id": screen["id"], "title": screen["title"], "page": "%s/mockup/%s" % (PRODUCT, screen["file"]) if screen["file"] else None,
+                         "states": screen["states"], "shared_with": sorted({other["id"] for other in owners.get(screen["id"], []) if other["id"] != slice_id})}
+                        for screen in screens],
+            "rules": rules, "flows": flows, "decided": decided, "undecided": undecided, "missing": missing, "block": "\n".join(lines) + "\n"}
+
+
 # --------------------------------------------------------------------------- the server of the mockup
 
 def root_key(root):
@@ -1847,8 +2197,8 @@ def main(argv=None):
         sys.stdout.reconfigure(encoding="utf-8")
 
     parser = argparse.ArgumentParser(prog="studio.py", description="The design of a product and its mockup", allow_abbrev=False)
-    parser.add_argument("command", choices=["scaffold", "status", "check", "build", "directions", "pick", "open", "shots", "comments", "approve", "serve"])
-    parser.add_argument("words", nargs="*", help="pick: the letter of the direction. approve: the area. comments: add, or resolve and the comments")
+    parser.add_argument("command", choices=["scaffold", "status", "check", "build", "directions", "pick", "open", "shots", "comments", "approve", "slice", "brief", "serve"])
+    parser.add_argument("words", nargs="*", help="pick: the letter of the direction. approve, slice: the area. brief: the slice. comments: add, or resolve and the comments")
     parser.add_argument("--root", default=".")
     parser.add_argument("--name", help="scaffold: how the product is called")
     parser.add_argument("--owner", help="scaffold: who approves the design")
@@ -1880,13 +2230,15 @@ def main(argv=None):
                                   (args.all or None, "--all", ("comments",)), (args.outcome, "--as", ("comments",)), (args.note, "--note", ("comments",)),
                                   (args.by, "--by", ("approve",)), (args.dry_run or None, "--dry-run", ("approve",)),
                                   (args.port, "--port", ("serve",)), (args.idle, "--idle", ("serve",)),
-                                  (args.words or None, "a word after the command", ("pick", "approve", "comments"))):
+                                  (args.words or None, "a word after the command", ("pick", "approve", "comments", "slice", "brief"))):
         if value is not None and args.command not in commands:
             parser.error("%s goes with %s" % (name, " or ".join(commands)))
     if args.command == "pick" and (len(args.words) != 1 or not re.fullmatch(LETTER, args.words[0])):
         parser.error("pick takes the letter of a direction, such as A")
-    if args.command == "approve" and (len(args.words) != 1 or not re.fullmatch(SLUG, args.words[0])):
-        parser.error("approve takes the name of one area, such as acceso")
+    if args.command in ("approve", "slice") and (len(args.words) != 1 or not re.fullmatch(SLUG, args.words[0])):
+        parser.error("%s takes the name of one area, such as acceso" % args.command)
+    if args.command == "brief" and (len(args.words) != 1 or not re.fullmatch(SLICE, args.words[0])):
+        parser.error("brief takes one slice, such as D-acceso-clave")
     action = args.words[0] if args.command == "comments" and args.words else None
     if args.command == "comments":
         if action not in (None, "add", "resolve") or (action != "resolve" and len(args.words) > 1):
@@ -1907,6 +2259,8 @@ def main(argv=None):
             raise StudioError("%s/product.md is not there: the design starts with speckit.studio.define" % PRODUCT)
         if args.command == "check":
             hard, notes, _ = problems(product)
+            cut_hard, cut_notes = slice_problems(product)
+            hard, notes = hard + cut_hard, notes + cut_notes
             return emit({"status": "invalid" if hard else "ok", "hard": hard, "notes": notes}, HARD if hard else OK)
         if args.command == "serve":
             if not drawn(product):
@@ -1916,6 +2270,11 @@ def main(argv=None):
         if args.command == "approve":
             plan = approval(product, args.words[0]) if args.dry_run else approve(product, args.words[0], args.by)
             return emit(plan, HARD if plan["status"] == "blocked" else WAIT if plan["status"] == "nothing" else OK)
+        if args.command == "slice":
+            plan = cut(product, args.words[0])
+            return emit(plan, HARD if plan["status"] in ("blocked", "invalid") else OK)
+        if args.command == "brief":
+            return emit(brief(product, args.words[0]))
         answer = {"status": "ok"}
         if args.command == "comments":
             if action == "add":

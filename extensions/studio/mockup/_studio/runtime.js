@@ -35,7 +35,7 @@
       reglas: 'Reglas', comentar: 'Comentar', comentarios: 'Comentarios', mapa: 'Mapa',
       paso: 'Paso {0} de {1}', anterior: 'Anterior', siguiente: 'Siguiente', terminar: 'Terminar', salirFlujo: 'Salir del flujo',
       sinRegistro: 'sin registro', reglasDe: 'Reglas de este elemento: {0}', comentarioN: 'Comentario {0}', cerrar: 'Cerrar',
-      sinRegla: 'No está en el catálogo ni en un borrador.', capacidad: 'Capacidad: {0}.',
+      sinRegla: 'No está en el catálogo ni en un borrador.', capacidad: 'Capacidad: {0}.', entregable: 'La construye el entregable {0}.', enSpec: 'Su spec es {0}.',
       tocar: 'Toca el elemento que quieres comentar. Esc para salir.', comentario: 'Comentario', queCambiar: '¿Qué cambiarías aquí?',
       guardar: 'Guardar', cancelar: 'Cancelar', borrar: 'Borrar',
       guardado: 'Comentario guardado en este navegador.',
@@ -72,7 +72,7 @@
       reglas: 'Rules', comentar: 'Comment', comentarios: 'Comments', mapa: 'Map',
       paso: 'Step {0} of {1}', anterior: 'Back', siguiente: 'Next', terminar: 'Finish', salirFlujo: 'Leave the flow',
       sinRegistro: 'not recorded', reglasDe: 'Rules of this element: {0}', comentarioN: 'Comment {0}', cerrar: 'Close',
-      sinRegla: 'It is not in the catalog nor in a draft.', capacidad: 'Capability: {0}.',
+      sinRegla: 'It is not in the catalog nor in a draft.', capacidad: 'Capability: {0}.', entregable: 'The slice {0} builds it.', enSpec: 'Its spec is {0}.',
       tocar: 'Click the element you want to comment on. Esc to leave.', comentario: 'Comment', queCambiar: 'What would you change here?',
       guardar: 'Save', cancelar: 'Cancel', borrar: 'Delete',
       guardado: 'Comment saved in this browser.',
@@ -613,7 +613,8 @@
               '<p class="chip"><i style="background:' + info.color + '"></i>' + esc(info.largo) + '</p>' +
               '<p>' + esc(rg.texto) + '</p>' +
               (rg.antes ? '<p class="sub">' + esc(t('antes', rg.antes)) + '</p>' : '') +
-              '<p class="sub">' + esc(t('capacidad', rg.capacidad)) + ' ' + esc(rg.nota || '') + '</p></section>';
+              '<p class="sub">' + esc(t('capacidad', rg.capacidad)) + ' ' + esc(rg.nota || '') + '</p>' +
+              (rg.entregable ? '<p class="sub">' + esc(t('entregable', rg.entregable)) + (rg.spec ? ' ' + esc(t('enSpec', rg.spec)) : '') + '</p>' : '') + '</section>';
           }
           if (D.historias[id]) { return '<section><h3>' + esc(id) + '</h3><p>' + esc(D.historias[id]) + '</p></section>'; }
           return '<section><h3>' + esc(id) + '</h3></section>';
@@ -884,7 +885,8 @@
         }).join('') + '</ul>';
         html += '<h3>' + esc(t('reglas')) + '</h3><ul class="reglas">' + Object.keys(D.reglas).map(function (id) {
           var r = D.reglas[id], info = infoRegla(r.estado);
-          return '<li><b>' + esc(id) + '</b> <span class="chip"><i style="background:' + info.color + '"></i>' + esc(info.corto) + '</span><p>' + esc(r.texto) + '</p></li>';
+          return '<li><b>' + esc(id) + '</b> <span class="chip"><i style="background:' + info.color + '"></i>' + esc(info.corto) + '</span>' +
+            (r.entregable ? ' <span class="sub">' + esc(r.entregable) + '</span>' : '') + '<p>' + esc(r.texto) + '</p></li>';
         }).join('') + '</ul>';
         abrirDialogo(t('mapaTitulo'), html);
       }

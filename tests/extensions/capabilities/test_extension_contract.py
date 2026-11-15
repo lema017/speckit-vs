@@ -127,6 +127,17 @@ def test_context_command_is_read_only_and_invents_no_branch():
     assert "add no other `designed` rule" in text
 
 
+def test_context_command_loads_the_design_of_a_slice_cut_from_one():
+    text = (EXT_DIR / "commands" / "speckit.capabilities.context.md").read_text(encoding="utf-8")
+    assert "If `SLICE FOR THIS RUN` lists `Stories of the design` or `Screens of the design`, run `python3 .specify/extensions/studio/scripts/python/studio.py brief <slice id>`" in text
+    assert "end your report with its `block`, as it is" in text and "Tell the next step to write the spec from that block." in text
+    assert "it runs even when an earlier step says to finish" in text, "a project with no catalog yet still gets the design"
+    assert "say so in one line and go on: the slice still names its rules" in text
+    # The two lines are the ones the script writes in the block that aims a run.
+    script = (EXT_DIR / "scripts" / "python" / "cap_slices.py").read_text(encoding="utf-8")
+    assert 'lines.append("Stories of the design: %s"' in script and 'lines.append("Screens of the design: %s"' in script
+
+
 def test_slice_command_writes_only_an_approved_map_and_invents_no_branch():
     text = (EXT_DIR / "commands" / "speckit.capabilities.slice.md").read_text(encoding="utf-8")
     assert "No branch was created. This output contains no BRANCH_NAME and no FEATURE_NUM." in text
@@ -192,6 +203,18 @@ def test_clarify_context_command_leaves_other_slices_out_of_the_interview():
     assert "Owned by other slices: do not ask these, and do not specify them here" in text
     assert "If `slice` is null too, finish." in text, "a project without a catalog still hears what other slices own"
     assert "say that `speckit.capabilities.size` proposes a split" in text
+
+
+def test_clarify_context_command_does_not_ask_what_the_design_decided():
+    text = (EXT_DIR / "commands" / "speckit.capabilities.clarify-context.md").read_text(encoding="utf-8")
+    assert "What the product owner decided in the design of a slice is a settled fact: do not ask it." in text
+    assert "A question the design left open is for the interview to ask." in text
+    assert "Decided in the design: do not ask these" in text and "Left open in the design: ask" in text
+    # The product owner designed in a language: the interview asks in it, even when only the command was typed.
+    assert "Language of the design: <language>. Ask in it" in text
+    assert "so the interview asks in it and reports in it, whatever language the command was typed in" in text
+    assert "`slice.stories` or `slice.screens` is not empty. Run `python3 .specify/extensions/studio/scripts/python/studio.py brief <slice.slice>`" in text
+    assert "list its `decided` and its `undecided`" in text
 
 
 def test_review_command_never_decides_a_change_of_meaning_alone():
@@ -606,6 +629,9 @@ def test_agent_rule_template_has_one_pair_of_markers_and_points_to_the_catalog()
     assert "specs/_capabilities/index.md" in text
     assert "before changing existing behaviour" in text
     assert "do not rewrite the requirement to match the code" in text
+    # A product designed with its owner has a language: every command speaks it, also the ones written in English.
+    assert "If `specs/_product/product.md` is there, the product was designed with its owner, and its `- Language:` line names their language." in text
+    assert "Speak and write to the person in that language in every command, whatever language the command is written in." in text
 
 
 def test_readme_states_the_limit_of_the_block_and_of_inferred_rules():
