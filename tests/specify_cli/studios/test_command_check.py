@@ -39,6 +39,27 @@ def test_something_to_fix_exits_with_one(designed):
     assert "To fix (1)" in plain(result) and "<body data-screen> says SCR-otra" in plain(result).replace("\n", "")
 
 
+def test_the_slices_of_an_area_are_checked_too(designed, monkeypatch):
+    from specify_cli.studios import _script as script_module
+
+    script = script_module.load_script()
+    monkeypatch.setattr(script, "slice_problems", lambda product: (["specs/_slices/acceso.md: D-acceso-clave names ST-9, which is not in story-map.md"],
+                                                                   ["specs/_slices/acceso.md: ST-4 of the area acceso is in no slice"]))
+    result = runner.invoke(app, ["studio", "check", "--json"])
+    answer = json.loads(result.output)
+    assert result.exit_code == 1 and answer["status"] == "invalid"
+    assert answer["hard"] == ["specs/_slices/acceso.md: D-acceso-clave names ST-9, which is not in story-map.md"]
+    assert answer["notes"] == [PENDING, "specs/_slices/acceso.md: ST-4 of the area acceso is in no slice"]
+
+
+def test_a_map_nothing_here_can_read_is_worth_knowing(designed):
+    folder = designed.root / "specs" / "_slices"
+    folder.mkdir(parents=True)
+    (folder / "acceso.md").write_text("# Slices: Acceso\n\n<!-- slice-map:v1 -->\n", encoding="utf-8")
+    result = runner.invoke(app, ["studio", "check", "--json"])
+    assert result.exit_code == 0 and json.loads(result.output)["notes"][1].startswith("specs/_slices: nothing read the slice maps")
+
+
 def test_json_carries_both_lists(designed):
     result = runner.invoke(app, ["studio", "check", "--json"])
     assert result.exit_code == 0 and json.loads(result.output) == {"status": "ok", "hard": [], "notes": [PENDING]}

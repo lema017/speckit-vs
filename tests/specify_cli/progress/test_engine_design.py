@@ -20,7 +20,7 @@ from .conftest import OFICIO, REPO as ROOT, step_event, symlink
 from .test_engine_render import HOSTILE, parse_page
 
 NOW = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
-STEPS_LINE = "Steps: Define: 2 decisions; Map: 2 of 2 areas; Mockup: 6 of 6 screens; Iterate: No comments yet; Approve: 1 of 2 areas"
+STEPS_LINE = "Steps: Define: 2 decisions; Map: 2 of 2 areas; Mockup: 6 of 6 screens; Iterate: No comments yet; Approve: 1 of 2 areas; Slice: 0 of 2 areas"
 NEXT_LINE = "Next: /speckit.studio.approve acceso. Acceso is drawn. Approve its rules when the mockup is right, or say what to change first."
 
 
@@ -117,7 +117,8 @@ def test_the_design_page_says_how_far_each_step_is(engine, designed):
         ("map", "Map", "/speckit.studio.map", "done", "2 of 2 areas"),
         ("mockup", "Mockup", "/speckit.studio.mockup", "done", "6 of 6 screens"),
         ("iterate", "Iterate", "/speckit.studio.iterate", "pending", "No comments yet"),
-        ("approve", "Approve", "/speckit.studio.approve", "active", "1 of 2 areas")]
+        ("approve", "Approve", "/speckit.studio.approve", "active", "1 of 2 areas"),
+        ("slice", "Slice", "/speckit.studio.slice", "pending", "0 of 2 areas")]
     assert all(step["running"] is False and step["note"] is None and step["who"] is None for step in data["steps"])
     assert data["totals"]["areas"] == 2 and (data["totals"]["drawn"], data["totals"]["approved"]) == (1, 1) and data["screens"] == 6
     assert data["next"] == {"command": "/speckit.studio.approve acceso", "why": "Acceso is drawn. Approve its rules when the mockup is right, or say what to change first."}
@@ -132,10 +133,11 @@ def test_each_area_shows_its_own_steps(engine, designed):
         {"name": "map", "label": "Map", "state": "active", "fact": "4 stories, 1 waiting", "running": False},
         {"name": "mockup", "label": "Mockup", "state": "done", "fact": "5 of 5 screens", "running": False},
         {"name": "iterate", "label": "Iterate", "state": "pending", "fact": "not yet", "running": False},
-        {"name": "approve", "label": "Approve", "state": "pending", "fact": "not yet", "running": False}]
+        {"name": "approve", "label": "Approve", "state": "pending", "fact": "not yet", "running": False},
+        {"name": "slice", "label": "Slice", "state": "pending", "fact": "not yet", "running": False}]
     assert (areas["acceso"]["title"], areas["acceso"]["state"], areas["acceso"]["screens"], areas["acceso"]["rules"]) == ("Acceso", "in-design", 5, {"draft": 6})
-    assert [(chip["state"], chip["fact"]) for chip in areas["inicio"]["steps"]] == [("done", "1 story"), ("pending", "not yet"), ("pending", "not yet"), ("pending", "not yet")]
-    assert [(chip["state"], chip["fact"]) for chip in areas["talleres"]["steps"]] == [("pending", "not yet")] * 4
+    assert [(chip["state"], chip["fact"]) for chip in areas["inicio"]["steps"]] == [("done", "1 story")] + [("pending", "not yet")] * 4
+    assert [(chip["state"], chip["fact"]) for chip in areas["talleres"]["steps"]] == [("pending", "not yet")] * 5
     assert (areas["talleres"]["state"], areas["talleres"]["covers"], areas["talleres"]["command"]) == (
         "not-started", "Ver los talleres y apuntarse", "/speckit.studio.map talleres")
 
@@ -179,6 +181,25 @@ def test_a_document_the_script_does_not_name_as_one_is_not_read(engine, designed
     assert [doc["name"] for doc in design_of(engine, designed)["documents"]] == ["vision.md"]
 
 
+def test_an_area_says_how_many_of_its_slices_are_delivered(engine):
+    def fact(state, cut):
+        return engine._area_fact({"steps": {"slice": state}, "slices": cut}, "slice")
+
+    assert fact("pending", {"total": 0, "delivered": 0, "loose": ["ST-1"]}) == "not yet"
+    assert fact("done", {"total": 4, "delivered": 1, "loose": []}) == "1 of 4 slices delivered"
+    assert fact("done", {"total": 1, "delivered": 1, "loose": []}) == "1 of 1 slice delivered"
+    assert fact("active", {"total": 3, "delivered": 0, "loose": ["ST-4"]}) == "0 of 3 slices delivered, 1 story left"
+    assert fact("active", {"total": 2, "delivered": 0, "loose": ["ST-2", "ST-4"]}) == "0 of 2 slices delivered, 2 stories left"
+    assert engine._area_fact({"steps": {"slice": "done"}}, "slice") == "0 of 0 slices delivered", "a studio script that says nothing about slices breaks nothing"
+    assert engine._area_fact({"steps": {"mockup": "done"}, "pages": 2, "screens": 3}, "mockup") == "2 of 3 screens", "the other steps say what they said"
+
+
+def test_the_page_counts_the_rules_that_are_in_a_spec_and_the_ones_built(engine):
+    page = (Path(engine.__file__).parent / "design.html").read_text(encoding="utf-8")
+    assert 'inSpec = rules["in-spec"] || 0, built = rules.implemented || 0, approved = (rules.designed || 0) + inSpec + built' in page
+    assert 'if (inSpec) out.push(inSpec + " in a spec");' in page and 'if (built) out.push(built + " built");' in page
+
+
 # -- How a command is written ------------------------------------------------------------------
 
 
@@ -192,8 +213,8 @@ def test_an_area_shows_the_comments_that_wait_and_how_many_rules_are_approved(en
          "### R-login-lockout\n- Text: Tras 5 intentos fallidos seguidos, la cuenta se bloquea 15 minutos.\n- Example: Ana falla 5 veces a las 10:00 y puede volver a intentar a las 10:15.\n\n", "")
     data = design_of(engine, designed)
     areas = {area["id"]: area for area in data["areas"]}
-    assert [(chip["name"], chip["state"], chip["fact"]) for chip in areas["acceso"]["steps"][2:]] == [("iterate", "attention", "2 comments open"), ("approve", "active", "1 of 6 rules")]
-    assert [(chip["name"], chip["state"], chip["fact"]) for chip in areas["inicio"]["steps"][2:]] == [("iterate", "done", "nothing open"), ("approve", "done", "no rules")]
+    assert [(chip["name"], chip["state"], chip["fact"]) for chip in areas["acceso"]["steps"][2:]] == [("iterate", "attention", "2 comments open"), ("approve", "active", "1 of 6 rules"), ("slice", "pending", "not yet")]
+    assert [(chip["name"], chip["state"], chip["fact"]) for chip in areas["inicio"]["steps"][2:]] == [("iterate", "done", "nothing open"), ("approve", "done", "no rules"), ("slice", "pending", "not yet")]
     assert (areas["acceso"]["state"], areas["inicio"]["state"]) == ("drawn", "approved")
     assert data["steps"][3]["fact"] == "2 comments open" and data["next"]["command"] == "/speckit.studio.iterate"
     assert {"kind": "comments", "text": "2 comments on the mockup wait to be applied."} in data["attention"]
@@ -254,9 +275,9 @@ def test_a_step_that_was_started_and_not_closed_is_running(engine, designed):
     assert (mockup["running"], mockup["state"], mockup["who"], mockup["ts"]) == (True, "done", "claude", stamp(NOW - timedelta(minutes=5)))
     assert data["steps"][0]["running"] is False
     areas = {area["id"]: area for area in data["areas"]}
-    assert [chip["running"] for chip in areas["acceso"]["steps"]] == [False, True, False, False]
+    assert [chip["running"] for chip in areas["acceso"]["steps"]] == [False, True, False, False, False]
     assert areas["acceso"]["steps"][1]["state"] == "done", "what the files prove is not undone by a new run"
-    assert [chip["running"] for chip in areas["inicio"]["steps"]] == [False] * 4, "the step ran for another area"
+    assert [chip["running"] for chip in areas["inicio"]["steps"]] == [False] * 5, "the step ran for another area"
 
 
 def test_a_step_that_was_started_before_its_files_exist_is_active(engine, designed):
@@ -374,7 +395,7 @@ def test_drawing_everything_draws_the_design_and_puts_it_on_top_of_the_list(engi
         "totals": {"areas": 2, "approved": 1, "drawn": 1, "in_design": 0, "not_started": 0},
         "steps": [{"label": "Define", "state": "done", "fact": "2 decisions"}, {"label": "Map", "state": "done", "fact": "2 of 2 areas"},
                   {"label": "Mockup", "state": "done", "fact": "6 of 6 screens"}, {"label": "Iterate", "state": "pending", "fact": "No comments yet"},
-                  {"label": "Approve", "state": "active", "fact": "1 of 2 areas"}],
+                  {"label": "Approve", "state": "active", "fact": "1 of 2 areas"}, {"label": "Slice", "state": "pending", "fact": "0 of 2 areas"}],
         "next": {"command": "/speckit.studio.approve acceso", "why": "Acceso is drawn. Approve its rules when the mockup is right, or say what to change first."},
         "attention": 2}
     assert page_data(drawn["index"])["design"] == summary

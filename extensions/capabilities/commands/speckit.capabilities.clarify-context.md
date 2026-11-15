@@ -21,6 +21,7 @@ $ARGUMENTS
 - A rule with `inferred: true`, or with a `state` other than `conforming`, is never a settled fact. Nobody approved the first; the second does not match the code, or nobody verified it.
 - A rule listed in `designed` is a business decision already taken, and it has no code yet. It is a settled fact: do not ask it. Proposing to change it is a `⚠️ Business decision` and needs the PO's own words.
 - What another slice owns is not built in this spec, so the interview does not ask about it. If an answer shows that this spec cannot be built without part of it, that is a `⚠️ Business decision`: name the slice that owns it and ask whether that part moves here. Moving it changes the slice map, and the user decides.
+- What the product owner decided in the design of a slice is a settled fact: do not ask it. A question the design left open is for the interview to ask.
 - Copy the text of a rule literally, whatever language it is in.
 - Say where each line comes from: the catalog, the graph or the code. The graph says where code is and what connects to it, never what the requirement is.
 
@@ -49,9 +50,16 @@ $ARGUMENTS
    Graph: <ok and the version | no-code | not used, and why>
    Slice: <slice.slice, from slice.map | standalone: slice.standalone>
    Size: <slice.size.summary>
+   Language of the design: <language>. Ask in it
 
    Owned by other slices: do not ask these, and do not specify them here
    - <title> (<slice id>, <state>): <intent>
+
+   Decided in the design: do not ask these
+   - <question id> <the question> -> <the answer>
+
+   Left open in the design: ask
+   - <question id> <the question>
 
    Settled facts: do not ask these
    - <rule id> (<capability>, <state>, <origin>): "<literal text>"
@@ -73,4 +81,5 @@ $ARGUMENTS
    ```
 
 10. `Slice`, `Size` and `Owned by other slices` come from `slice`, and are left out when it is null: the spec is from before slices. List each of `slice.siblings`; if there are none and `slice.out` is not `none`, copy `slice.out` as one line. If `slice.size.status` is `over`, say that `speckit.capabilities.size` proposes a split, and that it runs again before the plan because an interview can make a spec grow.
-11. Report only rules the spec touches, not everything you opened. Settled facts are answers: the interview does not ask them. Conflicts, rules not confirmed and reach beyond the delta are for the interview to ask. If an answer later changes an approved rule, do not touch its `From`: `speckit.capabilities.review` surfaces it before the plan.
+11. `Decided in the design` and `Left open in the design` are for a slice cut from a design made with the studio extension: `slice.stories` or `slice.screens` is not empty. Run `python3 .specify/extensions/studio/scripts/python/studio.py brief <slice.slice>` from the repository root and parse its JSON. With exit code 0, list its `decided` and its `undecided`, and say that the screens and the stories of the slice are in its `block`: what they show is settled too. `Language of the design` is its `language`: the product owner designed in that language, so the interview asks in it and reports in it, whatever language the command was typed in. If neither list has anything, if the script is not in the project, or if it answers with `errors`, leave both sections and that line out. In the third case say so in one line.
+12. Report only rules the spec touches, not everything you opened. Settled facts are answers: the interview does not ask them. Conflicts, rules not confirmed and reach beyond the delta are for the interview to ask. If an answer later changes an approved rule, do not touch its `From`: `speckit.capabilities.review` surfaces it before the plan.

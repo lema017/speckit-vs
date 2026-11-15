@@ -29,6 +29,8 @@ $ARGUMENTS
 - Do not run `check-prerequisites`: before the directory exists it can return the previous feature.
 - If `SLICE FOR THIS RUN` appears earlier in this run, printed by `speckit.capabilities.slice` or in the answer of `slices show`, the request is that slice and not the whole text the user typed: pick capabilities and report rules for the slice only.
 
+- If `SLICE FOR THIS RUN` lists `Stories of the design` or `Screens of the design`, the slice was cut from a design made with the studio extension, and the spec is written from that design. Step 11 loads it, and it runs even when an earlier step says to finish.
+
 ## Steps
 
 1. Run `{SCRIPT} graph status` from the repository root and parse its JSON. If `available` is false, **stop**: say that Graphify is part of this fork and is missing, and show the `install` command from that output without running it.
@@ -49,3 +51,4 @@ $ARGUMENTS
    Say which capabilities only the graph revealed.
 9. Tell the next step that the spec must declare a `## Capability Delta` that names those IDs and copies their current text literally into `From`.
 10. If `SLICE FOR THIS RUN` listed rules to build, those are the `designed` rules this spec builds, and its `IMPLEMENTED` blocks are already printed: hand them to the next step and add no other `designed` rule, because the others belong to other slices. Otherwise, if the request builds `designed` rules, run `{SCRIPT} delta-block --implement <ids>` and hand its `text` to the next step: one `### IMPLEMENTED` block per rule, with the catalog's text in `From` and `To`. The spec replaces `FR-###` in `Links` with its own requirements and acceptance criteria, and changes nothing else in the block. A spec that builds a `designed` rule with other text declares `MODIFIED` instead, and that is a business decision.
+11. If `SLICE FOR THIS RUN` lists `Stories of the design` or `Screens of the design`, run `python3 .specify/extensions/studio/scripts/python/studio.py brief <slice id>` from the repository root and parse its JSON. With exit code 0, end your report with its `block`, as it is: it starts with `DESIGN FOR THIS SLICE`, and it holds the stories, the screens and the decisions the product owner approved. Tell the next step to write the spec from that block. If the script is not in the project, or it answers with `errors`, say so in one line and go on: the slice still names its rules.

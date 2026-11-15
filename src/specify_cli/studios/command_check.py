@@ -27,7 +27,11 @@ def studio_check(
     """
     root = project_root()
     script = load_script()
-    hard, notes, _ = script.problems(load_product(script, root))
+    product = load_product(script, root)
+    hard, notes, _ = script.problems(product)
+    # The slices an area is cut into name its stories and its screens: what is wrong there is part of the answer.
+    cut_hard, cut_notes = script.slice_problems(product)
+    hard, notes = hard + cut_hard, notes + cut_notes
     if as_json:
         typer.echo(json.dumps({"status": "invalid" if hard else "ok", "hard": hard, "notes": notes}, indent=2, ensure_ascii=False))
     else:

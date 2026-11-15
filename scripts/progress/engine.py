@@ -1229,6 +1229,11 @@ def _area_fact(area, name):
     if name == "approve":
         rules = sum(area["rules"].values())
         return "%d of %s" % (area.get("approved", 0), _count(rules, "rule")) if rules else "no rules"
+    if name == "slice":
+        cut = area.get("slices") or {}
+        left = len(cut.get("loose") or ())
+        fact = "%d of %s delivered" % (cut.get("delivered", 0), _count(cut.get("total", 0), "slice"))
+        return fact + (", %d %s left" % (left, "story" if left == 1 else "stories") if left else "")
     return "%d of %s" % (area["pages"], _count(area["screens"], "screen"))
 
 
@@ -2151,7 +2156,7 @@ def _parser():
     show.add_argument("--open", action="store_true", dest="open_page", help="Also open the page in a browser, every time.")
     show.add_argument("--design", action="store_true", help="Show the design of the product instead of a spec.")
     design = commands.add_parser("design", parents=[shared], allow_abbrev=False, help="Record a step of the design, draw its page and report.")
-    design.add_argument("name", help="The step: define, map or mockup")
+    design.add_argument("name", help="The step, such as define, map or slice")
     design.add_argument("status", choices=sorted(STEP_STATUSES - {"note"}))
     design.add_argument("--area", help="The area the step was about")
     design.add_argument("--note", help="One line about the step")
@@ -2243,7 +2248,7 @@ def main(argv=None):
         return _run_task_command(args, root)
     if args.command == "design":
         if not _STEP_NAME.match(args.name):
-            parser.error("a step of the design is a word such as define, map or mockup")
+            parser.error("a step of the design is a word such as define, map or slice")
         if args.area is not None and not (len(args.area) <= MAX_AREA_CHARS and _AREA_NAME.match(args.area)):
             parser.error("--area takes the name of an area, in lowercase and hyphens")
     if args.command not in ("step", "show", "design"):
