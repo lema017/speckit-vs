@@ -2,6 +2,18 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.6.3] - 2026-11-14
+
+### Changed
+
+- fix(studio): answer in UTF-8 whatever the console speaks
+- fix(studio): find the letter of pick after an option on Python 3.11 and older
+- docs: explain how to design the product first
+- feat(cli): add specify studio to open, check and read a design
+- feat(progress): show how far the design of a product is
+- feat(studio): add the studio extension to design a product before its specs
+- chore: begin 1.6.3.dev0 development
+
 ## [1.6.2] - 2026-11-13
 
 ### Changed
