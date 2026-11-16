@@ -154,6 +154,26 @@ From then on the rules are the reference: a spec builds them as they are written
 
 To change a rule after it was approved, ask for it with `/speckit-studio-iterate`. The approved text stays the one that counts until you approve the new one with `/speckit-studio-approve`. Meanwhile the mockup shows both. A rule that is already built changes with a spec.
 
+### Retire a rule you approved
+
+Say it with `/speckit-studio-iterate`, in your words: "ya no avisamos cuántos intentos quedan". The agent takes the rule out of the screens and the mockup and marks it to retire. The rule stays approved until you say yes with `/speckit-studio-approve`.
+
+| The rule | What happens with your yes |
+| --- | --- |
+| Approved, and nothing built it | It leaves the catalog, with your name, the date and the reason |
+| A spec is building it | The approval waits. That spec leaves the rule out first, or finishes |
+| Already built | A spec retires it, with its code and its tests. The agent tells you how to ask for that spec |
+
+### When a spec changes a rule you approved
+
+A spec can change the text of an approved rule, or retire it: the interview of a spec sometimes finds that a rule was wrong. The design tells you as soon as the spec says so, before any code is written:
+
+- the design page lists it under what needs your attention;
+- the mockup marks the rule as changed, with the text you approved and the text the spec gives it;
+- `/speckit-studio-approve <area>` shows both texts and the spec, and asks whether you have seen it.
+
+With your yes, the design keeps that you saw it in `specs/_product/seen.md` and stops asking. It asks again if a spec changes that rule once more. If you do not agree, the rule is changed back where it was changed: in that spec while it is not built, or with a new spec.
+
 ## Cut the area into specs
 
 When the rules of an area are approved:
@@ -231,8 +251,9 @@ Everything decided is a Markdown file under `specs/_product/`, which you commit 
 | `navigation.md` | The areas and the flows |
 | `story-map.md` | What each person does, and why |
 | `screens/SCR-<name>.md` | One screen: its elements and its states |
-| `capability-drafts.md` | The business rules, in draft. An approved rule lives in `specs/_capabilities/` |
+| `capability-drafts.md` | The business rules in draft, and the approved ones marked to retire. An approved rule lives in `specs/_capabilities/` |
 | `decisions.md` | Every question, with its answer |
+| `seen.md` | What a spec changed in a rule you approved, once you have seen it |
 | `comments.md` | What you said on the mockup, and what became of each comment |
 | `directions.md`, `look-and-feel.md` | The three looks, and the one chosen |
 | `mockup/` | One page per screen |
@@ -245,7 +266,7 @@ To check that the files and the pages agree:
 specify studio check
 ```
 
-It fails when a story has no screen, a button leads to a screen that does not exist, a page uses a state its screen does not have, a rule is cited by nobody, a page cannot be reached, a draft gives another text to a rule that is already built, or a slice names a story or a screen the design does not have. It notes, without failing, colors that cannot be read, links to something that is not designed yet, a change to an approved rule that waits for its approval, and a story of a cut area that is in no slice.
+It fails when a story has no screen, a button leads to a screen that does not exist, a page uses a state its screen does not have, a rule is cited by nobody, a page cannot be reached, a draft gives another text to a rule that is already built, a rule marked to retire is still on a screen, or a slice names a story or a screen the design does not have. It notes, without failing, colors that cannot be read, links to something that is not designed yet, a change to an approved rule that waits for its approval, and a story of a cut area that is in no slice.
 
 ## Add it to an existing project
 
@@ -259,8 +280,7 @@ A project that already has code can use it too. The agent reads what the product
 
 ## Limits
 
-- **A spec can change a rule you approved, and the design does not tell you yet.** The catalog records the change with the spec that made it. `/speckit-capabilities-check` shows it.
-- **An approved rule cannot be retired yet.** Its text can change. Taking it out of the catalog comes later.
+- **A rule that is built is retired by a spec.** The design keeps that you want it gone, and the approval tells you how to ask for that spec.
 - **One person comments at a time.** The mockup is served to the computer that runs it.
 - **Approving and cutting need the `capabilities` extension,** which keeps the approved rules and the slices. Every new project of this fork has it.
 - **The pictures need a browser.** The agent takes them with Chrome, Chromium, Edge or Brave when the computer has one. Without one, it gives you the link. `SPECKIT_STUDIO_BROWSER` names another browser.

@@ -43,6 +43,7 @@ Three things come up when a change retires a feature, or only moves code:
 | What happens | What you do |
 |---|---|
 | A task can only be done after the fold: opening the pull request, a deploy, production data | Write `[post-merge]` after its id. It stays open and holds nothing back |
+| A task says to run the fold itself | Nothing to do: it does not hold the fold, and the fold closes it |
 | The change moves the code of a rule it does not change, and `check` notes `anchored code changed without a delta` | Add `### REOBSERVED <rule>` to the delta, with `- Capability:` and `- Reason:`. The fold looks at that rule again and changes nothing else |
 | A capability lost rules, and its line in the index still names them | The fold lists it under `review_covers`. `index --capability <name> --covers "<one line>"` sets the new line, and `--entry <path::symbol>` where its code starts |
 
@@ -102,6 +103,8 @@ specify workflow run sliced --input map=login
 The first command tells the project about the bundle catalog of this fork, once. The default catalog is the one of `github/spec-kit`, which does not list `sliced`.
 
 Each round asks the project which slice comes now, waits for your approval, and runs `specify`, a spec review gate, `plan`, `tasks` and `implement` for it. It ends when every slice is delivered. If a slice is started and not delivered, the slices that depend on it wait: the run says which, and looks again when you approve.
+
+A spec can leave points marked `[NEEDS CLARIFICATION]`, and one written from a design marks what the design left out. No step of the run answers them, and `plan` does not start on such a spec. So the run stops at a gate after `specify` and says how many there are: answer them with `/speckit-clarify` in your agent, then approve.
 
 The spec review gate shows the size of the slice. When a slice is over its budget, after `specify` or after `tasks`, the run stops at a gate with the numbers. Approve and it goes on with the slice as it is, and records next to the spec that its size was accepted at that gate. Reject and the run stops, so you can split the slice with `/speckit.capabilities.size`.
 
