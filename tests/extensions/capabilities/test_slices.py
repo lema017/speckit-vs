@@ -817,6 +817,21 @@ def test_measure_counts_what_a_spec_holds(design):
     assert (out["spec"], out["slice"], out["standalone"], out["map"]) == (BIG, None, "Entrar a la cuenta", None)
 
 
+def test_the_line_says_what_the_spec_leaves_to_clarify(design):
+    """A workflow writes a spec with nobody to ask: what it could not decide is said where its size is said."""
+    design.write(BIG + "/spec.md", sized(requirements=15, rules=4))
+    assert size(design)["unclear"] == 0
+    within = "Slice size: 1 story (max 1), 15 requirements (max 15), 4 rules (max 4), tasks not written (max 25). Within the slice budget."
+    text = design.read(BIG + "/spec.md")
+    design.write(BIG + "/spec.md", text + "\n- **FR-900**: El enlace [NEEDS CLARIFICATION: ¿sirve una sola vez?]\n<!-- [NEEDS CLARIFICATION: an example in a comment] -->\n")
+    out = size(design)
+    assert out["unclear"] == 1 and out["status"] == "over"
+    assert out["summary"].endswith(" 1 point is still marked [NEEDS CLARIFICATION]: speckit.clarify decides it before the plan.")
+    design.write(BIG + "/spec.md", text + "\nUn punto [NEEDS CLARIFICATION: uno] y otro [NEEDS CLARIFICATION: dos].\n")
+    out = size(design)
+    assert out["unclear"] == 2 and out["summary"] == within + " 2 points are still marked [NEEDS CLARIFICATION]: speckit.clarify decides them before the plan."
+
+
 @pytest.mark.parametrize("held, what, count", [({"stories": 2}, "stories", 2), ({"requirements": 16}, "requirements", 16), ({"rules": 5}, "rules", 5)])
 def test_one_more_than_the_budget_is_over(design, held, what, count):
     design.write(BIG + "/spec.md", sized(**held))

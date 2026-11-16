@@ -2,9 +2,9 @@ schema_version: "1.0"
 workflow:
   id: "sliced"
   name: "Slice by Slice"
-  version: "1.0.0"
+  version: "1.1.0"
   author: "lema017"
-  description: "Builds the pending slices of a slice map in order: an approval gate per slice, then specify → spec review gate → plan → tasks → implement"
+  description: "Builds the pending slices of a slice map in order: an approval gate per slice, then specify → a gate for what the spec leaves open → spec review gate → plan → tasks → implement"
 
 requires:
   # The slices come from the capabilities extension, 0.7.0 or later: its script
@@ -66,11 +66,36 @@ steps:
             input:
               args: "{{ steps.next-slice.output.data.next }}"
 
+          # A spec marks what nobody decided, and one written from a design
+          # marks what the design left out. Inside a command step nobody is
+          # there to answer, and plan does not start on a spec with open
+          # points. So the walk counts them and waits at a gate while the
+          # person answers them with speckit.clarify, in their agent. No spec
+          # for this slice fails the walk here, before anything is planned on
+          # another one. The extension counts the points from 0.9.1 on; with
+          # an older one the gate never asks.
+          - id: count-open-points
+            type: shell
+            strict: true
+            output_format: json
+            env:
+              SPECKIT_SLICE: "{{ steps.next-slice.output.data.next }}"
+            run: python3 .specify/extensions/capabilities/scripts/python/capabilities.py slices measure
+
+          - id: open-points
+            type: if
+            condition: "{{ steps.count-open-points.output.data.unclear > 0 }}"
+            then:
+              - id: answer-open-points
+                type: gate
+                message: "The spec of {{ steps.next-slice.output.data.next }} has {{ steps.count-open-points.output.data.unclear }} marked [NEEDS CLARIFICATION], and no step of this walk answers them. Answer them now with speckit.clarify, in your agent, then approve to go on. Reject to stop here."
+                options: [approve, reject]
+                on_reject: abort
+
           # The size step of the extension asks what to do with a spec over
-          # the slice budget, and inside a command step nobody is there to
-          # answer. So the walk measures the spec itself and asks at a gate.
-          # No spec for this slice fails the walk here, before anything is
-          # planned on another one.
+          # the slice budget, and nobody answers that either. So the walk
+          # measures the spec itself, after the open points were answered, and
+          # asks at a gate.
           - id: measure-spec
             type: shell
             strict: true

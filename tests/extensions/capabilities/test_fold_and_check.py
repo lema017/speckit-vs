@@ -509,6 +509,31 @@ def test_open_tasks_stop_the_fold(repo):
     assert repo.tree() == before
 
 
+def test_the_task_of_running_the_fold_does_not_hold_the_fold(repo):
+    """`tasks` often writes "run speckit.capabilities.fold" as a task. Nothing can close it before the fold runs."""
+    change = on_branch_reviewed(repo)
+    own = "- [ ] T034 Correr el comando `speckit.capabilities.fold` para publicar el delta\n- [ ] T035 [P] Run /speckit-capabilities-fold again\n"
+    repo.write(change + "/tasks.md", "- [x] T001 done in src/auth/session.py\n" + own)
+    rc, out = repo.cap("prepare", "--change", change)
+    assert rc == 0 and out["status"] == "ready" and out["fold_tasks"] == ["T034", "T035"] and "post_merge" not in out, out
+    repo.folded(change, impl())
+    repo.commit("folded, and the task of the fold is still open")
+    rc, out = repo.ci()
+    assert rc == 0 and out["states"][change] == "ready", out
+    # Another open task still holds it, and a task of the fold that waits for the merge is one that waits for the merge.
+    repo.write(change + "/tasks.md", "- [ ] T001 change src/auth/session.py\n" + own)
+    rc, out = repo.cap("prepare", "--change", change)
+    assert rc == 3 and out["status"] == "blocked" and out["reason"] == "1 open tasks", out
+    repo.write(change + "/tasks.md", "- [x] T001 done\n- [ ] T036 [post-merge] Run speckit.capabilities.fold on main\n- [ ] Read about folds and capabilities\n")
+    rc, out = repo.cap("prepare", "--change", change)
+    assert rc == 3 and out["reason"] == "1 open tasks", "a task that only talks about folds is a task like any other"
+    repo.write(change + "/tasks.md", "- [x] T001 done\n- [ ] T036 [post-merge] Run speckit.capabilities.fold on main\n")
+    rc, out = repo.cap("prepare", "--change", change)
+    assert rc == 0 and "fold_tasks" not in out and out["post_merge"] == 1, out
+    repo.write(change + "/tasks.md", "- [x] T001 done\n- [ ] Run the speckit.capabilities.fold command\n")
+    assert repo.cap("prepare", "--change", change)[1]["fold_tasks"] == ["Run the speckit.capabilities.fold command"], "a task with no id is named by its text"
+
+
 def test_a_task_for_after_the_merge_does_not_hold_the_fold(repo):
     """A deploy or a change to production data can only be done once the change is merged: its box stays open, and marked."""
     change = on_branch_reviewed(repo)

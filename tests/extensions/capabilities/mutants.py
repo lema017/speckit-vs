@@ -250,8 +250,14 @@ MUTANTS += [
     ("a-step-that-passed-stops-the-suite", "        if passed:\n            continue\n        if path.endswith(SCRIPT_TESTS):", "        if path.endswith(SCRIPT_TESTS):"),
     ("the-reason-pytest-gives-is-lost", 'marked = [line[1:] for line in (child.text or "").splitlines() if line.startswith("E ")]', "marked = []"),
     # Tasks that come after the fold.
-    ("post-merge-tasks-hold-the-fold", "    return None if boxes is None else sum(1 for rest in boxes if POST_MERGE not in rest.lower())", "    return None if boxes is None else len(boxes)"),
-    ("post-merge-mark-needs-its-case", "sum(1 for rest in boxes if POST_MERGE not in rest.lower())", "sum(1 for rest in boxes if POST_MERGE not in rest)"),
+    ("post-merge-tasks-hold-the-fold", "    return None if boxes is None else sum(1 for rest in boxes if POST_MERGE not in rest.lower() and not FOLD_TASK.search(rest))",
+     "    return None if boxes is None else sum(1 for rest in boxes if not FOLD_TASK.search(rest))"),
+    ("the-task-of-the-fold-holds-the-fold", "if POST_MERGE not in rest.lower() and not FOLD_TASK.search(rest))", "if POST_MERGE not in rest.lower())"),
+    ("any-task-that-says-fold-is-the-task-of-the-fold", 'FOLD_TASK = re.compile(r"speckit[.\\-]capabilities[.\\-]fold", re.I)', 'FOLD_TASK = re.compile(r"fold", re.I)'),
+    ("prepare-does-not-name-the-tasks-of-the-fold", '    if own:\n        state["fold_tasks"] = own\n', ""),
+    ("a-task-of-the-fold-for-after-the-merge-is-named", "if FOLD_TASK.search(rest) and POST_MERGE not in rest.lower()]", "if FOLD_TASK.search(rest)]"),
+    ("a-task-of-the-fold-loses-its-id", "TASK_ID.search(rest).group(0) if TASK_ID.search(rest) else rest.strip()[:60]", "rest.strip()[:60]"),
+    ("post-merge-mark-needs-its-case", "sum(1 for rest in boxes if POST_MERGE not in rest.lower() and", "sum(1 for rest in boxes if POST_MERGE not in rest and"),
     ("every-open-task-waits-for-the-merge", "    return sum(1 for rest in open_boxes(change) or [] if POST_MERGE in rest.lower())", "    return len(open_boxes(change) or [])"),
     ("prepare-does-not-say-what-waits", '    if waiting:\n        state["post_merge"] = waiting\n', ""),
     ("check-does-not-say-what-waits", '        if waiting:\n            self.notes.append("%s: %s for after the merge', '        if False:\n            self.notes.append("%s: %s for after the merge'),
@@ -497,6 +503,11 @@ SLICE_MUTANTS = [
     ("size-accept-ignores-the-slice", "return cmd_accept(cap, project, args.change, args.reason, slice_id)", "return cmd_accept(cap, project, args.change, args.reason)"),
     ("size-slice-on-any-command", '    if args.slice is not None and args.command not in ("measure", "accept"):', "    if False:"),
     ("size-slice-with-a-named-spec", "    if args.slice is not None and args.change is not None:", "    if False:"),
+    ("size-does-not-say-what-is-left-to-clarify", "    if left:\n        said +=", "    if False:\n        said +="),
+    ("size-counts-a-mark-inside-a-comment", 'return strip_comments(cap.read(change / cap.DOCS[0]) or "").count("[NEEDS CLARIFICATION")',
+     'return (cap.read(change / cap.DOCS[0]) or "").count("[NEEDS CLARIFICATION")'),
+    ("size-says-points-for-one-point", '"1 point is" if left == 1 else "%d points are" % left', '"%d points are" % left'),
+    ("size-forgets-how-many-are-left", '"accepted": accepted, "unclear": left, "summary": said}', '"accepted": accepted, "unclear": 0, "summary": said}'),
 ]
 # In capabilities.py, also checked with test_slices.py alone.
 SLICE_DOOR_MUTANTS = [
