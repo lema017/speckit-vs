@@ -87,6 +87,8 @@ _STATUS_WORDS = (
 )
 
 _CHECKBOX = re.compile(r"^\s*[-*+]\s*\[([ xX])\]\s*(.*)$")
+# A task with this mark can only be done after the merge: a deploy, production data. The capabilities extension reads it too.
+POST_MERGE = "[post-merge]"
 _LEADING_TAG = re.compile(r"^\[([^\]\n]{1,40})\]\s*")
 _TASK_ID = re.compile(r"^(?:\*\*)?(T\d+)(?:\*\*)?(?![\w-]|\.\d)\s*(?:[:.\-\u2013\u2014]\s+|:\s*)?")
 _BRACKETED_ID = re.compile(r"^T\d+$")
@@ -272,13 +274,14 @@ def parse_tasks(text):
         if current is None:
             current = open_phase(pending_name or "Tasks")
         parallel = any(tag.upper() == "P" for tag in tags)
-        others = [tag for tag in tags if tag.upper() != "P"]
+        others = [tag for tag in tags if tag.upper() != "P" and "[%s]" % tag.lower() != POST_MERGE]
         task = {
             "id": task_id,
             "checked": box.group(1) != " ",
             "parallel": parallel,
             "story": others[0] if others else None,
             "tags": others[1:],
+            "after_merge": POST_MERGE in box.group(2).lower(),
             "text": body,
             "line": number,
             "section": section,
@@ -641,14 +644,17 @@ def build_steps(root, directory, phases, events, spec):
     else:
         analyze = _step("analyze", "Analyze", "skipped", "no record")
 
+    # What waits for the merge is not what the step has left to do.
+    waiting = sum(1 for task in every if task.get("after_merge") and task["status"] != "done")
+    later = ", %d after the merge" % waiting if waiting else ""
     if not every:
         implement = _step("implement", "Implement", "pending", "not started")
-    elif done == len(every):
-        implement = _step("implement", "Implement", "done", "%d of %d" % (done, len(every)))
+    elif done + waiting == len(every):
+        implement = _step("implement", "Implement", "done", "%d of %d%s" % (done, len(every), later))
     elif started or "implement" in logged:
-        implement = _step("implement", "Implement", "active", "%d of %d" % (done, len(every)))
+        implement = _step("implement", "Implement", "active", "%d of %d%s" % (done, len(every), later))
     else:
-        implement = _step("implement", "Implement", "pending", "0 of %d" % len(every))
+        implement = _step("implement", "Implement", "pending", "0 of %d%s" % (len(every), later))
 
     if any("convergence" in phase["name"].lower() for phase in phases):
         converge = _step("converge", "Converge", "done", "added tasks")
@@ -1012,7 +1018,7 @@ _SLICE_MAP_MARK = re.compile(r"<!-- slice-map:v(\d+) -->")
 _SLICE_ID = re.compile(r"D-[a-z0-9]+(?:-[a-z0-9]+)*")
 _SLICE_FIELD = re.compile(r"^- ([A-Za-z-]+): (.*)$")
 _DELTA_MARK = "<!-- capability-delta:v1 -->"
-_DELTA_ENTRY = re.compile(r"^### (?:ADDED|MODIFIED|REMOVED|INFERRED|VALIDATED|DESIGNED|IMPLEMENTED) R-[a-z0-9-]+\s*$", re.M)
+_DELTA_ENTRY = re.compile(r"^### (?:ADDED|MODIFIED|REMOVED|INFERRED|VALIDATED|DESIGNED|IMPLEMENTED|REOBSERVED) R-[a-z0-9-]+\s*$", re.M)
 _CONFLICT_SIDE = re.compile(r"^(?:<{7}|>{7})(?: |$)", re.M)
 _HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
 
@@ -1104,7 +1110,7 @@ def spec_slice(directory):
         return declared, "delivered" if folded else "specified"
     delta = _section(spec, "Capability Delta") if spec.count(_DELTA_MARK) == 1 and len(re.findall(r"^## Capability Delta", spec, re.M)) == 1 else None
     changes_rules = bool(delta) and _DELTA_MARK in delta and bool(_DELTA_ENTRY.search(_HTML_COMMENT.sub("", delta)))
-    closed = not re.search(r"^\s*- \[ \]", tasks, re.M)
+    closed = not any(POST_MERGE not in rest.lower() for rest in re.findall(r"^\s*- \[ \](.*)$", tasks, re.M))
     return declared, "delivered" if closed and (folded or not changes_rules) else "building"
 
 

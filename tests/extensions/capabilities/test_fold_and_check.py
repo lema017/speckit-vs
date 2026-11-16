@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 
@@ -508,6 +509,34 @@ def test_open_tasks_stop_the_fold(repo):
     assert repo.tree() == before
 
 
+def test_a_task_for_after_the_merge_does_not_hold_the_fold(repo):
+    """A deploy or a change to production data can only be done once the change is merged: its box stays open, and marked."""
+    change = on_branch_reviewed(repo)
+    later = "- [ ] T002 [post-merge] Deploy the API\n- [ ] T003 [US1] [Post-Merge] Delete the old rows in production\n"
+    repo.write(change + "/tasks.md", "- [x] T001 done in src/auth/session.py\n" + later)
+    rc, out = repo.cap("prepare", "--change", change)
+    assert rc == 0 and out["status"] == "ready" and out["post_merge"] == 2, out
+    repo.folded(change, impl())
+    repo.commit("folded, with two tasks for after the merge")
+    rc, out = repo.cap("check", "--mode", "dev", "--base", "main", "--change", change)
+    assert rc == 0 and "%s: 2 open tasks for after the merge, marked [post-merge]" % change in out["notes"], out
+    assert not [note for note in out["notes"] if note.endswith("open tasks")]
+    rc, out = repo.ci()
+    assert rc == 0 and out["states"][change] == "ready", out
+    # One open task for after the merge, and one that is of the code: that one holds the fold.
+    repo.write(change + "/tasks.md", "- [ ] T001 change src/auth/session.py\n- [ ] T002 [post-merge] Deploy the API\n")
+    rc, out = repo.cap("prepare", "--change", change)
+    assert rc == 3 and out["status"] == "blocked" and out["reason"] == "1 open tasks", out
+    rc, out = repo.cap("check", "--mode", "dev", "--base", "main", "--change", change)
+    assert "%s: 1 open tasks" % change in out["notes"] and "%s: 1 open task for after the merge, marked [post-merge]" % change in out["notes"], out
+    # With none of them, nothing is said.
+    repo.write(change + "/tasks.md", "- [x] T001 done in src/auth/session.py\n")
+    rc, out = repo.cap("prepare", "--change", change)
+    assert "post_merge" not in out
+    rc, out = repo.cap("check", "--mode", "dev", "--base", "main", "--change", change)
+    assert not [note for note in out["notes"] if "after the merge" in note]
+
+
 def test_no_tasks_file_asks_for_an_explicit_flag(repo):
     change = on_branch_reviewed(repo)
     (repo.path / change / "tasks.md").unlink()
@@ -824,6 +853,73 @@ def test_a_missing_draft_directory_is_invalid(repo):
 # ---------------------------------------------------------------- exit codes and setup
 
 
+def with_a_remote(repo, tmp_path):
+    """main follows origin/main, as in a clone."""
+    origin = tmp_path / "origin.git"
+    repo.git("clone", "-q", "--bare", str(repo.path), str(origin))
+    repo.git("remote", "add", "origin", str(origin))
+    repo.git("fetch", "-q", "origin")
+    repo.git("branch", "-q", "--set-upstream-to=origin/main", "main")
+
+
+def test_a_base_that_fell_behind_its_remote_is_compared_at_the_remote(repo, tmp_path):
+    """The local main is an old picture of the base: what main took since would read as changed by this branch."""
+    with_a_remote(repo, tmp_path)
+    change = change_expiry(repo)
+    repo.git("push", "-q", "origin", "feat:main")
+    repo.git("fetch", "-q", "origin")
+    repo.checkout("-b", "next", "origin/main")
+    following = repo.feature("003-y", modified(frm=EXPIRY_15, to=EXPIRY_20))
+    repo.set_code(expiry=20)
+    repo.review(following)
+    repo.folded(following, impl(expiry="Expira a los 20 minutos."))
+    repo.commit("the next change")
+    rc, out = repo.cap("check", "--mode", "dev", "--base", "main")
+    assert rc == 0 and out["hard"] == [], out
+    assert "main is 1 commit behind origin/main: compared with origin/main; git fetch origin main:main brings it up to date" in out["notes"]
+    assert change not in out["states"] and following in out["states"], "main took the first one, on the remote: it is not of this branch"
+    # Named as the remote, or by its commit, nothing is behind anything.
+    for base in ("origin/main", repo.git("rev-parse", "origin/main").stdout.strip()):
+        rc, out = repo.cap("check", "--mode", "dev", "--base", base)
+        assert rc == 0 and not [note for note in out["notes"] if "behind" in note or "diverged" in note], out
+    # Two commits behind.
+    repo.git("push", "-q", "origin", "next:main")
+    repo.git("fetch", "-q", "origin")
+    rc, out = repo.cap("check", "--mode", "dev", "--base", "main")
+    assert rc == 0 and [note for note in out["notes"] if note.startswith("main is 2 commits behind origin/main: compared with origin/main")], out
+    # A branch that follows another local branch: there is nothing to fetch, and the note does not say to.
+    repo.git("branch", "-q", "-f", "old", "main")
+    repo.git("branch", "-q", "local/next", "next")
+    repo.git("branch", "-q", "--set-upstream-to=local/next", "old")
+    rc, out = repo.cap("check", "--mode", "dev", "--base", "old")
+    assert rc == 0 and "old is 2 commits behind local/next: compared with local/next" in out["notes"], out
+
+
+def test_a_base_that_went_its_own_way_is_compared_as_asked_and_said(repo, tmp_path):
+    with_a_remote(repo, tmp_path)
+    change_expiry(repo)
+    repo.git("push", "-q", "origin", "feat:main")
+    repo.git("fetch", "-q", "origin")
+    repo.checkout("main")
+    repo.write("src/other.py", "x = 2\n")
+    repo.commit("only here")
+    repo.checkout("feat")
+    rc, out = repo.cap("check", "--mode", "dev", "--base", "main")
+    assert rc == 0, out
+    assert "main and origin/main have diverged: compared with main, as asked, which lacks 1 commit of origin/main" in out["notes"]
+    assert not [note for note in out["notes"] if "compared with origin/main" in note]
+    # A base that is ahead of its remote, and not behind, is the newest there is.
+    repo.git("push", "-q", "origin", "feat:refs/heads/feat")
+    repo.git("branch", "-q", "--set-upstream-to=origin/feat", "feat")
+    repo.checkout("-b", "later")
+    repo.checkout("feat")
+    repo.write("src/other.py", "x = 3\n")
+    repo.commit("ahead of the remote")
+    repo.checkout("later")
+    rc, out = repo.cap("check", "--mode", "dev", "--base", "feat")
+    assert rc == 0 and not [note for note in out["notes"] if "behind" in note or "diverged" in note], out
+
+
 @pytest.mark.parametrize(
     "args",
     [
@@ -951,3 +1047,310 @@ def test_a_fold_publishes_under_the_fsync_rule_of_windows(repo, tmp_path, monkey
     monkeypatch.setattr(capabilities_conftest, "SCRIPT", under_strict_fsync(tmp_path, SCRIPT))
     repo.folded(change, impl())
     assert EXPIRY_15 in repo.read(SPEC)
+
+
+# ---------------------------------------------------------------- the index: what a capability covers, and where its code starts
+
+
+ROW = "| [login](login/spec.md) | %s | consolidated | %s |"
+COVERS = "Autenticación y sesión"
+ENTRY = "src/auth/session.py::SessionManager"
+OTHER_ENTRY = "src/other.py::x"
+
+
+def test_index_sets_what_a_capability_covers_and_its_overview_follows(repo):
+    assert ROW % (COVERS, "`%s`" % ENTRY) in repo.read(INDEX) and "## Overview\n%s\n" % COVERS in repo.read(SPEC)
+    rc, out = repo.cap("index", "--capability", "login", "--covers", "  Sesión y   bloqueo de la cuenta ")
+    assert rc == 0, out
+    assert sorted(out.pop("written")) == [INDEX, SPEC]
+    assert out == {"status": "updated", "capability": "login", "covers": "Sesión y bloqueo de la cuenta", "entry": ENTRY, "overview": "updated"}
+    assert ROW % ("Sesión y bloqueo de la cuenta", "`%s`" % ENTRY) in repo.read(INDEX)
+    assert "## Overview\nSesión y bloqueo de la cuenta\n" in repo.read(SPEC) and COVERS not in repo.read(SPEC)
+    rc, out = repo.cap("check")
+    assert rc == 0 and out["hard"] == [], out
+    before = repo.tree()
+    rc, out = repo.cap("index", "--capability", "login", "--covers", "Sesión y bloqueo de la cuenta")
+    assert rc == 0 and (out["status"], out["written"], out["overview"]) == ("unchanged", [], "kept") and repo.tree() == before
+    # An Overview a person wrote is theirs: it does not follow.
+    repo.replace(SPEC, "## Overview\nSesión y bloqueo de la cuenta\n", "## Overview\nTodo lo de entrar, contado a mano.\n")
+    rc, out = repo.cap("index", "--capability", "login", "--covers", "Entrar y salir")
+    assert rc == 0 and (out["overview"], out["written"]) == ("kept", [INDEX]), out
+    assert "Todo lo de entrar, contado a mano." in repo.read(SPEC) and ROW % ("Entrar y salir", "`%s`" % ENTRY) in repo.read(INDEX)
+
+
+def test_index_sets_the_entry_point_to_code_that_is_there(repo):
+    rc, out = repo.cap("index", "--capability", "login", "--entry", OTHER_ENTRY)
+    assert rc == 0 and (out["status"], out["entry"], out["covers"], out["written"]) == ("updated", OTHER_ENTRY, COVERS, [INDEX]), out
+    assert ROW % (COVERS, "`%s`" % OTHER_ENTRY) in repo.read(INDEX)
+    rc, out = repo.cap("index", "--capability", "login", "--entry", "`%s`" % ENTRY, "--covers", "Entrar")
+    assert rc == 0 and (out["entry"], out["covers"]) == (ENTRY, "Entrar") and ROW % ("Entrar", "`%s`" % ENTRY) in repo.read(INDEX)
+    for gone in ("src/auth/gone.py::SessionManager", "src/auth/session.py::NoSuchName"):
+        before = repo.tree()
+        rc, out = repo.cap("index", "--capability", "login", "--entry", gone)
+        assert rc == 2 and "the entry point does not exist: %s" % gone in out["errors"][0], out
+        assert repo.tree() == before
+    rc, out = repo.cap("index", "--capability", "login", "--entry", "none")
+    assert rc == 0 and out["entry"] == "none" and ROW % ("Entrar", "none") in repo.read(INDEX)
+
+
+@pytest.mark.parametrize(
+    "args, needle",
+    [
+        (("--capability", "login"), "index --capability takes --covers, --entry, or both"),
+        (("--capability", "Login", "--covers", "x"), "index --capability takes a name matching"),
+        (("--covers", "x"), "index --capability takes a name matching"),
+        (("--entry", ENTRY), "index --capability takes a name matching"),
+        (("--capability", "login", "--covers", "a | b"), "index takes --covers as one line of text without |"),
+        (("--capability", "login", "--covers", "   "), "index takes --covers as one line of text without |"),
+        (("--capability", "ghost", "--covers", "x"), "ghost has no row in index.md"),
+        (("--capability", "payments", "--covers", "x"), "payments has no row in index.md"),
+        (("--capability", "login", "--covers", "x", "--rebuild"), "index takes --rebuild or --capability, not both"),
+        ((), "index takes --rebuild, or --capability with --covers, --entry or both"),
+    ],
+)
+def test_index_refuses_what_it_cannot_set(repo, args, needle):
+    rc, out = repo.cap("scaffold", "--capability", "payments", "--covers", "Cobros")
+    assert rc == 0, out
+    before = repo.tree()
+    rc, out = repo.cap("index", *args)
+    assert rc == 2 and needle in out["errors"][0], out
+    assert repo.tree() == before
+
+
+def test_index_waits_for_an_interrupted_fold(repo):
+    repo.write(".specify/capabilities/journal", "{}")
+    before = repo.read(INDEX)
+    rc, out = repo.cap("index", "--capability", "login", "--covers", "Entrar")
+    assert (rc, out["status"]) == (4, "recover-needed") and repo.read(INDEX) == before
+
+
+def test_check_says_when_an_entry_point_names_nothing(repo):
+    """A retirement can take away the code an index row points to, and nothing else would say so."""
+    repo.checkout("-b", "feat")
+    assert repo.cap("index", "--capability", "login", "--entry", OTHER_ENTRY)[0] == 0
+    os.remove(str(repo.path / "src" / "other.py"))
+    repo.commit("the code of the entry point is gone")
+    message = "index.md: the entry point of login does not exist: %s; set it with capabilities.py index --capability login --entry <path::symbol>" % OTHER_ENTRY
+    rc, out = repo.cap("check", "--mode", "dev", "--base", "main")
+    assert rc == 0 and message in out["notes"], out
+    rc, out = repo.cap("check")
+    assert rc == 0 and message in out["notes"], "with no base to compare with, too"
+    rc, out = repo.ci()
+    assert rc == 1 and message in out["hard"], out
+    assert repo.cap("index", "--capability", "login", "--entry", ENTRY)[0] == 0
+    rc, out = repo.ci()
+    assert not [line for line in out["hard"] + out["notes"] if "entry point" in line], out
+    assert repo.cap("index", "--capability", "login", "--entry", "none")[0] == 0
+    rc, out = repo.ci()
+    assert not [line for line in out["hard"] + out["notes"] if "entry point" in line], "none is no promise"
+
+
+def test_a_fold_that_retires_rules_repairs_the_entry_point_and_asks_to_read_covers(repo):
+    assert repo.cap("index", "--capability", "login", "--entry", OTHER_ENTRY)[0] == 0
+    repo.commit("the entry point is in another file")
+    repo.checkout("-b", "rem")
+    change = repo.feature("002-rem", removed("R-lockout", LOCKOUT_5))
+    os.remove(str(repo.path / "src" / "other.py"))
+    repo.review(change)
+    out = repo.folded(change, impl(expiry="Expira a los 30 minutos.", with_lockout=False, retirement=retirement_block("R-lockout", change)))
+    assert out["entry_points"] == [{"capability": "login", "was": OTHER_ENTRY, "now": ENTRY}]
+    assert out["review_covers"] == [{"capability": "login", "covers": COVERS, "removed": 1, "left": 1}]
+    assert ROW % (COVERS, "`%s`" % ENTRY) in repo.read(INDEX)
+
+
+def test_a_fold_that_retires_nothing_leaves_the_index_row_as_it_is(repo):
+    assert repo.cap("index", "--capability", "login", "--entry", OTHER_ENTRY)[0] == 0
+    repo.commit("the entry point is in another file")
+    change = on_branch_reviewed(repo)
+    out = repo.folded(change, impl())
+    assert "entry_points" not in out and "review_covers" not in out, out
+    assert ROW % (COVERS, "`%s`" % OTHER_ENTRY) in repo.read(INDEX), "an entry point that is there is kept, whatever the first anchor is"
+
+
+def test_index_rebuild_replaces_an_entry_point_that_names_nothing(repo):
+    assert repo.cap("index", "--capability", "login", "--entry", OTHER_ENTRY)[0] == 0
+    rc, out = repo.cap("index", "--rebuild")
+    assert rc == 0 and out["status"] == "unchanged", "it is there: rebuilding keeps it"
+    os.remove(str(repo.path / "src" / "other.py"))
+    rc, out = repo.cap("index", "--rebuild")
+    assert rc == 0 and out["status"] == "rebuilt" and ROW % (COVERS, "`%s`" % ENTRY) in repo.read(INDEX), out
+
+
+# ---------------------------------------------------------------- REOBSERVED: the code of a rule moved, and what the rule says did not
+
+
+LOCKOUT_LINE = "- **R-lockout**: %s (specs/001-login)" % LOCKOUT_5
+MOVED_NOTE = "R-lockout: anchored code changed without a delta; if the rule still holds, declare REOBSERVED R-lockout and the fold looks at it again"
+
+
+def reobserved(rule="R-lockout", reason="El archivo cambió por otra regla; el bloqueo es el mismo.", capability="login", more=""):
+    return "### REOBSERVED %s\n- Capability: %s\n- Reason: %s\n%s" % (rule, capability, reason, more)
+
+
+def test_a_rule_whose_code_moved_is_observed_again_without_changing_it(repo):
+    """The expiry changes in the file the lockout is anchored to. The lockout still holds: the fold looks at it again, and nothing else."""
+    change = change_expiry(repo)
+    rc, out = repo.cap("check", "--mode", "dev", "--base", "main")
+    assert MOVED_NOTE in out["notes"], out
+    repo.write(change + "/spec.md", repo.read(change + "/spec.md").rstrip("\n") + "\n\n" + reobserved())
+    repo.review(change, "--accept")
+    spec_before = repo.read(SPEC)
+    repo.folded(change, impl(lockout="Bloquea al quinto intento, con LOCK_AT."))
+    repo.commit("the lockout, observed again")
+    assert repo.read(SPEC) == spec_before and LOCKOUT_LINE in spec_before, "its text, its origin and its marks are the ones it had"
+    assert "### R-lockout\n- Observed: Bloquea al quinto intento, con LOCK_AT.\n" in repo.read(IMPL)
+    assert "| %s | MODIFIED R-session-expiry; REOBSERVED R-lockout |" % change in repo.read(HISTORY)
+    lock = json.loads(repo.read(change + "/capability-delta.lock.json"))
+    assert sorted(lock["fold"]["anchors"]) == ["R-lockout", "R-session-expiry"]
+    rc, out = repo.cap("check", "--mode", "dev", "--base", "main")
+    assert rc == 0 and not [note for note in out["notes"] if "anchored code changed" in note], out
+    rc, out = repo.ci()
+    assert rc == 0 and out["states"][change] == "ready" and out["hard"] == [], out
+
+
+def test_a_change_can_do_nothing_but_observe_a_rule_again(repo):
+    """A rename, a comment: no requirement changes, and the record of what the code does is brought up to date."""
+    repo.checkout("-b", "feat")
+    change = repo.feature("002-x", reobserved())
+    repo.replace("src/auth/session.py", "Server-side sessions.", "Sessions kept on the server.")
+    out = repo.review(change)
+    assert out["status"] == "stamped", out
+    spec_before, index_before = repo.read(SPEC), repo.read(INDEX)
+    prepared = repo.prepare(change)
+    assert prepared["capabilities"] == ["login"]
+    repo.draft(prepared, impl(expiry="Expira a los 30 minutos.", lockout="Bloquea al quinto intento; la clase se describe de otro modo."))
+    rc, out = repo.cap("apply", "--change", change, "--staged", prepared["staging"])
+    assert rc == 0 and out["status"] == "published", out
+    assert repo.read(SPEC) == spec_before and repo.read(INDEX) == index_before
+    assert "la clase se describe de otro modo" in repo.read(IMPL)
+    assert "| %s | REOBSERVED R-lockout |" % change in repo.read(HISTORY)
+    rc, out = repo.cap("prepare", "--change", change)
+    assert rc == 0 and out["status"] == "unchanged", "the same code: there is nothing new to look at"
+    repo.commit("observed again")
+    rc, out = repo.ci()
+    assert rc == 0 and out["states"][change] == "ready" and out["hard"] == [], out
+    assert not [note for note in out["notes"] if "anchored code changed" in note and "R-lockout" in note]
+    # The code moves once more: the fold is asked for again.
+    repo.replace("src/auth/session.py", "Sessions kept on the server.", "Sessions, on the server.")
+    rc, out = repo.cap("prepare", "--change", change)
+    assert rc == 0 and out["status"] == "ready", out
+
+
+def test_observing_again_owes_the_evidence_of_any_other_rule(repo):
+    repo.checkout("-b", "feat")
+    change = repo.feature("002-x", reobserved())
+    repo.replace("src/auth/session.py", "Server-side sessions.", "Sessions kept on the server.")
+    repo.review(change)
+    repo.folded(change, impl(expiry="Expira a los 30 minutos."))
+    repo.commit("observed again")
+    rc, out = repo.ci(fail="test_lockout")
+    assert rc == 1 and hard_with(out, change, "R-lockout: mapped test %s failed" % TEST_LOCKOUT), out
+    repo.replace("src/auth/session.py", "Sessions kept on the server.", "Sessions, on the server.")
+    repo.commit("the code moved after the fold")
+    rc, out = repo.ci()
+    assert rc == 1 and hard_with(out, change, "R-lockout: observation is stale"), out
+
+
+def test_a_rule_observed_again_and_not_verified_is_not_ready(repo):
+    """Looking again is a claim about the code, like building the rule: it does not pass as unverified."""
+    repo.checkout("-b", "feat")
+    change = repo.feature("002-x", reobserved())
+    repo.replace("src/auth/session.py", "Server-side sessions.", "Sessions kept on the server.")
+    repo.review(change)
+    repo.folded(change, impl(expiry="Expira a los 30 minutos.", lockout="No se pudo leer.", lockout_state="unverified"))
+    repo.commit("looked at, and not verified")
+    rc, out = repo.ci()
+    assert rc == 1 and out["states"][change] != "ready" and hard_with(out, change, "R-lockout", "unverified"), out
+
+
+def test_observing_again_without_a_block_or_before_the_fold_is_not_ready(repo):
+    repo.checkout("-b", "feat")
+    change = repo.feature("002-x", reobserved())
+    repo.replace("src/auth/session.py", "Server-side sessions.", "Sessions kept on the server.")
+    repo.review(change)
+    repo.commit("declared, not folded")
+    rc, out = repo.ci()
+    assert rc == 1 and out["states"][change] != "ready" and hard_with(out, change, "R-lockout"), out
+    rc, out = repo.fold(change, impl(expiry="Expira a los 30 minutos.", with_lockout=False))
+    assert rc == 2 and out["errors"] == ["no Rule Status block for R-lockout"], out
+
+
+@pytest.mark.parametrize(
+    "entries, needle",
+    [
+        (reobserved(more="- From: %s\n" % LOCKOUT_5), "REOBSERVED R-lockout: takes no From; it changes no text, and a change of text is MODIFIED"),
+        (reobserved(more="- To: %s\n" % LOCKOUT_3), "REOBSERVED R-lockout: takes no To; it changes no text, and a change of text is MODIFIED"),
+        (reobserved(more="- Replaced-By: none\n"), "REOBSERVED R-lockout: takes no Replaced-By"),
+        ("### REOBSERVED R-lockout\n- Capability: login\n", "REOBSERVED R-lockout: missing reason"),
+        ("### REOBSERVED R-lockout\n- Reason: Porque sí.\n", "REOBSERVED R-lockout: missing capability"),
+        (reobserved(more="- Links: FR-999\n"), "REOBSERVED R-lockout: link FR-999 not found in the change"),
+        (reobserved() + "\n" + reobserved(), "REOBSERVED R-lockout: repeated rule"),
+        (modified() + "- Reason: Porque sí.\n", "MODIFIED R-session-expiry: takes no Reason; that is for REOBSERVED"),
+    ],
+)
+def test_a_reobservation_that_is_not_one_is_rejected(repo, entries, needle):
+    repo.checkout("-b", "feat")
+    change = repo.feature("002-x", entries)
+    rc, out = repo.cap("review", "--change", change)
+    assert rc == 2 and needle in " | ".join(out["errors"]), out
+
+
+def test_a_reobservation_takes_a_link_or_none(repo):
+    repo.checkout("-b", "feat")
+    for name, more in (("002-a", "- Links: FR-001\n"), ("003-b", "- Links: none\n"), ("004-c", "")):
+        change = repo.feature(name, reobserved(more=more))
+        assert repo.review(change)["status"] == "stamped"
+
+
+@pytest.mark.parametrize(
+    "rule, needle",
+    [
+        ("R-nothing", "REOBSERVED R-nothing: rule not found"),
+    ],
+)
+def test_a_rule_that_is_not_there_cannot_be_observed(repo, rule, needle):
+    repo.checkout("-b", "feat")
+    change = repo.feature("002-x", reobserved(rule))
+    rc, out = repo.cap("review", "--change", change)
+    assert rc == 3 and out["status"] == "conflict" and needle in out["conflicts"], out
+
+
+def test_a_retired_rule_cannot_be_observed_and_rebase_only_drops_it(repo):
+    """The branch observes the lockout again; meanwhile the base retired it."""
+    repo.checkout("-b", "feat")
+    change = repo.feature("002-x", reobserved())
+    repo.replace("src/auth/session.py", "Server-side sessions.", "Sessions kept on the server.")
+    repo.review(change)
+    repo.folded(change, impl(expiry="Expira a los 30 minutos."))
+    repo.commit("observed again")
+    repo.checkout("main")
+    repo.checkout("-b", "rem")
+    retire = repo.feature("003-rem", removed("R-lockout", LOCKOUT_5))
+    repo.review(retire)
+    repo.folded(retire, impl(expiry="Expira a los 30 minutos.", with_lockout=False, retirement=retirement_block("R-lockout", retire)))
+    repo.commit("retire the lockout")
+    repo.checkout("main")
+    repo.merge("rem")
+    repo.checkout("feat")
+    rc, out = repo.cap("check", "--mode", "dev", "--base", "main")
+    assert rc == 1 and hard_with(out, "REOBSERVED R-lockout: main has no built rule with this id; run capabilities.py rebase --change " + change), out
+    rc, out = repo.cap("rebase", "--change", change)
+    assert rc == 3 and out["conflicts"][0]["choices"] == ["drop"] and out["conflicts"][0]["spec"] is None, out
+    for choice in ("keep", "adopt"):
+        rc, out = repo.cap("rebase", "--change", change, "--" + choice, "R-lockout")
+        assert rc == 2, out
+    rc, out = repo.cap("rebase", "--change", change, "--drop", "R-lockout")
+    assert rc == 0 and out["status"] == "rebased", out
+    assert "Capabilities: none" in repo.read(change + "/spec.md") and "R-lockout**" not in repo.read(SPEC)
+
+
+def test_observing_a_rule_again_does_not_let_its_text_change(repo):
+    repo.checkout("-b", "feat")
+    change = repo.feature("002-x", reobserved())
+    repo.replace("src/auth/session.py", "Server-side sessions.", "Sessions kept on the server.")
+    repo.review(change)
+    repo.folded(change, impl(expiry="Expira a los 30 minutos."))
+    repo.replace(SPEC, LOCKOUT_5, LOCKOUT_3)
+    repo.commit("and the text, by hand")
+    rc, out = repo.ci()
+    assert rc == 1 and hard_with(out, "R-lockout", "catalog rule changed without an authorizing delta"), out

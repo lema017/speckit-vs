@@ -7,6 +7,10 @@ Not collected by pytest. Run it by hand from the repository root:
 Each mutant is one exact replacement in a temporary copy of the extension. A
 mutant that no test catches is a control nothing is really testing, so the run
 exits with 1.
+
+CAP_MUTANT_TESTS narrows the tests a run uses to the ones a pytest ``-k``
+expression selects, to try a few mutants quickly. A mutant that survives under
+it has to be run again without it.
 """
 
 from __future__ import annotations
@@ -100,8 +104,9 @@ MUTANTS = [
     # Phase 4: scaffold and locate.
     ("scaffold-without-lock", 'one line of text without |")\n    with publish_lock(root):', 'one line of text without |")\n    if True:'),
     ("scaffold-ignores-journal", 'with publish_lock(root):\n        if (root / JOURNAL).exists():\n            return emit({"status": "recover-needed"}, RECOVER)\n        text = read(root / INDEX) or', 'with publish_lock(root):\n        text = read(root / INDEX) or'),
-    ("scaffold-allows-pipe", 'if not covers or "|" in covers:', "if not covers:"),
-    ("scaffold-allows-any-name", "if not capability or not CAPABILITY.match(capability):", "if not capability:"),
+    ("scaffold-allows-pipe", '    if not covers or "|" in covers:\n        raise CapError("scaffold requires --covers', '    if not covers:\n        raise CapError("scaffold requires --covers'),
+    ("scaffold-allows-any-name", '    if not capability or not CAPABILITY.match(capability):\n        raise CapError("scaffold requires --capability', '    if not capability:\n        raise CapError("scaffold requires --capability'),
+    ("index-sets-any-name", '    if not capability or not CAPABILITY.match(capability):\n        raise CapError("index --capability takes a name', '    if not capability:\n        raise CapError("index --capability takes a name'),
     ("scaffold-repeats-row", 'if re.search(r"^\\| (?:\\[%s\\]\\S*|%s) \\|" % (name, name), text, re.M) or (root / CATALOG / capability).is_dir():', "if False:"),
     ("planned-row-left-behind", "text = text[:planned.start()] + text[planned.end():]", "pass"),
     ("status-hides-planned", '"planned": {name: covers for name, covers in planned if name not in capabilities},', '"planned": {},'),
@@ -135,8 +140,9 @@ def run_mutant(name, old, new, workdir, python, target="capabilities.py", module
     script.write_text(source.replace(old, new), encoding="utf-8")
     env = dict(os.environ, CAP_TEST_SCRIPT=str(copy / "scripts" / "python" / "capabilities.py"))
     tests = [str(ROOT / "tests" / "extensions" / "capabilities" / module) for module in modules or MODULES]
+    only = ["-k", os.environ["CAP_MUTANT_TESTS"]] if os.environ.get("CAP_MUTANT_TESTS") else []
     done = subprocess.run(
-        [python, "-m", "pytest", *tests, "--rootdir", str(ROOT), "-n", "8", "-x", "-q", "-p", "no:cacheprovider", "--tb=no"],
+        [python, "-m", "pytest", *tests, "--rootdir", str(ROOT), "-n", "8", "-x", "-q", "-p", "no:cacheprovider", "--tb=no", *only],
         cwd=str(ROOT), capture_output=True, encoding="utf-8", errors="replace", env=env,
     )
     failed = sorted(set(re.findall(r"^(?:FAILED|ERROR) \S*?::(\S+)", done.stdout, re.M)))
@@ -167,7 +173,7 @@ MUTANTS += [
     ("state-given-up-is-only-a-note", '(self.soft if touched & anchored else self.notes.append)(message)', "self.notes.append(message)"),
     ("state-recorded-always-blocks", '(self.soft if touched & anchored else self.notes.append)(message)', "self.soft(message)"),
     ("test-file-not-anchored", 'if not code_changed and not touched & {anchor_file(ref) for ref in row["tests"]}:', "if not code_changed:"),
-    ("anchors-not-rechecked", 'self.notes.append("%s: anchored code changed without a delta" % rule_id)\n                for ref in row["code"] + row["tests"]:', 'self.notes.append("%s: anchored code changed without a delta" % rule_id)\n                for ref in []:'),
+    ("anchors-not-rechecked", 'the fold looks at it again" % (rule_id, rule_id))\n                for ref in row["code"] + row["tests"]:', 'the fold looks at it again" % (rule_id, rule_id))\n                for ref in []:'),
     ("anchor-spelling", 'return posixpath.normpath(ref.split("::")[0])', 'return ref.split("::")[0]'),
     ("wrapped-field-skipped", "if line.strip() and (current is not None or new_capability):", "if False:"),
     ("comment-is-a-field", 're.sub(r"<!--.*?-->", "", raw, flags=re.S).splitlines()', "raw.splitlines()"),
@@ -189,7 +195,7 @@ MUTANTS += [
     ("spec-retires-designed", 'elif rule is not None and rule["text"] == entry["from"] and rule["designed"] and not designer:', "elif False:"),
     ("implemented-applied-while-designed", '        if rule["designed"] != (op == "DESIGNED"):\n            return False', "        pass"),
     ("base-designed-counts-as-delivered", ' and base_says["designed"] == (op == "DESIGNED")', ""),
-    ("implemented-owes-no-evidence", 'elif entry["op"] in ("ADDED", "MODIFIED", "IMPLEMENTED"):', 'elif entry["op"] in ("ADDED", "MODIFIED"):'),
+    ("implemented-owes-no-evidence", 'elif entry["op"] in ("ADDED", "MODIFIED", "IMPLEMENTED", "REOBSERVED"):', 'elif entry["op"] in ("ADDED", "MODIFIED", "REOBSERVED"):'),
     ("retiring-designed-needs-evidence", 'if entry["op"] == "DESIGNED" or (entry["op"] == "REMOVED" and self.was_designed(entry)):', 'if entry["op"] == "DESIGNED":'),
     ("spec-retires-designed-in-check", '                if entry["op"] == "REMOVED" and not design_capable(delta, source):', "                if False:"),
     ("provenance-ignores-designed", '                if rule["designed"] != (entry["op"] == "DESIGNED"):\n                    return "origin', '                if False:\n                    return "origin'),
@@ -221,7 +227,7 @@ MUTANTS += [
     ("rebase-leaves-dropped-files", "                plan[rel] = base(rel)\n", "                pass\n"),
     ("rebase-applies-an-unfolded-change", 'mine = [action for action in actions if action[0]["capability"] == capability] if folded else []', 'mine = [action for action in actions if action[0]["capability"] == capability]'),
     ("adopt-keeps-the-old-observation", 'block = re.sub(r"^- State: .*$", "- State: unverified", block, flags=re.M)', "block = block"),
-    ("keep-on-a-retired-rule", 'if said is not None and said["text"] != entry["to"]:', 'if said is None or said["text"] != entry["to"]:'),
+    ("keep-on-a-retired-rule", 'if said is not None and entry["op"] != "REOBSERVED" and said["text"] != entry["to"]:', 'if entry["op"] != "REOBSERVED" and (said is None or said["text"] != entry["to"]):'),
     ("rebase-does-not-reseal", '                plan[source + "/" + LOCK_NAME] = dumps(relocked(lock, new_text, new_delta, source, {entry["id"] for entry in dropped}))', "                pass"),
     ("rebase-loses-other-folds", '        if others:\n            raise CapError("this branch also folded', '        if False:\n            raise CapError("this branch also folded'),
     ("defer-leaves-the-catalog", "plan, conflicts = rebased_plan(root, source, new_delta, touched, start, here, start, True)", "plan, conflicts = {}, []"),
@@ -229,6 +235,56 @@ MUTANTS += [
 ]
 
 # The door to Graphify. Each one is checked with test_graph_gate.py alone.
+MUTANTS += [
+    # A base that fell behind its remote.
+    ("stale-base-not-followed", "        self.follow_upstream()\n", ""),
+    ("stale-base-kept-as-the-base", "            self.base = upstream\n", "            pass\n"),
+    ("diverged-base-followed", "        if behind and not ahead:\n            remote, _, branch", "        if behind:\n            remote, _, branch"),
+    ("a-base-ahead-of-its-remote-is-said-to-diverge", '        elif behind:\n            self.notes.append("%s and %s have diverged', '        else:\n            self.notes.append("%s and %s have diverged'),
+    ("fetch-advised-with-no-remote", ' if branch and git(self.root, "remote", "get-url", remote) else ""', ' if branch else ""'),
+    # A suite that did not load is not a test that is missing.
+    ("unloaded-suite-reads-as-missing", '        return "missing" if why is None else "did not run, its suite did not load: %s" % why', '        return "missing"'),
+    ("any-failed-test-of-the-file-is-its-suite", "broken = same_file(path, name) and same_file(path, file or classname or name)", "broken = same_file(path, file or classname or name)"),
+    ("a-collection-error-explains-any-test", 'broken = name == module or module.endswith("." + name) or name.endswith("." + module)', "broken = True"),
+    ("any-failed-step-of-the-class-is-its-suite", "broken = name in SUITE_STEPS and (", "broken = ("),
+    ("a-step-that-passed-stops-the-suite", "        if passed:\n            continue\n        if path.endswith(SCRIPT_TESTS):", "        if path.endswith(SCRIPT_TESTS):"),
+    ("the-reason-pytest-gives-is-lost", 'marked = [line[1:] for line in (child.text or "").splitlines() if line.startswith("E ")]', "marked = []"),
+    # Tasks that come after the fold.
+    ("post-merge-tasks-hold-the-fold", "    return None if boxes is None else sum(1 for rest in boxes if POST_MERGE not in rest.lower())", "    return None if boxes is None else len(boxes)"),
+    ("post-merge-mark-needs-its-case", "sum(1 for rest in boxes if POST_MERGE not in rest.lower())", "sum(1 for rest in boxes if POST_MERGE not in rest)"),
+    ("every-open-task-waits-for-the-merge", "    return sum(1 for rest in open_boxes(change) or [] if POST_MERGE in rest.lower())", "    return len(open_boxes(change) or [])"),
+    ("prepare-does-not-say-what-waits", '    if waiting:\n        state["post_merge"] = waiting\n', ""),
+    ("check-does-not-say-what-waits", '        if waiting:\n            self.notes.append("%s: %s for after the merge', '        if False:\n            self.notes.append("%s: %s for after the merge'),
+    # The index: what a capability covers, and where its code starts.
+    ("dead-entry-point-not-said", '            if entry not in ("", "none") and not live_entry(self.root, entry):\n                self.soft(', '            if False:\n                self.soft('),
+    ("dead-entry-point-is-only-a-note", '                self.soft("index.md: the entry point of %s does not exist', '                self.notes.append("index.md: the entry point of %s does not exist'),
+    ("fold-keeps-a-dead-entry-point", '        if root is not None and not live_entry(root, kept):\n            kept = "none"\n', ""),
+    ("fold-replaces-a-live-entry-point", "        if root is not None and not live_entry(root, kept):", "        if root is not None:"),
+    ("rebuild-keeps-a-dead-entry-point", 'kept = cells[3] if linked and len(cells) > 3 and live_entry(root, cells[3]) else "none"', 'kept = cells[3] if linked and len(cells) > 3 else "none"'),
+    ("fold-does-not-say-it-replaced-an-entry-point", '    if replaced:\n        out["entry_points"] = replaced\n', ""),
+    ("fold-does-not-ask-to-read-covers", '    if review:\n        out["review_covers"] = review\n', ""),
+    ("covers-read-again-after-any-fold", '        if what == "apply" and entry["op"] == "REMOVED":\n            removed[entry["capability"]]', '        if what == "apply":\n            removed[entry["capability"]]'),
+    ("index-sets-an-entry-point-that-is-not-there", '        if entry != "none" and not anchor_resolves(root, entry):\n            raise CapError("the entry point does not exist', '        if False:\n            raise CapError("the entry point does not exist'),
+    ("index-takes-covers-with-a-pipe", '        if not covers or "|" in covers:\n            raise CapError("index takes --covers', '        if not covers:\n            raise CapError("index takes --covers'),
+    ("index-takes-empty-covers", '        if not covers or "|" in covers:\n            raise CapError("index takes --covers', '        if "|" in covers:\n            raise CapError("index takes --covers'),
+    ("index-set-ignores-the-journal", '            return emit({"status": "recover-needed"}, RECOVER)\n        lines = (read(root / INDEX) or "").split("\\n")', '            pass\n        lines = (read(root / INDEX) or "").split("\\n")'),
+    ("overview-follows-any-covers", "new_covers != old_covers and overview_of(spec) == old_covers", "new_covers != old_covers"),
+    ("overview-never-follows", "        if spec is not None and new_covers != old_covers and overview_of(spec) == old_covers:", "        if False:"),
+    ("index-set-and-rebuild-at-once", '            if args.rebuild:\n                raise CapError("index takes --rebuild or --capability, not both")\n', ""),
+    # REOBSERVED: the code of a rule moved, and what the rule says did not.
+    ("reobserved-takes-a-text", '            for key in ("from", "to", "replaced-by"):\n                if entry.get(key):', "            for key in ():\n                if entry.get(key):"),
+    ("reobserved-without-a-reason", '("capability", "reason") if entry["op"] == "REOBSERVED" else', '("capability",) if entry["op"] == "REOBSERVED" else'),
+    ("any-entry-takes-a-reason", '        elif entry.get("reason"):\n            errors.append(where + ": takes no Reason', '        elif False:\n            errors.append(where + ": takes no Reason'),
+    ("reobserved-has-to-link", 'if link not in allowed_links and not (entry["op"] == "REOBSERVED" and link == "none"):', "if link not in allowed_links:"),
+    ("reobserved-links-to-nothing-by-itself", '            entry.setdefault("links", "none")\n', "            pass\n"),
+    ("reobserved-of-a-designed-rule", '            elif rule["designed"]:\n                conflicts.append(where + ": the rule is [designed], so no code', '            elif False:\n                conflicts.append(where + ": the rule is [designed], so no code'),
+    ("reobserved-owes-no-evidence", '("ADDED", "MODIFIED", "IMPLEMENTED", "REOBSERVED")', '("ADDED", "MODIFIED", "IMPLEMENTED")'),
+    ("reobserved-lets-the-text-change", 'or entry["capability"] != capability or entry["op"] == "REOBSERVED":', 'or entry["capability"] != capability:'),
+    ("the-base-need-not-have-the-rule", '            if base_says is None or base_says["designed"]:\n                self.hard.append("REOBSERVED %s: %s has no built rule', '            if False:\n                self.hard.append("REOBSERVED %s: %s has no built rule'),
+    ("reobserved-counts-as-applied-on-a-designed-rule", '            return rule is not None and not rule["designed"]', "            return rule is not None"),
+    ("the-note-does-not-say-the-way-out", '; if the rule still holds, declare REOBSERVED %s and the fold looks at it again" % (rule_id, rule_id))', '" % rule_id)'),
+]
+
 GATE_MUTANTS = [
     ("gate-leaks-the-environment", "env=graph_env()", "env=dict(os.environ, **graph_env())"),
     ("gate-backend-left-on", 'env["GRAPHIFY_BACKEND"] = "none"\n', "pass\n"),
@@ -401,7 +457,8 @@ SLICE_MUTANTS = [
     # The size of a spec.
     ("size-stories-not-counted", '"stories": len(STORY.findall(plain)),', '"stories": 1,'),
     ("size-criteria-counted-as-requirements", 'sum(1 for key in ids if key.startswith("FR-")),', 'sum(1 for key in ids if key.startswith(("FR-", "SC-"))),'),
-    ("size-rules-not-counted", '"rules": len(delta["entries"]) if delta else 0,', '"rules": 0,'),
+    ("size-rules-not-counted", 'len([entry for entry in delta["entries"] if entry["op"] != "REOBSERVED"]) if delta else 0', "0"),
+    ("size-counts-a-rule-observed-again", 'len([entry for entry in delta["entries"] if entry["op"] != "REOBSERVED"]) if delta else 0', 'len(delta["entries"]) if delta else 0'),
     ("size-only-open-tasks-count", 'TASK = re.compile(r"^\\s*- \\[[ xX]\\] ", re.M)', 'TASK = re.compile(r"^\\s*- \\[ \\] ", re.M)'),
     ("size-any-bullet-is-a-task", 'TASK = re.compile(r"^\\s*- \\[[ xX]\\] ", re.M)', 'TASK = re.compile(r"^\\s*- ", re.M)'),
     ("size-comments-are-counted", "    plain = strip_comments(text)\n    ids = cap.spec_sections(plain)", "    plain = text\n    ids = cap.spec_sections(plain)"),

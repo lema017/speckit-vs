@@ -634,6 +634,59 @@ def test_agent_rule_template_has_one_pair_of_markers_and_points_to_the_catalog()
     assert "Speak and write to the person in that language in every command, whatever language the command is written in." in text
 
 
+def command_text(name):
+    return (EXT_DIR / "commands" / ("speckit.capabilities.%s.md" % name)).read_text(encoding="utf-8")
+
+
+def test_fold_command_marks_what_comes_after_the_fold_only_with_a_yes():
+    text = command_text("fold")
+    assert "Such a task carries `[post-merge]` after its id: `- [ ] T034 [post-merge] Deploy the API`." in text
+    assert "It stays open, and it holds neither the fold nor the check." in text
+    assert "name them and ask the person. With their yes, write the mark on each one in `tasks.md` and run `prepare` again." in text
+    assert "Never mark a task of code or of tests, and never take the box away." in text
+    assert "touch `specs/NNN-*` beyond the `[post-merge]` mark of step 1" in text
+    assert "`[post-merge]` after its id in `tasks.md`" in (EXT_DIR / "templates" / "capability-agent-rule.md").read_text(encoding="utf-8")
+
+
+def test_fold_command_observes_a_rule_again_without_changing_it():
+    text = command_text("fold")
+    assert "For each rule in the delta except `REMOVED`, `IMPLEMENTED` and `REOBSERVED` included" in text
+    assert "A `REOBSERVED` rule keeps its text: its code moved, and what it says did not." in text
+    assert "write `discrepant` and say so: that is a change of rule for the person to decide, with `MODIFIED`" in text
+    review = command_text("review")
+    assert "is `REOBSERVED`: `- Capability:` and `- Reason: <what moved, and why the rule still holds>`, with no `From` and no `To`" in review
+    assert "It is not a way to change a rule." in review
+    template = (EXT_DIR / "templates" / "spec-template.md").read_text(encoding="utf-8")
+    assert "### REOBSERVED R-session-expiry\n    - Capability: login\n    - Reason: <what moved, and why the rule still holds>" in template
+    assert "It takes no From and no To." in template
+
+
+def test_fold_command_reads_the_index_again_after_a_retirement():
+    text = command_text("fold")
+    assert "`entry_points`: the entry point of a capability named code that is gone" in text
+    assert "`{SCRIPT} index --capability <name> --entry <path::symbol>` sets another one." in text
+    assert "`review_covers`: the fold took rules from a capability." in text
+    assert 'propose a new line to the person. With their yes, run `{SCRIPT} index --capability <name> --covers "<the line>"`' in text
+    assert "Edit `spec.md`, `history.md` or `index.md` under the catalog by hand" in text
+
+
+def test_check_command_says_what_to_do_with_each_line_the_script_writes():
+    text = command_text("check")
+    script = (EXT_DIR / "scripts" / "python" / "capabilities.py").read_text(encoding="utf-8")
+    for said, written in (
+        ("anchored code changed without a delta", "anchored code changed without a delta"),
+        ("index.md: the entry point of <capability> does not exist", "index.md: the entry point of %s does not exist"),
+        ("commits behind <remote>: compared with <remote>", "behind %s: compared with %s"),
+        ("did not run, its suite did not load", "did not run, its suite did not load"),
+        ("open tasks for after the merge, marked [post-merge]", "for after the merge, marked %s"),
+    ):
+        assert said in text and written in script, said
+    assert "add `### REOBSERVED <rule>` to the delta of the change that moved the code" in text
+    assert "If the behaviour changed, that is `MODIFIED`, and the person decides it" in text
+    assert "`{SCRIPT} index --capability <capability> --entry <path::symbol>`" in text
+    assert "Do not fix anything from this command." in text
+
+
 def test_readme_states_the_limit_of_the_block_and_of_inferred_rules():
     text = (EXT_DIR / "README.md").read_text(encoding="utf-8")
     assert "this is an instruction an agent can ignore" in text

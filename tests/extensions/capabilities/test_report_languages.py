@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,11 @@ SERVICE = JAVA + "SessionServiceTest.java"
 BROKEN = JAVA + "BrokenRuleTest.java"
 CONTROLLER = JAVA + "SessionControllerTest.java"
 TS = "src/auth/session.test.ts"
+BROKEN_TS = "src/auth/broken.test.ts"
+BROKEN_PY = "tests/auth/test_thumbnails.py"
+UNLOADED_TS = ("did not run, its suite did not load: Failed to load url no-such-native-module (resolved id: no-such-native-module) "
+               "in /project/src/auth/broken.test.ts. Does the file exist?")
+UNLOADED_PY = "did not run, its suite did not load: ModuleNotFoundError: No module named 'no_such_native_module'"
 SOURCES = {SERVICE: "SessionServiceTest.java", BROKEN: "BrokenRuleTest.java", CONTROLLER: "SessionControllerTest.java"}
 
 
@@ -78,6 +84,14 @@ SCRIPT_CASES = [
         *[("vitest", ref, expected) for ref, expected in SCRIPT_CASES],
         ("jest-defaults", TS + "::the limit is 15", "missing"),
         ("jest-defaults", TS + "::this one fails", "missing"),
+        ("vitest-unloaded", BROKEN_TS + "::Thumbnails::keeps the ratio", UNLOADED_TS),
+        ("vitest-unloaded", BROKEN_TS + "::no such test", UNLOADED_TS),
+        ("vitest-unloaded", TS + "::SessionManager::expires after 15 minutes", "passed"),
+        ("vitest-unloaded", TS + "::SessionManager::nothing here", "missing"),
+        ("vitest-unloaded", "src/auth/other.test.ts::Thumbnails::keeps the ratio", "missing"),
+        ("pytest-unloaded", BROKEN_PY + "::test_keeps_the_ratio", UNLOADED_PY),
+        ("pytest-unloaded", "tests/auth/test_other.py::test_keeps_the_ratio", "missing"),
+        ("pytest-unloaded", "tests/test_thumbnails.py::test_keeps_the_ratio", "missing"),
     ],
 )
 def test_references_map_to_real_reports(runner, ref, expected):
@@ -114,8 +128,24 @@ def test_a_title_as_the_file_writes_it(title, name, expected):
 def test_a_title_with_nothing_but_placeholders_names_no_test(ref):
     """It would match every test of the file, and a report with another test would pass it."""
     module = script_module()
-    cases = [("a block other", "src/x.test.ts", True, ""), ("other", "a.XTest", True, "")]
+    cases = [("a block other", "src/x.test.ts", True, "", ""), ("other", "a.XTest", True, "", "")]
     assert module.test_result(ref, cases) == "missing"
+
+
+@pytest.mark.parametrize("step", ["initializationError", "classMethod", "executionError"])
+def test_a_class_that_could_not_start_is_a_suite_that_did_not_load(step):
+    """Not from a real run: the names JUnit 4 and Gradle give the step of a class that ran none of its tests."""
+    module = script_module()
+    cases = [(step, "com.example.auth.SessionServiceTest", False, "", "No runnable methods"), ("other", "com.example.auth.OtherTest", True, "", "")]
+    assert module.test_result(SERVICE + "::timeoutIsFifteenMinutes", cases) == "did not run, its suite did not load: No runnable methods"
+    assert module.test_result(CONTROLLER + "::sixteenIdleMinutesAreExpired", cases) == "missing", "another class"
+    failed = [("timeoutIsFifteenMinutes", "com.example.auth.SessionServiceTest", False, "", "expected 15")]
+    assert module.test_result(SERVICE + "::timeoutIsFifteenMinutes", failed) == "failed", "a test that ran and failed is not a suite that did not load"
+    assert module.test_result(SERVICE + "::expiresAfterTheLimit", failed) == "missing", "nor does it explain a test that is not there"
+    silent = [(step, "com.example.auth.SessionServiceTest", False, "", "")]
+    assert module.test_result(SERVICE + "::timeoutIsFifteenMinutes", silent) == "did not run, its suite did not load: the report gives no reason"
+    passed = [(step, "com.example.auth.SessionServiceTest", True, "", "")]
+    assert module.test_result(SERVICE + "::timeoutIsFifteenMinutes", passed) == "missing", "a step that passed stopped nothing"
 
 
 def test_a_template_literal_matches_as_one_placeholder():
@@ -190,6 +220,26 @@ def test_a_skipped_failed_or_absent_junit_test_blocks(repo, ref, needle):
     rc, out = repo.cap("check", "--mode", "ci", "--base", "main", "--report", repo.junit(), copy_report(repo, "surefire", "target/surefire-reports"))
     assert rc == 1
     assert hard_with(out, "mapped test %s %s" % (ref, needle))
+
+
+def test_a_suite_that_did_not_load_blocks_and_says_why(repo):
+    """The test is in the file, and the runner could not load the file: that is not a test that is missing."""
+    ref = BROKEN_TS + "::Thumbnails::keeps the ratio"
+    repo.checkout("-b", "feat")
+    repo.write(BROKEN_TS, (REPORTS / "sources" / "broken.test.ts").read_text(encoding="utf-8"))
+    change = repo.feature("002-x", modified())
+    repo.set_code(expiry=15)
+    repo.review(change)
+    repo.folded(change, impl(expiry_tests=ref))
+    repo.commit("mapped to a suite that does not load")
+    # The report of a run made now: Vitest writes the time with its zone, and a report older than the commit is no evidence.
+    written = (REPORTS / "vitest-unloaded" / "junit.xml").read_text(encoding="utf-8")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    repo.write("reports/junit.xml", re.sub(r'timestamp="[^"]*"', 'timestamp="%s"' % now, written))
+    rc, out = repo.cap("check", "--mode", "ci", "--base", "main", "--report", repo.junit(), "reports")
+    assert rc == 1
+    assert hard_with(out, "R-session-expiry: mapped test %s %s" % (ref, UNLOADED_TS))
+    assert not hard_with(out, "missing") and not hard_with(out, "older than")
 
 
 def test_gradle_loses_the_method_of_a_parametrized_test_and_that_blocks(repo):

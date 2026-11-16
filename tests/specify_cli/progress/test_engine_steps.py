@@ -273,6 +273,18 @@ def test_implemented(engine, project):
     assert step(data, "implement")["state"] == "done"
 
 
+def test_what_waits_for_the_merge_is_not_what_implement_has_left(engine, project):
+    data = build(engine, project, project.feature("001-a", tasks="- [x] T001 A\n- [ ] T002 [post-merge] Deploy\n- [ ] T003 [post-merge] Delete the rows\n"))
+    assert (step(data, "implement")["state"], step(data, "implement")["fact"]) == ("done", "1 of 3, 2 after the merge")
+    assert [task["after_merge"] for phase in data["phases"] for task in phase["tasks"]] == [False, True, True]
+    data = build(engine, project, project.feature("002-b", tasks="- [x] T001 A\n- [ ] T002 B\n- [ ] T003 [post-merge] Deploy\n"))
+    assert (step(data, "implement")["state"], step(data, "implement")["fact"]) == ("active", "1 of 3, 1 after the merge")
+    data = build(engine, project, project.feature("003-c", tasks="- [ ] T001 A\n- [ ] T002 [post-merge] Deploy\n"))
+    assert (step(data, "implement")["state"], step(data, "implement")["fact"]) == ("pending", "0 of 2, 1 after the merge")
+    data = build(engine, project, project.feature("004-d", tasks="- [x] T001 A\n- [x] T002 [post-merge] Deploy\n"))
+    assert (step(data, "implement")["state"], step(data, "implement")["fact"]) == ("done", "2 of 2"), "done after the merge: nothing waits"
+
+
 def test_analyze_leaves_no_file_so_only_the_log_can_tell(engine, project):
     assert step(build(engine, project, project.feature()), "analyze")["state"] == "skipped"
 

@@ -28,6 +28,18 @@ def test_reads_every_part_of_a_task_line(engine):
     assert task["line"] == 1
 
 
+def test_a_task_for_after_the_merge_says_so_and_its_mark_is_no_story(engine):
+    """A deploy or a change to production data: it can only be done once the change is merged."""
+    task = only_task(engine, "- [ ] T033 [post-merge] Deploy the API")
+    assert (task["after_merge"], task["story"], task["tags"], task["text"]) == (True, None, [], "Deploy the API")
+    task = only_task(engine, "- [ ] T034 [P] [US4] [Post-Merge] Delete the old rows")
+    assert (task["after_merge"], task["parallel"], task["story"], task["tags"]) == (True, True, "US4", [])
+    task = only_task(engine, "- [ ] T035 Check the deploy in production [post-merge]")
+    assert task["after_merge"] is True, "wherever the line has it"
+    task = only_task(engine, "- [ ] T012 [P] [US2] Add the form in src/form.py")
+    assert task["after_merge"] is False
+
+
 @pytest.mark.parametrize("mark", ["x", "X"])
 def test_either_case_of_x_means_checked(engine, mark):
     assert only_task(engine, "- [%s] T001 Done" % mark)["checked"] is True

@@ -793,7 +793,8 @@ def test_a_value_the_mapped_tests_do_not_pin_changes_with_only_a_notice(repo):
     repo.commit("back to another value, with no delta")
     rc, out = repo.ci()
     assert rc == 0 and out["hard"] == [], out
-    assert "R-session-expiry: anchored code changed without a delta" in out["notes"]
+    assert ("R-session-expiry: anchored code changed without a delta; if the rule still holds, declare REOBSERVED R-session-expiry and the fold looks at it again"
+            in out["notes"])
 
 
 # ---------------------------------------------------------------- locate

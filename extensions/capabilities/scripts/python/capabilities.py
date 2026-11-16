@@ -56,7 +56,7 @@ CATALOG_FORMAT = 2
 FORMAT_SEAL = "<!-- capability-catalog: %d -->" % CATALOG_FORMAT
 FORMAT_LINE = re.compile(r"<!-- capability-catalog: (\d+) -->")
 RULE = re.compile(r"^- \*\*(R-[a-z0-9-]+)\*\*( \[(?:inferred|designed)\])?: (.*?)(?: \(([^()]*/[^()]*)\))?\s*$")
-ENTRY = re.compile(r"^### (ADDED|MODIFIED|REMOVED|INFERRED|VALIDATED|DESIGNED|IMPLEMENTED) (R-[a-z0-9-]+)\s*$")
+ENTRY = re.compile(r"^### (ADDED|MODIFIED|REMOVED|INFERRED|VALIDATED|DESIGNED|IMPLEMENTED|REOBSERVED) (R-[a-z0-9-]+)\s*$")
 # What a design record may declare, besides NEW-CAPABILITY. Only a record under _changes/ declares DESIGNED.
 DESIGN_OPS = {"DESIGNED", "REMOVED"}
 # Git's conflict markers. ======= alone is not one: Markdown underlines a heading with it, and git never writes it alone.
@@ -66,12 +66,17 @@ BLOCK_FIELD = re.compile(r"^- (Observed|State|Code|Tests|Change): (.*)$")
 FR_LINE = re.compile(r"^\s*- \*\*FR-\d+\*\*", re.M)
 CAPABILITY = re.compile(r"^[a-z][a-z0-9-]*$")
 RECORD = re.compile(r"^\d{8}-[a-z0-9][a-z0-9-]*$")
-FIELDS = {"capability", "from", "to", "links", "replaced-by"}
+FIELDS = {"capability", "from", "to", "links", "replaced-by", "reason"}
 STATES = {"conforming", "discrepant", "unverified"}
 CATALOG_SECTIONS = {"Overview", "Rules", "Related Capabilities"}
 FORBIDDEN_NAMES = {"plan.md", "tasks.md", "README.md"}
 REPORT_SKEW_SECONDS = 300
 SCRIPT_TESTS = (".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts")
+# What JUnit and Gradle call a class that could not start: it ran none of its tests.
+SUITE_STEPS = ("initializationError", "classMethod", "executionError")
+# A task with this mark can only be done after the merge, so it holds neither the fold nor the check.
+POST_MERGE = "[post-merge]"
+OPEN_TASK = re.compile(r"^\s*- \[ \](.*)$", re.M)
 TITLE_SLOT = re.compile(r"%[a-zA-Z#]|\$\{[^{}]*\}|\$[A-Za-z_][\w.]*|\{[^{}]*\}")
 DEFAULTS = {"feature_roots": "specs", "allow_manual_evidence": "false", "allow_partial_features": "false", "base_branch": ""}
 GITIGNORE_LINE = ".specify/capabilities/"
@@ -157,6 +162,10 @@ def git(root, *args):
 
 def git_names(root, *args):
     return [name for name in (git(root, *args) or "").split("\0") if name]
+
+
+def plural(number, noun):
+    return "%d %s%s" % (number, noun, "" if number == 1 else "s")
 
 
 def emit(obj, code=OK):
@@ -464,6 +473,10 @@ def parse_delta(text, source=None):
                 errors.append("%s %s: unknown field %s" % (current["op"], current["id"], match.group(1)))
         elif new_capability and key == "covers":
             delta["new"][new_capability] = value
+    for entry in delta["entries"]:
+        if entry["op"] == "REOBSERVED":
+            # No requirement asks for it: the code of the rule moved, and what the rule says did not.
+            entry.setdefault("links", "none")
     errors.extend(delta_errors(delta, set(spec_sections(text))))
     if source is not None:
         errors.extend(placement_errors(delta, source))
@@ -507,9 +520,15 @@ def delta_errors(delta, known):
         if entry["id"] in seen:
             errors.append(where + ": repeated rule")
         seen.add(entry["id"])
-        for key in ("capability", "from", "to", "links"):
+        for key in ("capability", "reason") if entry["op"] == "REOBSERVED" else ("capability", "from", "to", "links"):
             if not entry.get(key):
                 errors.append("%s: missing %s" % (where, key))
+        if entry["op"] == "REOBSERVED":
+            for key in ("from", "to", "replaced-by"):
+                if entry.get(key):
+                    errors.append("%s: takes no %s; it changes no text, and a change of text is MODIFIED" % (where, key.title()))
+        elif entry.get("reason"):
+            errors.append(where + ": takes no Reason; that is for REOBSERVED")
         if entry.get("capability") and not CAPABILITY.match(entry["capability"]):
             errors.append("%s: invalid capability name %s" % (where, entry["capability"]))
         if entry["op"] in ("ADDED", "INFERRED") and entry.get("from") != "(none)":
@@ -534,7 +553,7 @@ def delta_errors(delta, known):
             elif entry.get("from") == entry.get("to"):
                 errors.append(where + ": From equals To")
         for link in split_links(entry.get("links")):
-            if link not in allowed_links:
+            if link not in allowed_links and not (entry["op"] == "REOBSERVED" and link == "none"):
                 errors.append("%s: link %s not found in the change" % (where, link))
     used = {entry.get("capability") for entry in delta["entries"]}
     for capability, covers in delta["new"].items():
@@ -686,9 +705,21 @@ def cap_rel(capability, name):
     return "%s/%s/%s" % (CATALOG, capability, name)
 
 
-def open_tasks(change):
+def open_boxes(change):
+    """What follows each open box of tasks.md. None when there is no tasks.md."""
     text = read(change / "tasks.md")
-    return None if text is None else len(re.findall(r"^\s*- \[ \]", text, re.M))
+    return None if text is None else OPEN_TASK.findall(text)
+
+
+def open_tasks(change):
+    """The open tasks that hold a change back. One marked [post-merge] does not: it can only be done once the change is merged."""
+    boxes = open_boxes(change)
+    return None if boxes is None else sum(1 for rest in boxes if POST_MERGE not in rest.lower())
+
+
+def waiting_tasks(change):
+    """The open tasks that wait for the merge: a deploy, a change to production data, a check in production."""
+    return sum(1 for rest in open_boxes(change) or [] if POST_MERGE in rest.lower())
 
 
 def lock_path(change):
@@ -743,6 +774,14 @@ def classify(root, delta, source, get=None):
                 actions.append((entry, "done"))
             else:
                 conflicts.append(where + ": the rule is not [designed]; a spec changes an implemented rule with MODIFIED")
+        elif entry["op"] == "REOBSERVED":
+            # Nothing to write in spec.md: the fold only looks at the code of the rule again.
+            if rule is None:
+                conflicts.append(where + (": retired by %s" % retired[entry["id"]]["by"] if gone else ": rule not found"))
+            elif rule["designed"]:
+                conflicts.append(where + ": the rule is [designed], so no code is there to observe; a spec builds it with IMPLEMENTED")
+            else:
+                actions.append((entry, "done"))
         elif rule is not None and rule["designed"] and entry["op"] in ("ADDED", "INFERRED", "VALIDATED"):
             conflicts.append(where + ": the rule is [designed]; a spec builds it with IMPLEMENTED")
         elif entry["op"] in ("ADDED", "INFERRED"):
@@ -931,6 +970,9 @@ def prepare_state(root, change, no_tasks=False):
         "input_digest": digest,
         "token": base_token(root, change, delta, scope),
     }
+    waiting = waiting_tasks(change)
+    if waiting:
+        state["post_merge"] = waiting
     finished = all(action[1] == "done" for action in actions)
     state["status"] = "unchanged" if finished and (lock.get("fold") or {}).get("input_digest") == digest else "ready"
     return state, (delta, text, actions), OK
@@ -1128,11 +1170,12 @@ def rewrite_history(text, capability, actions, source):
     return text
 
 
-def rewrite_index(text, delta, statuses, specs=None, histories=None, capabilities=None):
+def rewrite_index(text, delta, statuses, specs=None, histories=None, capabilities=None, root=None):
     """One row for each capability of the delta, with its state recalculated (2.1).
 
-    A row keeps its entry point; one that has none takes the first code anchor. ``specs`` and
-    ``histories`` are the texts being published. A catalog with a [designed] rule gets the format seal.
+    A row keeps its entry point; one that has none takes the first code anchor, and so does one whose
+    code is gone, when ``root`` is given to look. ``specs`` and ``histories`` are the texts being
+    published. A catalog with a [designed] rule gets the format seal.
     """
     if text is None:
         text = template("capability-index.md")
@@ -1155,12 +1198,43 @@ def rewrite_index(text, delta, statuses, specs=None, histories=None, capabilitie
         cells = index_row_cells(lines[hits[0]])
         covers = cells[1] if len(cells) > 1 and cells[1] else delta["new"].get(capability, "")
         kept = cells[3] if len(cells) > 3 else "none"
+        if root is not None and not live_entry(root, kept):
+            kept = "none"
         entry_point = kept if kept not in ("", "none") else ("`%s`" % codes[0] if codes else "none")
         lines[hits[0]] = index_row(capability, covers, state, entry_point)
         for number in reversed(hits[1:]):
             del lines[number]
         text = "\n".join(lines)
     return with_seal(text) if designed else text
+
+
+def index_cells(text):
+    """capability -> (covers, entry point) of each linked row of the index."""
+    found = {}
+    for line in (text or "").split("\n"):
+        match = INDEX_ROW.match(line)
+        if match:
+            cells = index_row_cells(line)
+            found.setdefault(match.group(1), (cells[1] if len(cells) > 1 else "", cells[3] if len(cells) > 3 else "none"))
+    return found
+
+
+def index_follow_up(before, after, actions, specs):
+    """What a fold leaves for a person to look at in the index: an entry point it replaced, and a Covers that rules were taken from."""
+    old, new, out = index_cells(before), index_cells(after), {}
+    replaced = [{"capability": name, "was": old[name][1].strip("`"), "now": new[name][1].strip("`")}
+                for name in sorted(new) if name in old and old[name][1] not in ("", "none") and old[name][1] != new[name][1]]
+    if replaced:
+        out["entry_points"] = replaced
+    removed = {}
+    for entry, what in actions:
+        if what == "apply" and entry["op"] == "REMOVED":
+            removed[entry["capability"]] = removed.get(entry["capability"], 0) + 1
+    review = [{"capability": name, "covers": new[name][0], "removed": count, "left": len(rules_of(specs.get(name)))}
+              for name, count in sorted(removed.items()) if name in new]
+    if review:
+        out["review_covers"] = review
+    return out
 
 
 def draft_errors(root, delta, drafts, source):
@@ -1264,12 +1338,15 @@ def cmd_apply(root, change, staged, no_tasks):
             plan[cap_rel(capability, "history.md")] = rewrite_history(read(root / cap_rel(capability, "history.md")), capability, actions, source)
         specs = {capability: plan[cap_rel(capability, "spec.md")] for capability in capabilities_of(delta)}
         histories = {capability: plan[cap_rel(capability, "history.md")] for capability in capabilities_of(delta)}
-        plan[INDEX] = rewrite_index(read(root / INDEX), delta, statuses, specs, histories)
+        index_before = read(root / INDEX)
+        plan[INDEX] = rewrite_index(index_before, delta, statuses, specs, histories, root=root)
         scope = scope_of(root, change, delta_rows(delta, drafts.get))
         fold = {"input_digest": input_digest(root, change, delta, scope), "anchors": fold_anchors(root, delta, statuses, retirements, all_rows)}
         plan[source + "/" + LOCK_NAME] = dumps(stamp(text, delta, source, fold))
         written = publish(root, plan, source_of(root, staged))
-        return emit({"status": "published", "written": written, "foreign_ignored": state["foreign"]})
+        out = {"status": "published", "written": written, "foreign_ignored": state["foreign"]}
+        out.update(index_follow_up(index_before, plan[INDEX], actions, specs))
+        return emit(out)
 
 
 def publish(root, plan, staging):
@@ -1458,6 +1535,12 @@ def cmd_locate(root, capability):
     # Approved and not built: listed apart, so a reader never takes them for current behaviour.
     designed = sorted(rule_id for rule_id, rule in rules_of(spec).items() if rule["designed"])
     return emit({"capability": capability, "state": state, "designed": designed, "rules": rules, "changes": changes, "retired": retired_of(history)})
+
+
+def live_entry(root, cell):
+    """Whether the entry point of an index row names code that is still there."""
+    ref = (cell or "").strip().strip("`")
+    return ref not in ("", "none") and anchor_resolves(root, ref)
 
 
 def cmd_scaffold(root, capability, covers):
@@ -1819,15 +1902,15 @@ def cmd_rebase(root, change, onto, adopt, keep, drop, reason):
             said = rules_of(base(cap_rel(entry["capability"], "spec.md"))).get(rule_id)
             retired = retired_of(base(cap_rel(entry["capability"], "history.md"))).get(rule_id) if said is None else None
             options = []
-            if said is not None and said["designed"] and entry["op"] != "REMOVED":
+            if said is not None and said["designed"] and entry["op"] not in ("REMOVED", "REOBSERVED"):
                 options.append("adopt")
-            if said is not None and said["text"] != entry["to"]:
+            if said is not None and entry["op"] != "REOBSERVED" and said["text"] != entry["to"]:
                 options.append("keep")
             options.append("drop")
             if choice is None:
                 pending.append({
                     "rule": rule_id, "op": entry["op"], "capability": entry["capability"], "conflict": conflict[0],
-                    "spec": entry["to"], "base": said["text"] if said else None, "base_designed": bool(said and said["designed"]),
+                    "spec": entry.get("to"), "base": said["text"] if said else None, "base_designed": bool(said and said["designed"]),
                     "retired_by": retired["by"] if retired else None, "choices": options,
                 })
                 continue
@@ -1977,10 +2060,56 @@ def overview_of(text):
     return ""
 
 
+def cmd_index_set(root, capability, covers, entry):
+    """index --capability NAME [--covers TEXT] [--entry REF]: what a capability covers and where its code starts.
+
+    Nothing else changes them once a capability is in the catalog, and a retirement can leave both saying what is gone.
+    The Overview of the capability follows its Covers while it still is the line the capability was made with.
+    """
+    if not capability or not CAPABILITY.match(capability):
+        raise CapError("index --capability takes a name matching %s" % CAPABILITY.pattern)
+    if covers is None and entry is None:
+        raise CapError("index --capability takes --covers, --entry, or both")
+    if covers is not None:
+        covers = norm(covers)
+        if not covers or "|" in covers:
+            raise CapError("index takes --covers as one line of text without |")
+    if entry is not None:
+        entry = entry.strip().strip("`")
+        if entry != "none" and not anchor_resolves(root, entry):
+            raise CapError("the entry point does not exist: %s; it is path::symbol, with a file and a name that are in the code" % entry)
+    with publish_lock(root):
+        if (root / JOURNAL).exists():
+            return emit({"status": "recover-needed"}, RECOVER)
+        lines = (read(root / INDEX) or "").split("\n")
+        hits = [number for number, line in enumerate(lines) if (INDEX_ROW.match(line) or [None, None])[1] == capability]
+        if not hits:
+            raise CapError("%s has no row in index.md: a capability gets one when its first rule is published" % capability)
+        cells = index_row_cells(lines[hits[0]]) + ["", "", "", ""]
+        old_covers, state, old_entry = cells[1], cells[2], cells[3] or "none"
+        new_covers = old_covers if covers is None else covers
+        new_entry = old_entry if entry is None else "none" if entry == "none" else "`%s`" % entry
+        lines[hits[0]] = index_row(capability, new_covers, state, new_entry)
+        plan, overview = {INDEX: "\n".join(lines)}, "kept"
+        spec_rel = cap_rel(capability, "spec.md")
+        spec = read(root / spec_rel)
+        if spec is not None and new_covers != old_covers and overview_of(spec) == old_covers:
+            body = section(spec, "Overview")
+            head, _, rest = body.partition("\n")
+            kept = rest.split("\n")
+            first = next(number for number, line in enumerate(kept) if line.strip())
+            kept[first] = new_covers
+            plan[spec_rel] = spec.replace(body, head + "\n" + "\n".join(kept))
+            overview = "updated"
+        written = publish(root, plan, "%s/index-set" % STAGING)
+    return emit({"status": "updated" if written else "unchanged", "capability": capability, "covers": new_covers,
+                 "entry": new_entry.strip("`"), "overview": overview if written else "kept", "written": written})
+
+
 def cmd_index(root, rebuild):
     """index --rebuild: the index from the capability directories, one row each, with its state recalculated."""
     if not rebuild:
-        raise CapError("index takes --rebuild")
+        raise CapError("index takes --rebuild, or --capability with --covers, --entry or both")
     with publish_lock(root):
         if (root / JOURNAL).exists():
             return emit({"status": "recover-needed"}, RECOVER)
@@ -1999,7 +2128,7 @@ def cmd_index(root, rebuild):
             cells = index_row_cells(rows[name]) if name in rows else []
             linked = bool(cells) and cells[0].startswith("[")
             covers = cells[1] if len(cells) > 1 and cells[1] else overview_of(spec)
-            kept = cells[3] if linked and len(cells) > 3 else "none"
+            kept = cells[3] if linked and len(cells) > 3 and live_entry(root, cells[3]) else "none"
             codes = [ref for row in rule_status(read(catalog / name / "implementation.md")).values() for ref in row["code"]]
             entry_point = kept if kept not in ("", "none") else ("`%s`" % codes[0] if codes else "none")
             return index_row(name, covers, states[name], entry_point), any(rule["designed"] for rule in rules.values())
@@ -2043,11 +2172,19 @@ def cmd_index(root, rebuild):
 # ---------------------------------------------------------------- test evidence
 
 
+def failure_reason(child):
+    """What a runner says went wrong, in one line: the line pytest marks with E, or the message."""
+    marked = [line[1:] for line in (child.text or "").splitlines() if line.startswith("E ")]
+    return " ".join((marked[-1] if marked else child.get("message") or child.text or "").split())
+
+
 def junit_cases(path):
+    """(name, classname, passed, file, why it failed) of each test of a report."""
     cases = []
     for case in ET.parse(str(path)).getroot().iter("testcase"):
-        passed = not any(child.tag in ("failure", "error", "skipped") for child in case)
-        cases.append((case.get("name") or "", case.get("classname") or "", passed, case.get("file") or ""))
+        bad = [child for child in case if child.tag in ("failure", "error", "skipped")]
+        why = next((failure_reason(child) for child in bad if child.tag != "skipped"), "")
+        cases.append((case.get("name") or "", case.get("classname") or "", not bad, case.get("file") or "", why))
     return cases
 
 
@@ -2083,6 +2220,29 @@ def class_test_hits(parts, cases):
     return hits
 
 
+def unloaded(parts, cases):
+    """Why the suite of a test did not load, or None. A runner then reports the file, and none of its tests.
+
+    Vitest names the case after the file. Pytest writes the module with no class. JUnit gives the class a step of its own.
+    """
+    path = parts[0]
+    module = re.sub(r"\.[^./]+$", "", path).replace("/", ".")
+    expected = ".".join([module] + parts[1:-1])
+    for name, classname, passed, file, why in cases:
+        if passed:
+            continue
+        if path.endswith(SCRIPT_TESTS):
+            broken = same_file(path, name) and same_file(path, file or classname or name)
+        elif not classname:
+            broken = name == module or module.endswith("." + name) or name.endswith("." + module)
+        else:
+            known = classname.replace("$", ".")
+            broken = name in SUITE_STEPS and (known == expected or known.endswith("." + expected) or expected.endswith("." + known))
+        if broken:
+            return why[:200] or "the report gives no reason"
+    return None
+
+
 def test_result(ref, cases):
     """Every variant of a test must pass; skipped is not passed."""
     parts = ref.split("::")
@@ -2090,7 +2250,8 @@ def test_result(ref, cases):
         return "missing"
     hits = (script_test_hits if parts[0].endswith(SCRIPT_TESTS) else class_test_hits)(parts, cases)
     if not hits:
-        return "missing"
+        why = unloaded(parts, cases)
+        return "missing" if why is None else "did not run, its suite did not load: %s" % why
     return "passed" if all(case[2] for case in hits) else "failed"
 
 
@@ -2169,6 +2330,7 @@ class Check:
             return
         if git(self.root, "rev-parse", "--verify", "--quiet", self.base + "^{commit}") is None:
             raise CapError("base not found: %s" % self.base)
+        self.follow_upstream()
         merge_base = git(self.root, "merge-base", self.base, "HEAD")
         if merge_base is None:
             raise CapError("no merge base with %s; CI must fetch the whole history (fetch-depth: 0)" % self.base)
@@ -2226,6 +2388,23 @@ class Check:
             self.soft(message)
         if not rejected:
             self.cases = cases
+
+    def follow_upstream(self):
+        """A local branch that fell behind its remote is an old picture of the base: what was delivered since reads as changed."""
+        upstream = git(self.root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", self.base + "@{upstream}")
+        upstream = (upstream or "").strip()
+        if not upstream:
+            return
+        behind = int((git(self.root, "rev-list", "--count", "%s..%s" % (self.base, upstream)) or "0").strip() or 0)
+        ahead = int((git(self.root, "rev-list", "--count", "%s..%s" % (upstream, self.base)) or "0").strip() or 0)
+        if behind and not ahead:
+            remote, _, branch = upstream.partition("/")
+            fetch = "; git fetch %s %s:%s brings it up to date" % (remote, branch, self.base) if branch and git(self.root, "remote", "get-url", remote) else ""
+            self.notes.append("%s is %s behind %s: compared with %s%s" % (self.base, plural(behind, "commit"), upstream, upstream, fetch))
+            self.base = upstream
+        elif behind:
+            self.notes.append("%s and %s have diverged: compared with %s, as asked, which lacks %s of %s" % (
+                self.base, upstream, self.base, plural(behind, "commit"), upstream))
 
     def discover(self):
         self.names = sorted(set(git_names(self.root, "diff", "--name-only", "--no-renames", "-z", self.merge_base)) | set(git_names(self.root, "ls-files", "--others", "--exclude-standard", "-z")))
@@ -2361,6 +2540,11 @@ class Check:
             return None
         capability, rule_id, op = entry["capability"], entry["id"], entry["op"]
         base_says = rules_of(self.show(self.base, cap_rel(capability, "spec.md"))).get(rule_id)
+        if op == "REOBSERVED":
+            # It proposes no text, so the base only has to have the rule, built.
+            if base_says is None or base_says["designed"]:
+                self.hard.append("REOBSERVED %s: %s has no built rule with this id; run capabilities.py rebase --change %s" % (rule_id, self.base, source))
+            return False
         # A [designed] rule on the base is approved, not built: only a DESIGNED entry finds it delivered there.
         already = base_says is not None and op != "REMOVED" and base_says["text"] == entry["to"] and base_says["designed"] == (op == "DESIGNED")
         where = "%s %s" % (op, rule_id)
@@ -2401,6 +2585,8 @@ class Check:
         if op == "REMOVED":
             retired = retired_of(read(self.root / cap_rel(capability, "history.md")))
             return rule is None and retired.get(rule_id, {}).get("by") == source
+        if op == "REOBSERVED":
+            return rule is not None and not rule["designed"]
         if rule is None or rule["text"] != entry["to"]:
             return False
         if rule["inferred"] != (op == "INFERRED"):
@@ -2439,6 +2625,9 @@ class Check:
         current = stamp(text, delta, source)
         reviewed = lock is not None and lock["delta_sha"] == current["delta_sha"] and lock["spec_sha"] == current["spec_sha"]
         tasks = open_tasks(change)
+        waiting = waiting_tasks(change)
+        if waiting:
+            self.notes.append("%s: %s for after the merge, marked %s" % (source, plural(waiting, "open task"), POST_MERGE))
         applied = []
         for entry in delta["entries"]:
             already = self.base_comparison(entry, source)
@@ -2456,6 +2645,9 @@ class Check:
             self.notes.append("%s: no tasks.md; readiness rests on the delta and test evidence" % source)
         for entry, done in applied:
             if not done:
+                if entry["op"] == "REOBSERVED":
+                    messages.append("REOBSERVED %s: the catalog has no built rule with this id" % entry["id"])
+                    continue
                 now = self.head_rules.get(entry["capability"], {}).get(entry["id"])
                 if now is not None and now["designed"] and entry["op"] != "DESIGNED" and now["text"] == entry["to"]:
                     messages.append("%s %s: the rule is still [designed] in the catalog; fold publishes it with its code and tests" % (entry["op"], entry["id"]))
@@ -2473,7 +2665,7 @@ class Check:
                 continue
             if entry["op"] == "REMOVED":
                 problems.extend(self.retirement_problems(entry, source, lock))
-            elif entry["op"] in ("ADDED", "MODIFIED", "IMPLEMENTED"):
+            elif entry["op"] in ("ADDED", "MODIFIED", "IMPLEMENTED", "REOBSERVED"):
                 row = self.head_status.get(entry["capability"], {}).get(entry["id"])
                 if row is None:
                     problems.append("%s: no Rule Status block" % entry["id"])
@@ -2551,6 +2743,10 @@ class Check:
             expected = capability_state(rules, retired_of(read(self.root / cap_rel(name, "history.md"))))
             if said != expected and not (not rules and said == "consolidated"):
                 self.hard.append("index.md: %s says %s but its rules make it %s; run capabilities.py index --rebuild" % (name, said or "nothing", expected))
+            entry = cells[3] if len(cells) > 3 else "none"
+            if entry not in ("", "none") and not live_entry(self.root, entry):
+                self.soft("index.md: the entry point of %s does not exist: %s; set it with capabilities.py index --capability %s --entry <path::symbol>" % (
+                    name, entry.strip("`"), name))
 
     def check_provenance(self):
         """Every rule must be backed by the delta its tag points to."""
@@ -2585,7 +2781,7 @@ class Check:
     def authorized(self, capability, rule_id, before, after):
         for source, entries in self.entries_by_source.items():
             for entry in entries:
-                if entry["id"] != rule_id or entry["capability"] != capability:
+                if entry["id"] != rule_id or entry["capability"] != capability or entry["op"] == "REOBSERVED":
                     continue
                 if after is None:
                     if entry["op"] == "REMOVED":
@@ -2697,7 +2893,7 @@ class Check:
                 if not code_changed and not touched & {anchor_file(ref) for ref in row["tests"]}:
                     continue
                 if code_changed:
-                    self.notes.append("%s: anchored code changed without a delta" % rule_id)
+                    self.notes.append("%s: anchored code changed without a delta; if the rule still holds, declare REOBSERVED %s and the fold looks at it again" % (rule_id, rule_id))
                 for ref in row["code"] + row["tests"]:
                     if not anchor_resolves(self.root, ref):
                         self.soft("%s: anchor does not exist: %s" % (rule_id, ref))
@@ -2754,7 +2950,7 @@ def build_parser():
     parser.add_argument("--root", default=".")
     parser.add_argument("--change", action="append", default=[])
     parser.add_argument("--capability")
-    parser.add_argument("--covers", help="scaffold: what the capability covers, in one line")
+    parser.add_argument("--covers", help="scaffold, index: what the capability covers, in one line")
     parser.add_argument("--staged")
     parser.add_argument("--accept", action="store_true")
     parser.add_argument("--no-tasks", action="store_true")
@@ -2769,6 +2965,7 @@ def build_parser():
     parser.add_argument("--drop", action="extend", nargs="+", default=[], help="rebase: these rules leave the delta")
     parser.add_argument("--reason", help="rebase, defer: why, when no rule is left in the delta")
     parser.add_argument("--rebuild", action="store_true", help="index: regenerate the index from the capability directories")
+    parser.add_argument("--entry", help="index: the entry point of --capability, as path::symbol, or none")
     return parser
 
 
@@ -2797,6 +2994,10 @@ def dispatch(args, root):
     if args.command == "delta-block":
         return cmd_delta_block(root, args.implement)
     if args.command == "index":
+        if args.capability or args.covers is not None or args.entry is not None:
+            if args.rebuild:
+                raise CapError("index takes --rebuild or --capability, not both")
+            return cmd_index_set(root, args.capability, args.covers, args.entry)
         return cmd_index(root, args.rebuild)
     if args.command == "publish-design":
         if not args.change:
