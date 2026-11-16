@@ -2,6 +2,18 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.6.4] - 2026-11-15
+
+### Changed
+
+- docs: explain how an approved area becomes small specs
+- feat(studio): cut an approved area into slices and write each spec from its design
+- fix(studio): take an answer that is not HTTP as no server, and fix a test on Windows
+- fix(studio): start the idle time of the mockup server when it starts serving
+- docs: explain how to iterate on the mockup and approve the rules
+- feat(studio): iterate on the mockup and approve the rules of an area
+- chore: begin 1.6.4.dev0 development
+
 ## [1.6.3] - 2026-11-14
 
 ### Changed
