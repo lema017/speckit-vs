@@ -134,6 +134,13 @@
     - To: <the same text>
     - Links: FR-007
 
+  A rule whose code this change moves, while what it says stays the same, is REOBSERVED: the
+  fold looks at its code again. It takes no From and no To.
+
+    ### REOBSERVED R-session-expiry
+    - Capability: login
+    - Reason: <what moved, and why the rule still holds>
+
   A new capability also needs "### NEW-CAPABILITY <name>" with "- Covers: <business language>".
   If no rule changes, write one line instead: Capabilities: none — <reason>
   Keep this block as is. The headings above are examples and do not count.

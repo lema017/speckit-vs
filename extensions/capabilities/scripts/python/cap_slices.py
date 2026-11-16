@@ -414,7 +414,8 @@ def counts(cap, change, source):
         "requirements": sum(1 for key in ids if key.startswith("FR-")),
         "scenarios": sum(1 for key in ids if key.startswith("US")),
         "criteria": sum(1 for key in ids if key.startswith("SC-")),
-        "rules": len(delta["entries"]) if delta else 0,
+        # A rule that is only observed again is not one the spec builds or changes.
+        "rules": len([entry for entry in delta["entries"] if entry["op"] != "REOBSERVED"]) if delta else 0,
         "tasks": None if tasks is None else len(TASK.findall(strip_comments(tasks))),
     }
 

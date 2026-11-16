@@ -12,5 +12,7 @@ One spec builds one slice: one thing a person can do and check from end to end. 
 
 If `specs/_product/product.md` is there, the product was designed with its owner, and its `- Language:` line names their language. Speak and write to the person in that language in every command, whatever language the command is written in.
 
+A task that comes after the catalog fold, such as opening the pull request, a deploy or a change to production data, carries `[post-merge]` after its id in `tasks.md`. Write it that way, leave its box open, and do not do it early.
+
 If you change a rule outside a Spec Kit feature, declare its delta and run the `speckit.capabilities.fold` command.
 <!-- SPECKIT CAPABILITIES END -->

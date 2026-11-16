@@ -363,6 +363,7 @@ dialog::backdrop{background:rgba(10,14,18,.5)}
     var desc = el("span", "desc");
     if (t.story) desc.appendChild(el("span", "tag", t.story));
     if (t.parallel) desc.appendChild(el("span", "tag", "P"));
+    if (t.after_merge) desc.appendChild(el("span", "tag", "after the merge"));
     desc.appendChild(txt(t.text));
     b.appendChild(desc);
     var meta = el("span", "meta");

@@ -433,6 +433,7 @@ def test_a_design_record_retires_a_designed_rule_without_evidence(design):
     (added("R-login-y", "Otra cosa.", links="none"), "publish-design publishes NEW-CAPABILITY, DESIGNED and REMOVED"),
     (designed("R-login-lockout", LOCKOUT_15, frm=LOCKOUT_15), "From equals To"),
     (designed("R-login-lockout", "(none)", frm=LOCKOUT_15), "To cannot be (none)"),
+    (designed("R-login-x", "Algo.") + "\n### REOBSERVED R-login-lockout\n- Capability: login\n- Reason: Nada cambió.\n", "a design record declares only"),
 ])
 def test_publish_design_rejects_what_a_design_record_does_not_declare(design, entries, needle):
     change = CAT + "/_changes/20261113-bad"
@@ -441,6 +442,18 @@ def test_publish_design_rejects_what_a_design_record_does_not_declare(design, en
     rc, out = design.cap("publish-design", "--change", change)
     assert rc == 2 and any(needle in error for error in out["errors"]), out
     assert design.tree() == before
+
+
+def test_a_designed_rule_has_no_code_to_observe_again(design):
+    """Approved and not built: there is nothing yet for a fold to look at."""
+    design.checkout("-b", "feat")
+    change = design.feature("002-x", "### REOBSERVED R-login-lockout\n- Capability: login\n- Reason: Nada cambió.\n")
+    rc, out = design.cap("review", "--change", change)
+    assert rc == 3 and out["conflicts"] == [
+        "REOBSERVED R-login-lockout: the rule is [designed], so no code is there to observe; a spec builds it with IMPLEMENTED"], out
+    rc, out = design.cap("check", "--mode", "dev", "--base", "main", "--change", change)
+    assert rc == 1 and hard_with(out, "REOBSERVED R-login-lockout: main has no built rule with this id"), out
+    assert "REOBSERVED R-login-lockout: the catalog has no built rule with this id" in out["notes"], out
 
 
 def test_publish_design_takes_only_design_records(design):

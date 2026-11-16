@@ -1,0 +1,5 @@
+import no_such_native_module
+
+
+def test_keeps_the_ratio():
+    assert no_such_native_module.resize(2, 1) == 2

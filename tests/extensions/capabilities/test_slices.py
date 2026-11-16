@@ -768,6 +768,11 @@ def test_the_progress_page_and_the_script_agree_on_every_state(design):
     deliver(design)
     assert page_slices(design) == script_slices(design) and slices(design)[CLAVE]["state"] == "delivered"
     assert script_slices(design)[0][1] == SOCIAL
+    design.write(ACCESO + "/tasks.md", "- [x] T001 Hecho\n- [x] T002 Hecho\n- [ ] T003 [post-merge] Desplegar\n")
+    assert page_slices(design) == script_slices(design) and slices(design)[CLAVE]["state"] == "delivered", "a task for after the merge holds no slice"
+    design.write(ACCESO + "/tasks.md", "- [x] T001 Hecho\n- [ ] T002 Falta\n- [ ] T003 [post-merge] Desplegar\n")
+    assert page_slices(design) == script_slices(design) and slices(design)[CLAVE]["state"] == "building", "the task of the code does"
+    design.write(ACCESO + "/tasks.md", "- [x] T001 Hecho\n- [x] T002 Hecho\n")
     design.write(BIG + "/spec.md", sized(value=REGISTRO))
     design.write(BIG + "/tasks.md", tasks(2, done=2))
     assert page_slices(design) == script_slices(design) and slices(design)[REGISTRO]["state"] == "delivered", "no rules, so closed tasks deliver it"
@@ -837,6 +842,16 @@ def test_tasks_count_once_they_are_written(design):
     design.write(BIG + "/tasks.md", tasks(26, done=26))
     out = size(design)
     assert out["over"] == [{"what": "tasks", "count": 26, "max": 25}] and "26 tasks (max 25)" in out["summary"]
+
+
+def test_a_rule_that_is_only_observed_again_is_not_one_the_spec_builds(design):
+    """The budget counts the rules a spec builds or changes. A rule whose code only moved is looked at again, and that is all."""
+    again = "\n### REOBSERVED R-login-lockout\n- Capability: login\n- Reason: El archivo cambió de nombre.\n"
+    design.write(BIG + "/spec.md", sized(rules=4).rstrip("\n") + "\n" + again)
+    out = size(design)
+    assert out["counts"]["rules"] == 4 and out["status"] == "within", out
+    design.write(BIG + "/spec.md", sized(rules=5).rstrip("\n") + "\n" + again)
+    assert size(design)["over"] == [{"what": "rules", "count": 5, "max": 4}]
 
 
 def test_what_is_commented_out_is_not_counted(design):

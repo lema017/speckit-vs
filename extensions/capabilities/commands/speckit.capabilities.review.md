@@ -40,7 +40,8 @@ $ARGUMENTS
 
    - `ADDED` has `From: (none)`. `REMOVED` has `To: (none)` and `Replaced-By: <rule id or none>`.
    - A rule marked `[designed]` is approved and not built. The spec builds it with `IMPLEMENTED`, with the catalog's text in both `From` and `To`; `{SCRIPT} delta-block --implement <id>` prints the block. Building it with another text is `MODIFIED`, a business decision. A spec never declares `DESIGNED`, and never retires a `[designed]` rule: to leave one out, run `{SCRIPT} defer <id>`.
-   - `Links` must name `FR-###`, `SC-###` or `USn/ACm` keys that exist in this spec.
+   - A rule whose code this change moves, while what the rule says stays the same, is `REOBSERVED`: `- Capability:` and `- Reason: <what moved, and why the rule still holds>`, with no `From` and no `To`. The fold looks at its code again and changes nothing else. It is not a way to change a rule.
+   - `Links` must name `FR-###`, `SC-###` or `USn/ACm` keys that exist in this spec. A `REOBSERVED` rule may leave them out.
    - A capability that does not exist yet needs `### NEW-CAPABILITY <name>` with `- Covers: <business language>`.
    - If no rule changes, write `Capabilities: none — <reason>`.
 

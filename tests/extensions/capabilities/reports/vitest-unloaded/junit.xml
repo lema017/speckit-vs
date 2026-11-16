@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="vitest tests" tests="2" failures="1" errors="0" time="0.993">
+    <testsuite name="src/auth/broken.test.ts" timestamp="2026-11-16T04:19:00.920Z" tests="1" failures="1" errors="0" skipped="0" time="0">
+        <testcase classname="src/auth/broken.test.ts" name="src/auth/broken.test.ts">
+            <failure message="Failed to load url no-such-native-module (resolved id: no-such-native-module) in /project/src/auth/broken.test.ts. Does the file exist?" type="Error" />
+        </testcase>
+    </testsuite>
+    <testsuite name="src/auth/session.test.ts" timestamp="2026-11-16T04:19:00.924Z" tests="1" failures="0" errors="0" skipped="0" time="0.003156946">
+        <testcase classname="src/auth/session.test.ts" name="SessionManager &gt; expires after 15 minutes">
+        </testcase>
+    </testsuite>
+</testsuites>

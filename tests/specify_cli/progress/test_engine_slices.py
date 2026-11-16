@@ -100,6 +100,10 @@ def test_a_map_lists_its_slices_in_the_order_it_was_written(engine, project):
     (CLOSED, True, FOLDED, "delivered"),
     (CLOSED, True, "{", "building"),
     (CLOSED, True, "[]", "building"),
+    (CLOSED + "- [ ] T009 [post-merge] Deploy\n", False, None, "delivered"),
+    (CLOSED + "- [ ] T009 [Post-Merge] Deploy\n", True, FOLDED, "delivered"),
+    (CLOSED + "- [ ] T009 [post-merge] Deploy\n", True, SEALED, "building"),
+    (OPEN + "- [ ] T009 [post-merge] Deploy\n", True, FOLDED, "building"),
 ])
 def test_the_state_of_a_slice_is_read_from_its_spec(engine, project, tasks, rules, lock, state):
     """Delivered needs every task closed and, when the spec changes rules, its delta folded."""
@@ -111,6 +115,16 @@ def test_the_state_of_a_slice_is_read_from_its_spec(engine, project, tasks, rule
     assert states(data["maps"][0])[0] == (SIGN_UP, state, "001-sign-up")
     assert data["specs"][0]["slice"] == SIGN_UP
     assert data["maps"][0]["delivered"] == (1 if state == "delivered" else 0)
+
+
+def test_a_rule_observed_again_asks_for_a_fold_too(engine, project):
+    """The fold is what looks at its code again: closed tasks alone do not deliver the slice."""
+    login(project)
+    again = spec(SIGN_UP).replace("Capabilities: none - nothing changes\n", "### REOBSERVED R-accounts-unique-email\n- Capability: accounts\n- Reason: The file was renamed.\n")
+    directory = project.feature("001-sign-up", spec=again, tasks=CLOSED)
+    assert states(listed(engine, project)["maps"][0])[0] == (SIGN_UP, "building", "001-sign-up")
+    (directory / "capability-delta.lock.json").write_text(FOLDED, encoding="utf-8")
+    assert states(listed(engine, project)["maps"][0])[0] == (SIGN_UP, "delivered", "001-sign-up")
 
 
 def test_only_a_rule_the_delta_really_changes_asks_for_a_fold(engine, project):

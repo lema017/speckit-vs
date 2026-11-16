@@ -21,12 +21,14 @@ $ARGUMENTS
    | Status | Exit | What to do |
    |---|---|---|
    | `unchanged`, `no-rule-change` | 0 | Report it and finish. Read no code |
-   | `ready` | 0 | Report any `setup` entry that starts with `skipped`: that file for agents was left alone. Continue with step 2 |
-   | `blocked` | 3 | Open tasks, or no `tasks.md`. Report it and finish: this hook also fires on partial implementations. Pass `--no-tasks` only for a change outside `specify` when the user asked for it |
+   | `ready` | 0 | Report any `setup` entry that starts with `skipped`: that file for agents was left alone. `post_merge`, when it is there, is how many open tasks wait for the merge: say so. Continue with step 2 |
+   | `blocked` | 3 | Open tasks, or no `tasks.md`. Report it and finish: this hook also fires on partial implementations. If the open tasks can only be done after the merge, see the note under this table. Pass `--no-tasks` only for a change outside `specify` when the user asked for it |
    | `needs-review`, `conflict` | 3 | Report it and finish. Run `speckit.capabilities.review` |
    | `merge-conflict` | 3 | A merge left conflict markers in `files`. Report `reason` and finish. Never resolve the catalog by hand: `{SCRIPT} rebase` rebuilds it |
    | `invalid` | 2 | Report the errors and finish |
    | `recover-needed` | 4 | Run `{SCRIPT} recover`, then start again. Never edit the catalog or delete the journal by hand. If it answers `manual`, show `edited_since` and stop |
+
+   **A task that comes after the fold.** Opening the pull request, a deploy, a change to production data and a check in production come after the fold, and most of them after the merge. Such a task carries `[post-merge]` after its id: `- [ ] T034 [post-merge] Deploy the API`. It stays open, and it holds neither the fold nor the check. When `prepare` is `blocked` and every open task is one of those, name them and ask the person. With their yes, write the mark on each one in `tasks.md` and run `prepare` again. Never mark a task of code or of tests, and never take the box away.
 
 2. Run `{SCRIPT} graph touched`. It updates the code graph, then lists the code files the branch changed since the base, with the symbols that hold the changed lines. Act on its exit code:
 
@@ -42,7 +44,7 @@ $ARGUMENTS
 
 3. Edit only the drafts under the `staging` directory that `prepare` reported: `<staging>/<capability>/implementation.md`. Limit what you read to `scope`. Files listed in `foreign` are not part of this change: do not use them, and report them.
 
-4. For each rule in the delta except `REMOVED`, `IMPLEMENTED` included, write one block under `## Rule Status`:
+4. For each rule in the delta except `REMOVED`, `IMPLEMENTED` and `REOBSERVED` included, write one block under `## Rule Status`:
 
    ```markdown
    ### R-session-expiry
@@ -56,6 +58,7 @@ $ARGUMENTS
    - Use `conforming` only if you verified it. If you could not determine it, use `unverified`.
    - `Code` is `file`, `file::Class`, `file::function` or `file::.method()`. `apply` rejects a symbol that does not appear in the file, so copy it from `graph touched` or from what you read.
    - `Tests` names tests that exercise this behaviour. At least one must fail if the value in the rule changes. A test that reads the same constant as the code keeps passing with any value, so it does not count. If no test fails when the value changes, use `State: unverified` and report it. `Tests: manual: <reason>` only if the project allows manual evidence.
+   - A `REOBSERVED` rule keeps its text: its code moved, and what it says did not. Read that code again and write its block as it is today, with the names `Code` and `Tests` have now. If the code no longer does what the rule says, write `discrepant` and say so: that is a change of rule for the person to decide, with `MODIFIED`.
    - Test references: pytest `file::[Class::]test`; JUnit `file::[Nested::]method`, or the `@DisplayName` text under Gradle, which does not report the method; Jest and Vitest `file::[describe::]title`, with each title as the file writes it, including `%d`.
 
 5. For a `REMOVED` rule, delete its block from `## Rule Status`. If it has `Replaced-By: none`, add under `## Retirement Evidence`:
@@ -75,7 +78,9 @@ $ARGUMENTS
 
 7. Run `{SCRIPT} apply --staged <staging>`. Act on `status`:
 
-   - `published`: continue.
+   - `published`: continue. Two keys ask for a look at the index, and each is there only when it applies:
+     - `entry_points`: the entry point of a capability named code that is gone, and the fold replaced it with the first code anchor of its rules. Report `was` and `now`. `{SCRIPT} index --capability <name> --entry <path::symbol>` sets another one.
+     - `review_covers`: the fold took rules from a capability. Read its `covers` line against the rules that are left, with `{SCRIPT} status --capability <name>`. If it still names what was retired, propose a new line to the person. With their yes, run `{SCRIPT} index --capability <name> --covers "<the line>"`: it rewrites the row of the index and the Overview of the capability.
    - `base-changed`, exit 3: another process changed the catalog or the inputs. Start again from step 1; your draft was written against an old version.
    - `busy`, exit 5: another process is publishing. Try again when it finishes.
    - `invalid-staging`, exit 2: fix the drafts and run `apply` again.
@@ -94,4 +99,4 @@ $ARGUMENTS
 
 ## Do not
 
-Edit `spec.md`, `history.md` or `index.md` under the catalog by hand, touch `specs/NNN-*`, `README.md` or agent instruction files, or commit.
+Edit `spec.md`, `history.md` or `index.md` under the catalog by hand, touch `specs/NNN-*` beyond the `[post-merge]` mark of step 1, touch `README.md` or agent instruction files, or commit.

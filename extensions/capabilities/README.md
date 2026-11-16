@@ -194,6 +194,40 @@ Prompts run hooks in install order, so install `capabilities` before `git` if yo
 
 The script has subcommands for them: `scaffold --capability <name> --covers "<one line>"` and `locate [--capability <name>]`. `clarify-context [--change <dir>]` gives the hook the feature, its parsed delta, every capability, and in `slice` what other slices own and the size of the spec. It ends with exit code 0 when there is no feature, because `clarify` reports that itself.
 
+## When a change retires rules, or only moves code
+
+**The index after a retirement.** Retiring rules can leave a capability whose row says what is gone. The fold answers with two keys when that happens:
+
+| Key of `apply` | What happened | What to do |
+|---|---|---|
+| `entry_points` | The entry point named code that is gone, and the fold replaced it with the first code anchor of the rules that are left | Nothing, or `index --capability <name> --entry <path::symbol>` for another one |
+| `review_covers` | The fold took rules from a capability. It gives its `covers` line and how many rules are `left` | Read the line. If it names what was retired, `index --capability <name> --covers "<one line>"` |
+
+`check` also says when an entry point names code that does not exist. It is a note in `dev` and a failure in `ci`.
+
+**A rule whose code moved.** A rename, a comment or a deleted permission can change a file that a rule of another capability is anchored to. `check` then leaves the note `anchored code changed without a delta`. If the rule still holds, the change says so in its delta, and the fold looks at the code of that rule again:
+
+```markdown
+### REOBSERVED R-session-expiry
+- Capability: login
+- Reason: The class was renamed; the session still expires after 15 minutes.
+```
+
+- It takes no `From` and no `To`, and `Links` is optional. The text of the rule, its origin and its marks stay as they are.
+- The fold writes its `Rule Status` block again, with the code and the tests as they are named today, and `history.md` records it.
+- It owes the same evidence as any other rule of a delta: its mapped tests have to pass.
+- It is also the way to bring the observation of an approved rule up to date when nothing else in the rule changes.
+- It does not change a rule. If the code no longer does what the rule says, that is `MODIFIED`.
+- A rule that is only observed again does not count in the slice budget.
+
+**Tasks that come after the fold.** Opening the pull request, a deploy, a change to production data and a check in production cannot be done before the fold, and `prepare` refuses open tasks. Such a task carries `[post-merge]` after its id:
+
+```markdown
+- [ ] T034 [post-merge] Deploy the API
+```
+
+It stays open. It holds neither the fold nor the check, a slice is `delivered` without it, and the progress page says how many wait. `prepare` reports them in `post_merge`, and `check` in a note. A task of code never carries the mark.
+
 ## Two branches on one capability
 
 When two branches change the same capability, git merges the catalog's files line by line. The result can have conflict markers, or be clean and still be wrong, for example with two rows for one capability in the index. `review`, `prepare`, `fold` and `check` stop at the markers. You never resolve the catalog by hand: `rebase` builds it again for one change.
@@ -218,7 +252,9 @@ python3 .specify/extensions/capabilities/scripts/python/capabilities.py rebase -
 
 `defer --change <spec> R-a R-b [--reason "…"]` takes rules out of a spec's delta. A `[designed]` rule stays designed for a later spec. If the spec was already folded, its catalog files are built again from `merge-base(HEAD, base)`, with the working tree as the branch.
 
-`index --rebuild` writes `index.md` again from the capability directories, after a merge left it with markers or with two rows for one capability. It keeps the first row of each, recalculates its state, drops linked rows whose directory is gone, keeps `planned` rows, adds the missing directories and the seal.
+`index --rebuild` writes `index.md` again from the capability directories, after a merge left it with markers or with two rows for one capability. It keeps the first row of each, recalculates its state, drops linked rows whose directory is gone, keeps `planned` rows, adds the missing directories and the seal. An entry point whose code is gone gives way to the first code anchor of the rules.
+
+`index --capability <name> [--covers "<one line>"] [--entry <path::symbol>]` sets what a capability covers and where its code starts. Nothing else changes them once the capability is in the catalog. `--entry` has to name a file and a symbol that are in the code, or `none`. The Overview of the capability follows `--covers` while it still is the line the capability was made with.
 
 ## The block for agents
 
@@ -305,16 +341,17 @@ In a merge queue, add `--combined`: a changed anchored file is then revalidated 
 | Provenance | A rule's tag does not point to a delta that sets that text |
 | Sealed record | The delta or lock of a delivered change was edited, or the document removed |
 | History | A row of the base was removed or edited, or a new row matches no delta |
-| Evidence | A rule this change adds or modifies is not `conforming`, a rule it infers or validates is `discrepant`, or the mapped tests of a rule that says `conforming` did not pass in this run's report |
+| Evidence | A rule this change adds, modifies or observes again is not `conforming`, a rule it infers or validates is `discrepant`, or the mapped tests of a rule that says `conforming` did not pass in this run's report |
 | Observation | With no delta: a rule's state changes while this change touches its anchored files, or a file anchored to a rule no longer exists, or that rule's mapped tests do not pass |
 | Retirement | A retired rule has no evidence (see below) |
 | Discovery | A new `spec.md` under `feature_roots`, or with `FR-###` lines anywhere, has no delta |
 | Design | A `[designed]` mark no `DESIGNED` entry set, a `DESIGNED` outside a design record, a spec that retires a `[designed]` rule or leaves it `[designed]` after `IMPLEMENTED`, or `[designed]` rules without the format seal |
 | Merge markers | git's conflict markers are still in the change's document or in the catalog |
+| Entry point | A row of `index.md` points to a file or a symbol that is not in the code |
 
 **Retiring a rule.** With `Replaced-By: R-x`, `R-x` must exist, be `conforming` and pass its tests. With `Replaced-By: none`, `implementation.md` needs a `## Retirement Evidence` block with at least one passing test that proves the behaviour is gone. `discrepant` there means it is still present, and blocks.
 
-**Test references.** All variants of a parametrized test must pass, and skipped does not count as passed. A reference no report contains blocks, with `mapped test … missing`. These runners were validated with their real reports:
+**Test references.** All variants of a parametrized test must pass, and skipped does not count as passed. A reference no report contains blocks, with `mapped test … missing`. When the runner reports that it could not load the file of that test, the line says `did not run, its suite did not load`, with the reason. These runners were validated with their real reports:
 
 | Runner | Report | Reference | Watch out for |
 |---|---|---|---|
@@ -341,6 +378,11 @@ A report that names no time zone, or no time, is judged by when the file was wri
 4. Version `.specify/extensions/capabilities/`, so CI has the script and `feature_roots`.
 5. **Mark `capabilities-check` as a required status check.**
 6. **Turn on "Require branches to be up to date", or a merge queue.**
+
+## What `check` compares with
+
+- **A base that fell behind.** `--base main` reads the local `main`. When that branch is behind the remote branch it follows, and has nothing of its own, `check` compares with the remote one and says so in a note. Otherwise what was delivered since would read as changed by this branch. A base named as `origin/main` or by its commit is used as given.
+- **A suite that did not load.** In the report, a test whose file the runner could not load is not a test that is missing. `check` says `did not run, its suite did not load`, with the reason the runner gave. It still fails in `ci`, because the rule has no evidence in that run. It reads this from the reports of Vitest and pytest, and from the step JUnit and Gradle give a class that could not start. A runner that leaves the suite out of its report, as `jest-junit` does unless `reportTestSuiteErrors` is on, still reads as missing.
 
 ## What it cannot detect
 
