@@ -1582,6 +1582,7 @@ def server_file(root):
 
 def ask(port, method, path, session=None, body=None, timeout=3):
     """One call to a server of studio on this machine. None when nobody answers as one."""
+    import http.client
     import urllib.request
     request = urllib.request.Request("http://127.0.0.1:%d%s" % (port, path), method=method,
                                      data=None if body is None else json.dumps(body).encode("utf-8"))
@@ -1593,7 +1594,8 @@ def ask(port, method, path, session=None, body=None, timeout=3):
         # No proxy: this never leaves the machine.
         with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(request, timeout=timeout) as response:
             answer = json.loads(response.read(1024 * 1024).decode("utf-8"))
-    except (OSError, ValueError):
+    # Something else can hold the port, and on Windows a call to a free port can reach itself: what answers then is not HTTP.
+    except (OSError, ValueError, http.client.HTTPException):
         return None
     return answer if isinstance(answer, dict) else None
 
