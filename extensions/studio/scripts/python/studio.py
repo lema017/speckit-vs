@@ -1790,6 +1790,8 @@ def serve(root, port=None, idle=SERVER_IDLE):
         emit({"status": "serving", "link": "http://127.0.0.1:%d/index.html" % port, "port": port})
         sys.stdout.flush()
         server.timeout = 0.5
+        # The time without a request starts now: making the server and building the mockup is not part of it.
+        server.touched = time.monotonic()
         while not server.stop and time.monotonic() - server.touched < idle:
             server.handle_request()
     finally:
