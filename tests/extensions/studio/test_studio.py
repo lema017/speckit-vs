@@ -1921,7 +1921,7 @@ def finish(process):
 
 def test_serve_says_where_it_is_and_stops_when_nobody_asks(oficio, studio):
     root = oficio.path.resolve()
-    process, first = start_serving(oficio, "--port", "0", "--idle", "3")
+    process, first = start_serving(oficio, "--port", "0", "--idle", "5")
     try:
         assert first == {"status": "serving", "port": first["port"], "link": "http://127.0.0.1:%d/index.html" % first["port"]}, first
         state = studio.server_state(root)
@@ -1930,10 +1930,37 @@ def test_serve_says_where_it_is_and_stops_when_nobody_asks(oficio, studio):
             assert stat.S_IMODE(studio.server_file(root).stat().st_mode) == 0o600, "only this user reads the session"
         status, _, body = call(first["port"], "GET", "/index.html")
         assert status == 200 and state["session"].encode("ascii") in body, "it builds the mockup before it serves it"
-        assert process.wait(timeout=60) == 0, "nobody asked for anything for three seconds"
+        assert process.wait(timeout=60) == 0, "nobody asked for anything for five seconds"
         assert not studio.server_file(root).exists() and studio.server_state(root) is None
     finally:
         finish(process)
+
+
+def test_the_time_a_server_takes_to_start_is_not_time_without_a_request(oficio, studio, monkeypatch):
+    """On a slow machine, making the server takes longer than it waits for a request: it still answers the first one who asks."""
+    import threading
+    import time
+    root = oficio.path.resolve()
+    made = studio.make_server
+
+    def slow(*args):
+        server, session = made(*args)
+        server.touched -= 60
+        return server, session
+
+    monkeypatch.setattr(studio, "make_server", slow)
+    thread = threading.Thread(target=studio.serve, args=(root, 0, 2), daemon=True)
+    thread.start()
+    try:
+        state, until = None, time.monotonic() + 15
+        while state is None and thread.is_alive() and time.monotonic() < until:
+            time.sleep(0.05)
+            state = studio.server_state(root)
+        assert state, "making it took longer than it waits, and it still answers"
+    finally:
+        studio.stop_server(root)
+        thread.join(30)
+    assert not thread.is_alive() and not studio.server_file(root).exists()
 
 
 def test_serve_has_nothing_to_show_before_a_screen_is_drawn(oficio):

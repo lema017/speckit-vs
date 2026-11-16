@@ -389,6 +389,7 @@ MUTANTS = [
     ("written-anywhere-under-the-api", '            if path != "/_api/comments" and not taken:\n                return self.say(404', '            if False:\n                return self.say(404'),
     ("server-never-stops-by-itself", "        while not server.stop and time.monotonic() - server.touched < idle:", "        while not server.stop:"),
     ("stop-is-not-heard", "        while not server.stop and time.monotonic() - server.touched < idle:", "        while time.monotonic() - server.touched < idle:"),
+    ("a-slow-start-counts-as-time-without-a-request", "        server.touched = time.monotonic()\n        while not server.stop", "        while not server.stop"),
     ("state-file-left-behind", '            if (json.loads(read(place) or "{}") or {}).get("session") == session:\n                place.unlink()', '            if False:\n                place.unlink()'),
     ("anyone-reads-the-session", "os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)", "os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)"),
     ("serve-does-not-build", "            build(product, kit)\n            return serve(root", "            return serve(root"),
