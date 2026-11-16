@@ -77,7 +77,7 @@ The input is the name of an area, such as `acceso`, or its title. It can be empt
    - Rules left for later go at the end, under `## Later`, as `- R-<id>: <reason>`.
 7. **Check the cut.** Run `{SCRIPT} slice <area>` again. `status` has to be `cut`, with `problems.hard` empty.
    - Fix what `problems.hard` lists, and run it again.
-   - Read to the person each line of `problems.notes` that names this map: a story or a screen in no slice, a rule in no slice and not left for later, a slice that needs a rule another one builds. Change the map with their yes.
+   - Read to the person each line of `problems.notes` that names this map: a story or a screen in no slice, a rule in no slice and not left for later, a slice that needs a rule another one builds, a slice that names a rule retired since. Change the map with their yes.
 8. **Report.** Run `{SCRIPT} status`. Tell the person:
    - the slices, in order, each with what a person checks;
    - that `__SPECKIT_COMMAND_SPECIFY__ <id>` writes the spec of a slice from its stories, its screens and its rules, starting with the first one, and that `specify workflow run sliced --input map=<area>` builds them one after another, with a stop at each one;

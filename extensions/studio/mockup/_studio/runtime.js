@@ -28,6 +28,7 @@
         implemented: ['implementada', 'Implementada, con código y pruebas'],
         divergent: ['discrepante', 'Discrepante: el código no hace lo que dice'],
         changed: ['cambiada', 'Cambiada por un spec: falta tu visto bueno'],
+        retiring: ['se retira', 'Marcada para retirar: espera tu aprobación'],
         proposed: ['cambio propuesto', 'Aprobada, con un cambio que espera tu aprobación']
       },
       barra: 'Barra de Studio', flujoEnCurso: 'Flujo en curso', persona: 'Persona', estado: 'Estado', sesion: 'Sesión', no: 'No', si: 'Sí',
@@ -42,7 +43,7 @@
       guardadoProyecto: 'Comentario guardado en el proyecto.',
       sinServidor: 'No se pudo guardar: el mockup ya no responde. Ábrelo otra vez con "specify studio open" y guarda de nuevo.',
       dondeVanProyecto: 'Se guardan en el proyecto. Para que se apliquen, pide a la IA el comando "iterate" de Studio.',
-      revisados: 'Ya revisados', aplicado: 'Aplicado', noAplicado: 'No aplicado', antes: 'Antes: {0}',
+      revisados: 'Ya revisados', aplicado: 'Aplicado', noAplicado: 'No aplicado', antes: 'Antes: {0}', cambio: 'Lo cambió {0}', retirada: 'Lo retira {0}', motivo: 'Motivo: {0}',
       noGuardado: 'Aquí no se puede guardar: el comentario dura mientras no cierres la pestaña. Expórtalo antes.',
       campo: 'campo', dentroDe: ', dentro de {0}', enEstado: ', estado {0}',
       sinComentarios: 'Todavía no hay comentarios. Usa "Comentar" y toca un elemento de la pantalla.',
@@ -64,7 +65,8 @@
         'in-spec': ['in a spec', 'In a spec, being built'],
         implemented: ['implemented', 'Implemented, with code and tests'],
         divergent: ['divergent', 'Divergent: the code does not do what it says'],
-        changed: ['changed', 'Changed by a spec: it waits for your approval'],
+        changed: ['changed', 'Changed by a spec: it waits for you to see it'],
+        retiring: ['to retire', 'Marked to retire: it waits for your approval'],
         proposed: ['change proposed', 'Approved, with a change that waits for your approval']
       },
       barra: 'Studio bar', flujoEnCurso: 'Flow in progress', persona: 'Person', estado: 'State', sesion: 'Signed in', no: 'No', si: 'Yes',
@@ -79,7 +81,7 @@
       guardadoProyecto: 'Comment saved in the project.',
       sinServidor: 'It could not be saved: the mockup no longer answers. Open it again with "specify studio open" and save once more.',
       dondeVanProyecto: 'They are kept in the project. To have them applied, ask the AI for the "iterate" command of Studio.',
-      revisados: 'Already reviewed', aplicado: 'Applied', noAplicado: 'Not applied', antes: 'Before: {0}',
+      revisados: 'Already reviewed', aplicado: 'Applied', noAplicado: 'Not applied', antes: 'Before: {0}', cambio: 'Changed by {0}', retirada: 'Retired by {0}', motivo: 'Reason: {0}',
       noGuardado: 'It cannot be saved here: the comment lasts until you close the tab. Export it before.',
       campo: 'field', dentroDe: ', inside {0}', enEstado: ', state {0}',
       sinComentarios: 'No comments yet. Use "Comment" and click an element of the screen.',
@@ -104,7 +106,7 @@
     return T.estados[e] || (e.charAt(0).toUpperCase() + e.slice(1).replace(/-/g, ' '));
   }
   var OCUPADO = ['cargando', 'loading'];
-  var COLOR_REGLA = { draft: '#aab2bf', designed: '#7fa6ff', 'in-spec': '#c3a6ff', implemented: '#6fd39b', divergent: '#ff8f85', changed: '#f5c26b', proposed: '#f5c26b' };
+  var COLOR_REGLA = { draft: '#aab2bf', designed: '#7fa6ff', 'in-spec': '#c3a6ff', implemented: '#6fd39b', divergent: '#ff8f85', changed: '#f5c26b', retiring: '#f5c26b', proposed: '#f5c26b' };
   function infoRegla(estado) {
     var textos = T.regla[estado] || [estado, estado];
     return { corto: textos[0], largo: textos[1], color: COLOR_REGLA[estado] || '#aab2bf' };
@@ -613,6 +615,8 @@
               '<p class="chip"><i style="background:' + info.color + '"></i>' + esc(info.largo) + '</p>' +
               '<p>' + esc(rg.texto) + '</p>' +
               (rg.antes ? '<p class="sub">' + esc(t('antes', rg.antes)) + '</p>' : '') +
+              (rg.cambio ? '<p class="sub">' + esc(t(rg.retirada ? 'retirada' : 'cambio', rg.cambio)) + '</p>' : '') +
+              (rg.motivo ? '<p class="sub">' + esc(t('motivo', rg.motivo)) + '</p>' : '') +
               '<p class="sub">' + esc(t('capacidad', rg.capacidad)) + ' ' + esc(rg.nota || '') + '</p>' +
               (rg.entregable ? '<p class="sub">' + esc(t('entregable', rg.entregable)) + (rg.spec ? ' ' + esc(t('enSpec', rg.spec)) : '') + '</p>' : '') + '</section>';
           }

@@ -64,6 +64,9 @@ COMMENT_FIELD, COMMENT_TEXT, COMMENT_BODY = 200, 2000, 16 * 1024
 CHANGES = CATALOG + "/_changes"
 RECORD = "capability-delta.md"
 CAPABILITIES_SCRIPT = ".specify/extensions/capabilities/scripts/python/capabilities.py"
+# What a spec changed in an approved rule, once the product owner has seen it. A rule a spec retired is kept as this text.
+SEEN = "seen.md"
+RETIRED = "(retired)"
 # The slices an area is cut into: one spec builds each. The catalog owns the format of a map and reads it; the map of an area is named after it.
 SLICES = "specs/_slices"
 SLICE_MARK = "<!-- slice-map:v1 -->"
@@ -99,6 +102,9 @@ COMMENT = re.compile(r"<!--.*?-->", re.S)
 EXAMPLE = re.compile(r"^- (%s): (.+?)\s*$" % RULE)
 PASTED = re.compile(r"^C-[0-9]+: (%s)(?:\s|$)" % SCREEN)
 APPROVED_BY = re.compile(r"^Approved by: (.+) on (\d{4}-\d{2}-\d{2})\s*$")
+SEEN_BY = re.compile(r"^(.+) on (\d{4}-\d{2}-\d{2})\Z")
+# The entries of a capability delta that set, change or retire the text of a rule.
+DELTA_ENTRY = re.compile(r"^### (DESIGNED|MODIFIED|REMOVED) (%s)\s*$" % RULE)
 CATALOG_RULE = re.compile(r"^- \*\*(%s)\*\*( \[designed\])?: (.*?)(?: \([^()]*\))?\s*$" % RULE, re.M)
 NOTHING = ("none", "-")
 # The kinds of element a person presses or fills in: the page shows each one under the label its screen gives it.
@@ -245,10 +251,12 @@ class Product:
         self.idea = ""
         self.actors, self.areas, self.flows, self.stories, self.screens = {}, {}, {}, {}, {}
         self.capabilities, self.rules, self.questions = {}, {}, []
+        self.retiring, self.seen = {}, {}
         self.comments = []
         self.theme = None
         self.directions, self.sample = {}, {}
         self.cut = False
+        self.changed = None
         self.exists = read(self.dir / "product.md") is not None
         if self.exists:
             self.load()
@@ -291,6 +299,12 @@ class Product:
             self.cut = slice_maps(self.root)
         return self.cut
 
+    def changes(self, catalog):
+        """What specs changed in the approved rules and the person has not seen, read once."""
+        if self.changed is None:
+            self.changed = spec_changes(self, catalog)
+        return self.changed
+
     # -- the files
 
     def load(self):
@@ -303,6 +317,7 @@ class Product:
         self.load_stories()
         self.load_screens()
         self.load_drafts()
+        self.load_seen()
         self.load_decisions()
         self.load_comments()
         self.load_theme()
@@ -449,10 +464,34 @@ class Product:
                 if not key:
                     self.bad("capability-drafts.md", item["line"], "a rule is `### R-<name>`, in lowercase and hyphens")
                     continue
+                if "Retire" in item["fields"]:
+                    # Not a draft: an approved rule the person wants gone. It says why, and has no text of its own.
+                    fields = self.fields("capability-drafts.md", item, ("Retire",))
+                    if key in self.rules:
+                        self.bad("capability-drafts.md", item["line"], "%s is a draft and is marked to retire; keep one of the two" % key)
+                    self.keep(self.retiring, key, {"id": key, "capability": section["title"], "reason": fields.get("Retire", "").strip(), "line": item["line"]},
+                              "capability-drafts.md", item["line"], "rule to retire")
+                    continue
                 fields = self.fields("capability-drafts.md", item, ("Text", "Example"), ("Owner",))
+                if key in self.retiring:
+                    self.bad("capability-drafts.md", item["line"], "%s is a draft and is marked to retire; keep one of the two" % key)
                 self.keep(self.rules, key, {"id": key, "capability": section["title"], "text": fields.get("Text", ""), "example": fields.get("Example", ""),
                                             "line": item["line"]}, "capability-drafts.md", item["line"], "rule")
                 self.capabilities[section["title"]]["rules"].append(key)
+
+    def load_seen(self):
+        for item in outline(read(self.dir / SEEN) or ""):
+            if item["level"] != 3:
+                continue
+            key, _ = split_title(item["title"], RULE)
+            if not key:
+                self.bad(SEEN, item["line"], "a rule seen is `### R-<name>`")
+                continue
+            fields = self.fields(SEEN, item, ("Text", "Seen-By"), ("Spec",))
+            if fields.get("Seen-By", "").strip() and not SEEN_BY.match(fields["Seen-By"].strip()):
+                self.bad(SEEN, item["line"], "Seen-By is `<who> on <YYYY-MM-DD>`")
+            self.keep(self.seen, key, {"id": key, "text": fields.get("Text", "").strip(), "spec": fields.get("Spec", "").strip(),
+                                       "by": fields.get("Seen-By", "").strip(), "line": item["line"]}, SEEN, item["line"], "rule seen")
 
     def load_decisions(self):
         items = outline(read(self.dir / "decisions.md") or "")
@@ -585,6 +624,143 @@ def catalog_rules(root):
             continue
         for rule in CATALOG_RULE.finditer(read(spec) or ""):
             found.setdefault(rule.group(1), {"capability": spec.parent.name, "text": rule.group(3).strip(), "state": "designed" if rule.group(2) else "implemented"})
+    return found
+
+
+def delta_entries(text):
+    """The entries of a capability delta that set, change or retire the text of a rule, in order."""
+    found, current, inside = [], None, False
+    for line in COMMENT.sub("", text or "").splitlines():
+        if line.startswith("## "):
+            inside, current = line.strip().startswith("## Capability Delta"), None
+        elif inside and line.startswith("### "):
+            match = DELTA_ENTRY.match(line)
+            current = {"op": match.group(1), "rule": match.group(2), "capability": "", "from": "", "to": ""} if match else None
+            if current:
+                found.append(current)
+        elif inside and current:
+            field = FIELD.match(line)
+            if field and field.group(1) in ("Capability", "From", "To"):
+                current[field.group(1).lower()] = field.group(2).strip()
+    return found
+
+
+def approvals(root):
+    """What the product owner approved last for each rule, from the published design records in order: its text, or None once
+    a record retired it, with its capability, who approved, when and the record."""
+    found, base = {}, root / CHANGES
+    records = sorted(base.glob("*/" + RECORD), key=lambda path: (path.parent.name[:8], len(path.parent.name), path.parent.name)) if base.is_dir() else []
+    for path in records:
+        if not any(other.name.endswith(".lock.json") for other in path.parent.iterdir()):
+            continue    # written and never published: the catalog does not have it
+        text = read(path) or ""
+        signed = next((APPROVED_BY.match(line) for line in text.splitlines() if APPROVED_BY.match(line)), None)
+        for entry in delta_entries(text):
+            if entry["op"] in ("DESIGNED", "REMOVED"):
+                found[entry["rule"]] = {"text": entry["to"] if entry["op"] == "DESIGNED" else None, "capability": entry["capability"],
+                                        "by": one_line(signed.group(1)) if signed else "", "on": signed.group(2) if signed else "",
+                                        "record": "%s/%s" % (CHANGES, path.parent.name)}
+    return found
+
+
+def record_area(product, record):
+    """The area a design record approved: its folder carries the name of the area."""
+    name = re.sub(r"^\d{8}-design-", "", record.rsplit("/", 1)[-1])
+    return max((area for area in product.areas if name == area or re.fullmatch(re.escape(area) + r"-\d+", name)), key=len, default=None)
+
+
+def history_rows(root, capability, title):
+    """The rows of one table of the history of a capability."""
+    rows, inside = [], False
+    for line in (read(root / CATALOG / capability / "history.md") or "").splitlines():
+        if line.startswith("## "):
+            inside = line.strip() == "## " + title
+        elif inside and line.startswith("|"):
+            rows.append([cell.strip() for cell in line.strip().strip("|").split("|")])
+    return rows[2:]
+
+
+def changed_by(root, capability, rule, retired=False):
+    """The change that gave a rule the text it has, or that retired it: the last one the history of its capability names for it."""
+    if retired:
+        return next((cells[2] for cells in history_rows(root, capability, "Retired Rules") if len(cells) >= 3 and cells[0] == rule), "")
+    return next((cells[0] for cells in reversed(history_rows(root, capability, "Changes"))
+                 if len(cells) >= 2 and "MODIFIED %s" % rule in [part.strip() for part in cells[1].split(";")]), "")
+
+
+def retired_rules(root):
+    """The rules the catalog had and retired: the history of each capability lists them."""
+    base = root / CATALOG
+    return {cells[0] for folder in (sorted(base.iterdir()) if base.is_dir() else []) if folder.is_dir() and not folder.name.startswith("_")
+            for cells in history_rows(root, folder.name, "Retired Rules") if cells and cells[0]}
+
+
+def pending_changes(root, catalog):
+    """What the specs that are not folded yet will do to the rules of the catalog: rule -> the text it will have, or RETIRED, and the spec."""
+    found, base = {}, root / "specs"
+    for path in sorted(base.glob("*/spec.md")) if base.is_dir() else []:
+        if path.parent.name.startswith("_"):
+            continue
+        for entry in delta_entries(read(path) or ""):
+            known = catalog.get(entry["rule"])
+            if entry["op"] == "DESIGNED" or known is None or known["text"] != entry["from"]:
+                continue    # folded already, or written against another text: the catalog says what is true
+            if entry["op"] == "REMOVED" or entry["to"] != entry["from"]:
+                found[entry["rule"]] = {"to": RETIRED if entry["op"] == "REMOVED" else entry["to"], "spec": "specs/" + path.parent.name}
+    return found
+
+
+def spec_changes(product, catalog):
+    """What a spec did, or is about to do, to a rule the product owner approved, and that they have not seen: rule -> the change.
+    The approved text is the one of the last design record. A change made through the design is another record, never one of these."""
+    approved, found, cited = approvals(product.root), {}, {}
+    pending = pending_changes(product.root, catalog) if approved else {}
+    for owner in list(product.stories.values()) + list(product.screens.values()):
+        for rule in owner["rules"]:
+            cited.setdefault(rule, []).append(owner["area"])
+    for rule, was in sorted(approved.items()):
+        if was["text"] is None or rule in product.retiring:
+            continue    # retired with the yes of the person, or about to be: nothing a spec did behind them
+        known, now, spec, folded = catalog.get(rule), None, "", True
+        if known is None:
+            now, spec = RETIRED, changed_by(product.root, was["capability"], rule, retired=True)
+        elif known["text"] != was["text"]:
+            now, spec = known["text"], changed_by(product.root, known["capability"], rule)
+        if rule in pending:
+            now, spec, folded = pending[rule]["to"], pending[rule]["spec"], False
+        if now is None or now == product.seen.get(rule, {}).get("text"):
+            continue
+        home = record_area(product, was["record"])
+        found[rule] = {"id": rule, "capability": (known or was)["capability"], "approved": was["text"], "now": None if now == RETIRED else now,
+                       "kind": "retired" if now == RETIRED else "changed", "spec": spec, "folded": folded,
+                       "areas": sorted(set(cited.get(rule, []))) or ([home] if home else [])}
+    return found
+
+
+def retire_area(product, catalog, rule, approved):
+    """The area a rule marked to retire belongs to. Nothing cites it any more, so it is the area that approved it,
+    or the one that cites other rules of its capability, or the first one."""
+    if rule in approved and record_area(product, approved[rule]["record"]):
+        return record_area(product, approved[rule]["record"])
+    capability = (catalog.get(rule) or product.retiring[rule])["capability"]
+    for owner in list(product.stories.values()) + list(product.screens.values()):
+        if any((catalog.get(other) or product.rules.get(other) or {}).get("capability") == capability for other in owner["rules"]):
+            return owner["area"]
+    return next(iter(product.areas), None)
+
+
+def retirements(product, catalog, owners):
+    """The rules marked to retire that the catalog still has, by area: the ones an approval retires, the ones a spec has to
+    retire because they are built, and the ones a spec is building right now."""
+    found, approved = {}, approvals(product.root) if product.retiring else {}
+    for key, entry in sorted(product.retiring.items()):
+        known = catalog.get(key)
+        if known is None:
+            continue
+        kind = "built" if known["state"] != "designed" else "underway" if any(item["state"] in UNDERWAY for item in owners.get(key, ())) else "designed"
+        found.setdefault(retire_area(product, catalog, key, approved), []).append(
+            {"id": key, "capability": known["capability"], "text": known["text"], "reason": entry["reason"], "kind": kind,
+             "spec": next((item["spec"] for item in owners.get(key, ()) if item["state"] in UNDERWAY and item.get("spec")), "")})
     return found
 
 
@@ -757,7 +933,9 @@ def problems(product):
             cited.setdefault(rule, []).append(owner["id"])
     for rule, owners in sorted(cited.items()):
         if rule not in product.rules and rule not in catalog:
-            hard.append("%s: %s cites %s, which is not in capability-drafts.md nor in the catalog" % (PRODUCT, ", ".join(owners), rule))
+            gone = product.changes(catalog).get(rule)
+            hard.append("%s: %s cites %s, which %s retired; take it out with speckit.studio.iterate" % (PRODUCT, ", ".join(owners), rule, gone["spec"] or "a spec")
+                        if gone else "%s: %s cites %s, which is not in capability-drafts.md nor in the catalog" % (PRODUCT, ", ".join(owners), rule))
     for rule in product.rules.values():
         where = rel("capability-drafts.md", rule["line"])
         if rule["id"] not in cited:
@@ -771,6 +949,20 @@ def problems(product):
             notes.append("%s: %s is approved with another text; this draft is a change that waits for speckit.studio.approve" % (where, rule["id"]))
         elif known:
             notes.append("%s: %s is already in the catalog with this text; speckit.studio.approve takes the draft away" % (where, rule["id"]))
+    for entry in product.retiring.values():
+        where = rel("capability-drafts.md", entry["line"])
+        known = catalog.get(entry["id"])
+        if entry["id"] in cited:
+            hard.append("%s: %s is marked to retire, and %s still cites it; take it out of there, or delete the Retire line" % (
+                where, entry["id"], ", ".join(cited[entry["id"]])))
+        if known and known["capability"] != entry["capability"]:
+            hard.append("%s: %s belongs to the capability %s in the catalog, and to %s here" % (where, entry["id"], known["capability"], entry["capability"]))
+        elif not known and not changed_by(product.root, entry["capability"], entry["id"], retired=True):
+            hard.append("%s: %s is not a rule of the catalog; only an approved rule is retired, and a draft is deleted" % (where, entry["id"]))
+        elif not known:
+            notes.append("%s: %s is retired already; speckit.studio.approve takes this line away" % (where, entry["id"]))
+        elif known["state"] != "designed":
+            notes.append("%s: %s is built; a spec retires it, and this line waits for that spec" % (where, entry["id"]))
     for comment in product.comments:
         if comment["status"] == "open" and comment["screen"] not in product.screens:
             notes.append("%s: %s was made on %s, which is not a screen any more" % (rel(COMMENTS), comment["id"], comment["screen"]))
@@ -815,6 +1007,8 @@ def problems(product):
         for ref in page.refs:
             if ref not in product.stories and ref not in product.rules and ref not in catalog:
                 hard.append("%s: data-ref cites %s, which is not a story nor a rule" % (where, ref))
+            elif ref in product.retiring:
+                hard.append("%s: data-ref cites %s, which is marked to retire; take it out of the page" % (where, ref))
         for state in page.states:
             if state not in screen["states"]:
                 hard.append("%s: data-state uses %s, which is not a state of %s" % (where, state, screen["id"]))
@@ -956,8 +1150,13 @@ def slice_problems(product):
         return hard, ["%s: nothing read the slice maps: the capabilities extension reads them, and it is not installed or it gave no answer" % SLICES]
     catalog, owners = catalog_rules(product.root), slice_owners(product)
     known = {item["id"]: item for found in maps for item in live(found)}
+    retired = retired_rules(product.root)
     for found in maps:
         for item in live(found):
+            # A slice still to build that names a rule retired since: nothing is left of it to build.
+            for rule in item["rules"]:
+                if rule in retired and rule not in catalog and item["state"] != "delivered":
+                    notes.append("%s: %s names %s, which was retired; take it out of the slice with speckit.studio.slice" % (found["map"], item["id"], rule))
             for story in item["stories"]:
                 if story not in product.stories:
                     hard.append("%s: %s names %s, which is not in story-map.md" % (found["map"], item["id"], story))
@@ -995,11 +1194,16 @@ def slice_problems(product):
 
 def rule_state(product, catalog, rule, owners=None):
     """A rule the catalog has is past its draft. An approved rule whose draft says something else has a change proposed:
-    the catalog keeps its text until the person approves the new one. An approved rule is in a spec once the slice
-    that builds it has one, and until that spec is delivered."""
+    the catalog keeps its text until the person approves the new one. One marked to retire stays until the person approves
+    that. An approved rule is in a spec once the slice that builds it has one, and until that spec is delivered."""
     known, draft = catalog.get(rule), product.rules.get(rule)
     if known and draft and known["state"] == "designed" and draft["text"] != known["text"]:
         return "proposed"
+    if known and rule in product.retiring:
+        return "retiring"
+    # A spec changed it, or is about to, and the person has not seen it: that comes before how far its code is.
+    if known and rule in product.changes(catalog):
+        return "changed"
     if known and known["state"] == "designed" and any(item["state"] in UNDERWAY for item in (owners or {}).get(rule, ())):
         return "in-spec"
     return known["state"] if known else "draft" if draft else "unknown"
@@ -1029,6 +1233,7 @@ def status(product):
     catalog = catalog_rules(product.root)
     owners = slice_owners(product)
     cut_hard, cut_notes = slice_problems(product)
+    retiring, changes = retirements(product, catalog, owners), product.changes(catalog)
     asked = [question for question in product.questions if question["status"] == "asked"]
     missing = [name for name, there in (("vision.md", product.vision), ("actors.md", bool(product.actors)), ("navigation.md", bool(product.areas)),
                                         ("look-and-feel.md", bool(product.theme and product.theme.get("complete")))) if not there]
@@ -1059,6 +1264,15 @@ def status(product):
         # An area with no rule has nothing to approve: it counts as approved once it is described and drawn.
         unready = mapped == "pending" or (not rules and (mapped != "done" or mock != "done"))
         approve = "pending" if unready else approval_state(product, catalog, rules)
+        # A rule marked to retire is still approved, and nothing cites it: it counts apart. One that is built waits for a spec, not for an approval.
+        leaving = retiring.get(area["id"], [])
+        if leaving:
+            counts["retiring"] = counts.get("retiring", 0) + sum(1 for entry in leaving if entry["id"] not in rules)
+        to_retire = [entry["id"] for entry in leaving if entry["kind"] != "built"]
+        if to_retire and approve != "pending":
+            approve = "attention"
+        # What a spec changed in an approved rule waits to be seen. The area stays approved meanwhile: nothing it publishes is in doubt.
+        to_see = sorted(key for key, change in changes.items() if area["id"] in change["areas"])
         # Nothing asks for a round of changes once the area is approved, or once its comments were gone through.
         settled = (approve == "done" and mock == "done") or len(said) > waiting_comments
         iterate = "attention" if waiting_comments else "done" if settled else "pending"
@@ -1077,7 +1291,8 @@ def status(product):
             "slices": {"total": len(pieces), "delivered": sum(1 for item in pieces if item["state"] == "delivered"),
                        "underway": sum(1 for item in pieces if item["state"] in UNDERWAY),
                        "next": next(({"id": item["id"], "title": item["title"]} for item in pieces if item["ready"]), None), "loose": loose},
-            "steps": {"map": mapped, "mockup": mock, "iterate": iterate, "approve": approve, "slice": cut},
+            "to_retire": to_retire, "retire_with_spec": [entry["id"] for entry in leaving if entry["kind"] == "built"], "to_see": to_see,
+            "steps": {"map": mapped, "mockup": mock, "iterate": iterate, "approve": "attention" if to_see else approve, "slice": cut},
             "state": "not-started" if mapped == "pending" else "in-design" if mapped != "done" or mock != "done" else "approved" if approve == "done" else "drawn",
         })
     remarks = {state: sum(1 for comment in product.comments if comment["status"] == state) for state in COMMENT_STATES}
@@ -1101,7 +1316,10 @@ def status(product):
             step = {"command": "speckit.studio.iterate", "args": "", "why": "%s on the mockup %s to be applied." % (
                 count(waiting_all, "comment"), "waits" if waiting_all == 1 else "wait")}
         elif changed:
-            step = {"command": "speckit.studio.approve", "args": changed["id"], "why": "A rule of %s changed after it was approved, or its approval was cut short." % changed["title"]}
+            why = ("A rule of %s changed after it was approved, or its approval was cut short." if changed["rules"].get("proposed") or not (changed["to_retire"] or changed["to_see"])
+                   else "A rule of %s is marked to retire, and waits for approval." if changed["to_retire"]
+                   else "A spec changed a rule of %s after it was approved. See what it changed.")
+            step = {"command": "speckit.studio.approve", "args": changed["id"], "why": why % changed["title"]}
         elif unapproved:
             step = {"command": "speckit.studio.approve", "args": unapproved["id"],
                     "why": "%s is drawn. Approve its rules when the mockup is right, or say what to change first." % unapproved["title"]}
@@ -1171,11 +1389,24 @@ def status(product):
         attention.append({"kind": "comments", "text": "%s on the mockup %s to be applied." % (count(waiting_all, "comment"), "waits" if waiting_all == 1 else "wait")})
     for area in areas:
         if area["steps"]["approve"] == "attention":
-            proposed = area["rules"].get("proposed", 0)
-            attention.append({"kind": "approve", "area": area["id"],
-                              "text": "%s of %s changed after %s approved: %s for approval." % (
-                                  count(proposed, "rule"), area["title"], "it was" if proposed == 1 else "they were", "it waits" if proposed == 1 else "they wait")
-                              if proposed else "The approval of %s was cut short: run it again." % area["title"]})
+            proposed, leaving, to_see = area["rules"].get("proposed", 0), len(area["to_retire"]), len(area["to_see"])
+            if proposed or not (leaving or to_see):
+                attention.append({"kind": "approve", "area": area["id"],
+                                  "text": "%s of %s changed after %s approved: %s for approval." % (
+                                      count(proposed, "rule"), area["title"], "it was" if proposed == 1 else "they were", "it waits" if proposed == 1 else "they wait")
+                                  if proposed else "The approval of %s was cut short: run it again." % area["title"]})
+            if leaving:
+                attention.append({"kind": "approve", "area": area["id"],
+                                  "text": "%s of %s %s marked to retire: %s for approval." % (
+                                      count(leaving, "rule"), area["title"], "is" if leaving == 1 else "are", "it waits" if leaving == 1 else "they wait")})
+            if to_see:
+                attention.append({"kind": "changed", "area": area["id"],
+                                  "text": "A spec changed %s of %s after %s approved: %s to be seen." % (
+                                      count(to_see, "rule"), area["title"], "it was" if to_see == 1 else "they were", "it waits" if to_see == 1 else "they wait"),
+                                  "details": ["%s: %s" % (key, changes[key]["spec"] or "a spec") for key in area["to_see"]]})
+        for key in area["retire_with_spec"]:
+            attention.append({"kind": "retire", "area": area["id"],
+                              "text": "%s is built and marked to retire: a spec retires it. Ask for that spec with speckit.specify." % key})
     if waiting:
         attention.append({"kind": "asked", "text": "%s about the product %s for an answer." % (count(len(waiting), "question"), "waits" if len(waiting) == 1 else "wait")})
     for area in areas:
@@ -1283,7 +1514,8 @@ def build(product, kit):
     write(target / "screens.js", "/* Generated by studio from navigation.md and screens/. */\n" + as_script("STUDIO_SCREENS", screens))
     written.append("mockup/_studio/screens.js")
     rules, examples, owners = {}, record_examples(product.root), slice_owners(product)
-    for rule in sorted({rule for owner in list(product.stories.values()) + list(product.screens.values()) for rule in owner["rules"]} | set(product.rules)):
+    for rule in sorted({rule for owner in list(product.stories.values()) + list(product.screens.values()) for rule in owner["rules"]}
+                       | set(product.rules) | set(product.retiring)):
         draft, known = product.rules.get(rule), catalog.get(rule)
         if draft or known:
             # A draft says what the person wants now: the mockup shows it, and what was approved before when that is something else.
@@ -1292,6 +1524,16 @@ def build(product, kit):
                            "nota": draft["example"] if draft else examples.get(rule, "")}
             if state == "proposed":
                 rules[rule]["antes"] = known["text"]
+            if state == "changed":
+                # What the spec makes it say, what the person had approved, and which spec it is.
+                change = product.changes(catalog)[rule]
+                if change["now"] and change["now"] != change["approved"]:
+                    rules[rule]["texto"], rules[rule]["antes"] = change["now"], change["approved"]
+                rules[rule]["cambio"] = (change["spec"] or "").split("/")[-1]
+                if change["kind"] == "retired":
+                    rules[rule]["retirada"] = True
+            if state == "retiring":
+                rules[rule]["motivo"] = product.retiring[rule]["reason"]
             # The slice that builds the rule, and the spec of that slice once it has one.
             builder = next(iter(owners.get(rule, [])), None)
             if builder:
@@ -1610,6 +1852,17 @@ def approval(product, area):
     screens = [screen for screen in product.screens.values() if screen["area"] == area]
     stories = [story for story in product.stories.values() if story["area"] == area]
     capabilities, leftover, approved, blockers = {}, [], [], []
+    # The slices matter only for a rule marked to retire: reading them takes a process.
+    owners = slice_owners(product) if product.retiring else {}
+    leaving = retirements(product, catalog, owners).get(area, [])
+    retire = [entry for entry in leaving if entry["kind"] == "designed"]
+    for entry in leaving:
+        if entry["kind"] == "underway":
+            blockers.append("%s is marked to retire, and %s is building it: leave it out of that spec first with capabilities.py defer, or let the spec finish" % (
+                entry["id"], entry["spec"] or "a spec"))
+    # A Retire line whose rule the catalog no longer has: a spec retired it meanwhile. The approval only takes the line away.
+    gone = sorted(key for key, entry in product.retiring.items() if key not in catalog and changed_by(product.root, entry["capability"], key, retired=True))
+    changed = [change for change in product.changes(catalog).values() if area in change["areas"]]
     for key in area_rules(product, area):
         draft, known = product.rules.get(key), catalog.get(key)
         if draft is None:
@@ -1649,15 +1902,22 @@ def approval(product, area):
         "stories": [{"id": story["id"], "title": story["title"]} for story in stories],
         "screens": [{"id": screen["id"], "title": screen["title"]} for screen in screens],
         "capabilities": groups, "rules": sum(len(group["rules"]) for group in groups), "leftover": leftover, "approved": approved,
+        "retire": retire, "retire_with_spec": [entry for entry in leaving if entry["kind"] == "built"], "retired_already": gone,
+        "changed": changed,
         "blockers": blockers, "warnings": warnings,
-        "status": "blocked" if blockers else "ready" if groups or leftover else "nothing",
+        "status": "blocked" if blockers else "ready" if groups or leftover or retire or gone else "nothing",
     }
 
 
 def record_text(plan, who, day):
-    """The design record of an approval: who approved and when, the example of each rule, and the delta the catalog publishes."""
-    lines = ["# Design: %s" % plan["title"], "", "Approved by: %s on %s" % (who, day.isoformat()), "", "## Examples", ""]
-    lines += ["- %s: %s" % (rule["id"], rule["example"]) for group in plan["capabilities"] for rule in group["rules"]]
+    """The design record of an approval: who approved and when, the example of each rule, why each retired rule goes,
+    and the delta the catalog publishes."""
+    lines = ["# Design: %s" % plan["title"], "", "Approved by: %s on %s" % (who, day.isoformat())]
+    examples = ["- %s: %s" % (rule["id"], rule["example"]) for group in plan["capabilities"] for rule in group["rules"]]
+    if examples:
+        lines += ["", "## Examples", ""] + examples
+    if plan.get("retire"):
+        lines += ["", "## Retired", ""] + ["- %s: %s" % (entry["id"], entry["reason"]) for entry in plan["retire"]]
     lines += ["", "## Capability Delta", "<!-- capability-delta:v1 -->"]
     for group in plan["capabilities"]:
         if group["new"]:
@@ -1665,6 +1925,9 @@ def record_text(plan, who, day):
         for rule in group["rules"]:
             lines += ["", "### DESIGNED %s" % rule["id"], "- Capability: %s" % group["id"], "- From: %s" % (rule["from"] or "(none)"),
                       "- To: %s" % rule["text"], "- Links: none"]
+    for entry in plan.get("retire") or []:
+        lines += ["", "### REMOVED %s" % entry["id"], "- Capability: %s" % entry["capability"], "- From: %s" % entry["text"],
+                  "- To: (none)", "- Replaced-By: none", "- Links: none"]
     return "\n".join(lines) + "\n"
 
 
@@ -1731,16 +1994,49 @@ def approve(product, area, by=None, day=None):
     if not who:
         raise StudioError("say who approves: --by, or `- Owner:` in %s" % product.rel("product.md"))
     plan["by"] = who
-    if plan["capabilities"]:
-        day = day or datetime.date.today()
+    day = day or datetime.date.today()
+    if plan["capabilities"] or plan["retire"]:
         text = record_text(plan, who, day)
         plan["record"] = record_place(product.root, area, text, day)
         write(product.root / plan["record"] / RECORD, text)
         plan["published"] = publish_design(product.root, plan["record"])["status"]
     published = [rule["id"] for group in plan["capabilities"] for rule in group["rules"]] + plan["leftover"]
+    retired = [entry["id"] for entry in plan["retire"]]
+    if plan["retired_already"]:
+        # The person asked for these to go and a spec retired them: that is seen, not news.
+        write_seen(product, {key: {"text": RETIRED, "spec": changed_by(product.root, product.retiring[key]["capability"], key, retired=True)}
+                             for key in plan["retired_already"]}, who, day)
     drafts = product.dir / "capability-drafts.md"
-    write(drafts, without_rules(read(drafts) or "", set(published)))
-    plan["status"], plan["approved_now"] = "approved", published
+    write(drafts, without_rules(read(drafts) or "", set(published + retired + plan["retired_already"])))
+    plan["status"], plan["approved_now"], plan["retired_now"] = "approved", published, retired
+    return plan
+
+
+def write_seen(product, entries, who, day):
+    """Keeps what the person has seen of each rule: the text a spec gave it, or that a spec retired it. One entry per rule."""
+    kept = {key: {"text": entry["text"], "spec": entry["spec"], "by": entry["by"]} for key, entry in product.seen.items()}
+    for key, entry in entries.items():
+        kept[key] = {"text": entry["text"], "spec": entry.get("spec") or "", "by": "%s on %s" % (who, day.isoformat())}
+    lines = ["# Changes seen", "",
+             "What a spec changed in a rule the product owner had approved, once they have seen it. `studio.py approve <area> --seen` writes this file.", ""]
+    for key in sorted(kept):
+        lines += ["### %s" % key, "- Text: %s" % kept[key]["text"]] + (["- Spec: %s" % kept[key]["spec"]] if kept[key]["spec"] else []) + ["- Seen-By: %s" % kept[key]["by"], ""]
+    write(product.dir / SEEN, "\n".join(lines))
+
+
+def acknowledge(product, area, by=None, day=None):
+    """Records that the product owner has seen what specs changed in the approved rules of an area. It publishes nothing:
+    the catalog already says what the spec made true. To undo a change, the design changes the rule again."""
+    import datetime
+    plan = approval(product, area)
+    if not plan["changed"]:
+        plan["status"] = "nothing"
+        return plan
+    who = one_line(by) or one_line(product.owner)
+    if not who:
+        raise StudioError("say who has seen it: --by, or `- Owner:` in %s" % product.rel("product.md"))
+    write_seen(product, {change["id"]: {"text": change["now"] or RETIRED, "spec": change["spec"]} for change in plan["changed"]}, who, day or datetime.date.today())
+    plan["by"], plan["status"], plan["seen_now"] = who, "seen", [change["id"] for change in plan["changed"]]
     return plan
 
 
@@ -2214,6 +2510,7 @@ def main(argv=None):
     parser.add_argument("--note", help="comments resolve: what was done, or why not")
     parser.add_argument("--by", help="approve: who approves, when it is not the owner of the product")
     parser.add_argument("--dry-run", action="store_true", help="approve: say what would be approved, and write nothing")
+    parser.add_argument("--seen", action="store_true", help="approve: record that the person has seen what specs changed in the approved rules, and publish nothing")
     parser.add_argument("--port", type=int, help="serve: the port, instead of the one of this project")
     parser.add_argument("--idle", type=int, help="serve: stop after this many seconds without a request")
     # Intermixed: before Python 3.12 a positional that may be absent, such as the letter of `pick`,
@@ -2228,7 +2525,7 @@ def main(argv=None):
     for value, name, commands in ((args.page, "--page", ("open", "shots")), (args.area, "--area", ("shots",)), (args.states or None, "--states", ("shots",)),
                                   (args.no_browser or None, "--no-browser", ("open",)), (args.stop or None, "--stop", ("open",)),
                                   (args.all or None, "--all", ("comments",)), (args.outcome, "--as", ("comments",)), (args.note, "--note", ("comments",)),
-                                  (args.by, "--by", ("approve",)), (args.dry_run or None, "--dry-run", ("approve",)),
+                                  (args.by, "--by", ("approve",)), (args.dry_run or None, "--dry-run", ("approve",)), (args.seen or None, "--seen", ("approve",)),
                                   (args.port, "--port", ("serve",)), (args.idle, "--idle", ("serve",)),
                                   (args.words or None, "a word after the command", ("pick", "approve", "comments", "slice", "brief"))):
         if value is not None and args.command not in commands:
@@ -2237,6 +2534,8 @@ def main(argv=None):
         parser.error("pick takes the letter of a direction, such as A")
     if args.command in ("approve", "slice") and (len(args.words) != 1 or not re.fullmatch(SLUG, args.words[0])):
         parser.error("%s takes the name of one area, such as acceso" % args.command)
+    if args.seen and args.dry_run:
+        parser.error("--seen writes what was seen; --dry-run already lists it under `changed`")
     if args.command == "brief" and (len(args.words) != 1 or not re.fullmatch(SLICE, args.words[0])):
         parser.error("brief takes one slice, such as D-acceso-clave")
     action = args.words[0] if args.command == "comments" and args.words else None
@@ -2268,8 +2567,11 @@ def main(argv=None):
             build(product, kit)
             return serve(root, args.port, SERVER_IDLE if args.idle is None else args.idle)
         if args.command == "approve":
+            if args.seen:
+                plan = acknowledge(product, args.words[0], args.by)
+                return emit(plan, WAIT if plan["status"] == "nothing" else OK)
             plan = approval(product, args.words[0]) if args.dry_run else approve(product, args.words[0], args.by)
-            return emit(plan, HARD if plan["status"] == "blocked" else WAIT if plan["status"] == "nothing" else OK)
+            return emit(plan, HARD if plan["status"] == "blocked" else WAIT if plan["status"] == "nothing" and not plan["changed"] else OK)
         if args.command == "slice":
             plan = cut(product, args.words[0])
             return emit(plan, HARD if plan["status"] in ("blocked", "invalid") else OK)

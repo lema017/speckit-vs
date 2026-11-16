@@ -3,7 +3,7 @@ schema_version: "1.0"
 extension:
   id: studio
   name: "Product Studio"
-  version: "0.3.0"
+  version: "0.4.0"
   description: "Design a product before building it: a guided conversation with the product owner, a mockup to click through and comment on in the browser, the approval of its business rules, and the cut of each area into specs."
   author: lema017
   repository: https://github.com/lema017/speckit-vs

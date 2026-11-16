@@ -196,8 +196,10 @@ def test_an_area_says_how_many_of_its_slices_are_delivered(engine):
 
 def test_the_page_counts_the_rules_that_are_in_a_spec_and_the_ones_built(engine):
     page = (Path(engine.__file__).parent / "design.html").read_text(encoding="utf-8")
-    assert 'inSpec = rules["in-spec"] || 0, built = rules.implemented || 0, approved = (rules.designed || 0) + inSpec + built' in page
+    assert 'inSpec = rules["in-spec"] || 0, built = rules.implemented || 0, out = [];' in page
     assert 'if (inSpec) out.push(inSpec + " in a spec");' in page and 'if (built) out.push(built + " built");' in page
+    assert 'if (changed) out.push(changed + " changed by a spec");' in page and 'if (retiring) out.push(retiring + " to retire");' in page
+    assert "var approved = (rules.designed || 0) + inSpec + built + proposed + changed + retiring;" in page, "each of them is an approved rule"
 
 
 # -- How a command is written ------------------------------------------------------------------

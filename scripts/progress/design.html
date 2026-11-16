@@ -289,11 +289,17 @@ dialog::backdrop{background:rgba(10,14,18,.5)}
 
   // The areas, each with its own steps
   function rulesLine(rules) {
-    var draft = rules.draft || 0, inSpec = rules["in-spec"] || 0, built = rules.implemented || 0, approved = (rules.designed || 0) + inSpec + built, out = [];
+    var draft = rules.draft || 0, inSpec = rules["in-spec"] || 0, built = rules.implemented || 0, out = [];
+    // A rule with a change proposed, one a spec changed and one marked to retire are approved rules too.
+    var proposed = rules.proposed || 0, changed = rules.changed || 0, retiring = rules.retiring || 0;
+    var approved = (rules.designed || 0) + inSpec + built + proposed + changed + retiring;
     if (draft) out.push(plural(draft, "rule") + " in draft");
     if (approved) out.push(plural(approved, "rule") + " approved");
     if (inSpec) out.push(inSpec + " in a spec");
     if (built) out.push(built + " built");
+    if (proposed) out.push(proposed + " with a change proposed");
+    if (changed) out.push(changed + " changed by a spec");
+    if (retiring) out.push(retiring + " to retire");
     return out;
   }
   D.areas.forEach(function (a) {

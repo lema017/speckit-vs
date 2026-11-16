@@ -128,6 +128,7 @@ def test_status_says_how_far_the_product_and_each_area_are(oficio):
         "id": "acceso", "title": "Acceso", "covers": "Entrar, crear una cuenta y recuperar la contraseña", "state": "drawn", "stories": 4, "screens": 5,
         "pages": 5, "rules": {"draft": 6}, "asked": 0, "open": 0, "decisions": 1, "links_pending": 0, "comments": 0, "approved": 0,
         "slices": {"total": 0, "delivered": 0, "underway": 0, "next": None, "loose": ["ST-1", "ST-2", "ST-3", "ST-4"]},
+        "to_retire": [], "retire_with_spec": [], "to_see": [],
         "steps": {"map": "done", "mockup": "done", "iterate": "pending", "approve": "pending", "slice": "pending"}}
     assert out["check"] == {"hard": 0, "notes": 1}
     assert out["next"] == {"command": "speckit.studio.approve", "args": "acceso",
@@ -2614,3 +2615,432 @@ def test_brief_is_for_a_slice_that_was_cut_from_a_design(cut):
     assert rc == 2 and out["errors"] == ["the slice D-acceso-vieja was dropped: nothing builds it"]
     rc, out = cut.run("brief", "D-acceso-otra")
     assert rc == 2 and out["errors"] == ["the slice D-acceso-otra is in no map under specs/_slices"]
+
+
+# ---------------------------------------------------------------- what a spec changes in an approved rule, and retiring one
+
+WARNING = "Desde el tercer intento fallido, se avisa cuántos intentos quedan antes del bloqueo."
+WARNING_EXAMPLE = 'Al tercer fallo Ana lee "Te quedan 2 intentos".'
+LOCKOUT_EXAMPLE = "Ana falla 5 veces a las 10:00 y puede volver a intentar a las 10:15."
+COVERS_LOGIN = "- Covers: Entrar a la cuenta con correo o con Google, Facebook o GitHub\n"
+SEEN_HEAD = ("# Changes seen\n\nWhat a spec changed in a rule the product owner had approved, once they have seen it. "
+             "`studio.py approve <area> --seen` writes this file.\n\n")
+
+
+def modified(rule, capability, old, new):
+    return "### MODIFIED %s\n- Capability: %s\n- From: %s\n- To: %s\n- Links: FR-001\n" % (rule, capability, old, new)
+
+
+def removed(rule, capability, old):
+    return "### REMOVED %s\n- Capability: %s\n- From: %s\n- To: (none)\n- Replaced-By: none\n- Links: FR-001\n" % (rule, capability, old)
+
+
+def spec_with(project, name, delta, before="## Capability Delta\n<!-- capability-delta:v1 -->\n\n"):
+    """A spec with a delta: what `specify` and the interview leave before any code is written."""
+    folder = project.path / "specs" / name
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "spec.md").write_text("# Feature\n\n## Requirements\n\n- **FR-001**: Algo.\n\n%s%s" % (before, delta), encoding="utf-8")
+
+
+def history_row(project, capability, table, row):
+    path = project.path / "specs" / "_capabilities" / capability / "history.md"
+    lines, at = path.read_text(encoding="utf-8").split("\n"), None
+    for number, line in enumerate(lines):
+        if line.strip() == "## " + table:
+            at = number
+        elif at is not None and number > at and not line.startswith("|"):
+            lines.insert(number, row)
+            break
+    else:
+        lines.append(row)
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def folded(project, capability, rule, old, new, spec):
+    """The catalog after the fold of a spec that changed a rule: the rule says the new text, and the history names the spec."""
+    path = project.path / "specs" / "_capabilities" / capability / "spec.md"
+    text = path.read_text(encoding="utf-8")
+    assert text.count(old) == 1
+    path.write_text(text.replace(old, new), encoding="utf-8")
+    history_row(project, capability, "Changes", "| %s | MODIFIED %s |" % (spec, rule))
+
+
+def retired_by(project, capability, rule, spec):
+    """The catalog after the fold of a spec that retired a rule: the rule is gone, and the history says who retired it."""
+    path = project.path / "specs" / "_capabilities" / capability / "spec.md"
+    lines = path.read_text(encoding="utf-8").split("\n")
+    gone = [line for line in lines if line.startswith("- **%s**" % rule)]
+    assert len(gone) == 1
+    path.write_text("\n".join(line for line in lines if line not in gone), encoding="utf-8")
+    history_row(project, capability, "Retired Rules", "| %s | %s | %s | none |" % (rule, "El texto que tenía.", spec))
+
+
+def uncite_warning(project):
+    """Nothing of the design shows R-login-attempts-warning any more: not its story, not its screen, not its page."""
+    project.edit("story-map.md", "- Rules: R-login-lockout, R-login-attempts-warning", "- Rules: R-login-lockout")
+    project.edit(LOGIN, "- Rules: R-login-lockout, R-login-oauth, R-login-attempts-warning", "- Rules: R-login-lockout, R-login-oauth")
+    project.edit(PAGE, ' data-ref="R-login-attempts-warning"', "")
+
+
+def to_retire(project, rule="R-login-attempts-warning", reason="Ya no se avisa: la cuenta se bloquea sin más.", capability="login", covers=COVERS_LOGIN):
+    project.write("capability-drafts.md", "# Capability drafts\n\n## %s\n\n%s\n### %s\n- Retire: %s\n" % (capability, covers, rule, reason))
+
+
+def changes_to_see(project, area="acceso"):
+    rc, out = project.run("approve", area, "--dry-run")
+    return rc, out["status"], out["changed"]
+
+
+def test_a_spec_that_will_change_an_approved_rule_waits_to_be_seen(approved):
+    spec_with(approved, "001-clave", modified("R-login-lockout", "login", LOCKOUT, STRICTER))
+    assert approved.check()[0] == 0, "the design is not wrong: something waits to be seen"
+    area = approved.area("acceso")
+    assert (area["state"], area["rules"], area["approved"], area["to_see"]) == ("approved", {"designed": 5, "changed": 1}, 6, ["R-login-lockout"])
+    assert area["steps"]["approve"] == "attention" and area["to_retire"] == []
+    out = approved.status()
+    assert {"kind": "changed", "area": "acceso", "text": "A spec changed 1 rule of Acceso after it was approved: it waits to be seen.",
+            "details": ["R-login-lockout: specs/001-clave"]} in out["attention"]
+    assert [entry["kind"] for entry in out["attention"]].count("approve") == 0, "nothing waits for an approval"
+    assert out["next"] == {"command": "speckit.studio.approve", "args": "acceso", "why": "A spec changed a rule of Acceso after it was approved. See what it changed."}
+    assert next(step for step in out["steps"] if step["name"] == "approve")["state"] == "attention"
+    other = approved.area("inicio")
+    assert (other["to_see"], other["steps"]["approve"]) == ([], "done"), "the other area has nothing to see"
+    approved.run("build")
+    assert approved.built("product.js")["reglas"]["R-login-lockout"] == {
+        "capacidad": "login", "estado": "changed", "texto": STRICTER, "antes": LOCKOUT, "nota": LOCKOUT_EXAMPLE, "cambio": "001-clave"}
+    assert "- **R-login-lockout** [designed]: %s" % LOCKOUT in approved.catalog("login"), "the catalog changes when the spec is folded, not before"
+
+
+def test_approve_lists_what_specs_changed_and_publishes_none_of_it(approved):
+    spec_with(approved, "001-clave", modified("R-login-lockout", "login", LOCKOUT, STRICTER))
+    records = approved.records()
+    rc, status, changed = changes_to_see(approved)
+    assert (rc, status) == (0, "nothing") and changed == [{
+        "id": "R-login-lockout", "capability": "login", "approved": LOCKOUT, "now": STRICTER, "kind": "changed", "spec": "specs/001-clave",
+        "folded": False, "areas": ["acceso"]}]
+    rc, out = approved.run("approve", "acceso")
+    assert rc == 0 and out["status"] == "nothing" and approved.records() == records, "seeing a change is not approving a rule"
+    assert not (approved.product / "seen.md").exists()
+    assert changes_to_see(approved, "inicio") == (3, "nothing", []), "another area has nothing to see"
+
+
+def test_seeing_a_change_says_who_saw_it_and_the_design_is_quiet_again(approved):
+    spec_with(approved, "001-clave", modified("R-login-lockout", "login", LOCKOUT, STRICTER))
+    rc, out = approved.run("approve", "acceso", "--seen")
+    assert rc == 0 and (out["status"], out["by"], out["seen_now"]) == ("seen", "Ana Pérez", ["R-login-lockout"]), out
+    assert approved.read("seen.md") == SEEN_HEAD + "### R-login-lockout\n- Text: %s\n- Spec: specs/001-clave\n- Seen-By: Ana Pérez on %s\n" % (
+        STRICTER, today().isoformat())
+    area = approved.area("acceso")
+    assert (area["steps"]["approve"], area["rules"], area["to_see"]) == ("done", {"designed": 6}, [])
+    assert not [entry for entry in approved.status()["attention"] if entry["kind"] == "changed"]
+    assert changes_to_see(approved) == (3, "nothing", [])
+    assert approved.run("approve", "acceso", "--seen") == (3, dict(approved.run("approve", "acceso", "--dry-run")[1], status="nothing")), "nothing more to see"
+    assert approved.check()[0] == 0
+
+
+def test_who_saw_a_change_can_be_someone_else_and_never_nobody(approved):
+    spec_with(approved, "001-clave", modified("R-login-lockout", "login", LOCKOUT, STRICTER))
+    rc, out = approved.run("approve", "acceso", "--seen", "--by", "  Rosa   Díaz ")
+    assert rc == 0 and out["by"] == "Rosa Díaz" and "- Seen-By: Rosa Díaz on " in approved.read("seen.md"), "who is named wins over the owner"
+    spec_with(approved, "002-sin-aviso", removed("R-login-attempts-warning", "login", WARNING))
+    approved.edit("product.md", "- Owner: Ana Pérez\n", "")
+    rc, out = approved.run("approve", "acceso", "--seen")
+    assert rc == 2 and out["errors"] == ["say who has seen it: --by, or `- Owner:` in specs/_product/product.md"]
+    assert "R-login-attempts-warning" not in approved.read("seen.md")
+
+
+def test_seen_goes_with_approve_and_not_with_a_dry_run(approved):
+    rc, out = approved.run("approve", "acceso", "--seen", "--dry-run")
+    assert rc == 2 and "--seen writes what was seen" in out["stderr"]
+    rc, out = approved.run("status", "--seen")
+    assert rc == 2 and "--seen goes with approve" in out["stderr"]
+
+
+def test_a_change_seen_before_the_fold_is_not_news_after_it(approved):
+    spec_with(approved, "001-clave", modified("R-login-lockout", "login", LOCKOUT, STRICTER))
+    approved.run("approve", "acceso", "--seen")
+    folded(approved, "login", "R-login-lockout", LOCKOUT, STRICTER, "specs/001-clave")
+    assert changes_to_see(approved) == (3, "nothing", []) and approved.area("acceso")["steps"]["approve"] == "done"
+
+
+def test_a_change_nobody_saw_is_said_after_the_fold_with_the_spec_that_made_it(approved):
+    folded(approved, "login", "R-login-lockout", LOCKOUT, STRICTER, "specs/007-otro")
+    rc, status, changed = changes_to_see(approved)
+    assert rc == 0 and [(change["id"], change["approved"], change["now"], change["spec"], change["folded"]) for change in changed] == [
+        ("R-login-lockout", LOCKOUT, STRICTER, "specs/007-otro", True)]
+    approved.run("build")
+    rule = approved.built("product.js")["reglas"]["R-login-lockout"]
+    assert (rule["estado"], rule["texto"], rule["antes"], rule["cambio"]) == ("changed", STRICTER, LOCKOUT, "007-otro")
+
+
+def test_a_second_change_waits_again_after_the_first_was_seen(approved):
+    folded(approved, "login", "R-login-lockout", LOCKOUT, STRICTER, "specs/007-otro")
+    approved.run("approve", "acceso", "--seen")
+    assert changes_to_see(approved)[2] == []
+    again = "Tras 4 intentos fallidos seguidos, la cuenta se bloquea 1 hora."
+    spec_with(approved, "008-mas", modified("R-login-lockout", "login", STRICTER, again))
+    assert [(change["approved"], change["now"], change["spec"]) for change in changes_to_see(approved)[2]] == [(LOCKOUT, again, "specs/008-mas")]
+    approved.run("approve", "acceso", "--seen")
+    assert approved.read("seen.md").count("### R-login-lockout") == 1 and "- Text: %s\n- Spec: specs/008-mas\n" % again in approved.read("seen.md"), "one entry per rule"
+
+
+def test_a_change_made_through_the_design_is_never_news(approved):
+    approved.write("capability-drafts.md", CHANGE)
+    assert approved.run("approve", "acceso")[1]["status"] == "approved"
+    assert changes_to_see(approved) == (3, "nothing", []) and approved.area("acceso")["rules"] == {"designed": 6}
+
+
+def test_a_spec_that_builds_a_rule_as_approved_changes_nothing(approved):
+    spec_with(approved, "001-clave", "### IMPLEMENTED R-login-lockout\n- Capability: login\n- From: %s\n- To: %s\n- Links: FR-001\n" % (LOCKOUT, LOCKOUT))
+    assert changes_to_see(approved)[2] == []
+
+
+def test_only_a_delta_written_against_what_the_catalog_says_counts(approved):
+    other = "Otro texto que el catálogo no tiene."
+    spec_with(approved, "001-vieja", modified("R-login-lockout", "login", other, STRICTER))
+    spec_with(approved, "002-ejemplo", "<!--\n%s-->\n" % modified("R-login-lockout", "login", LOCKOUT, STRICTER))
+    spec_with(approved, "003-fuera", modified("R-login-lockout", "login", LOCKOUT, STRICTER), before="## Notes\n\n")
+    spec_with(approved, "_borrador", modified("R-login-lockout", "login", LOCKOUT, STRICTER))
+    spec_with(approved, "004-igual", modified("R-login-lockout", "login", LOCKOUT, LOCKOUT))
+    assert changes_to_see(approved)[2] == []
+
+
+def test_a_rule_a_spec_will_retire_waits_to_be_seen(approved):
+    spec_with(approved, "001-sin-aviso", removed("R-login-attempts-warning", "login", WARNING))
+    rc, status, changed = changes_to_see(approved)
+    assert rc == 0 and changed == [{"id": "R-login-attempts-warning", "capability": "login", "approved": WARNING, "now": None, "kind": "retired",
+                                    "spec": "specs/001-sin-aviso", "folded": False, "areas": ["acceso"]}]
+    approved.run("build")
+    assert approved.built("product.js")["reglas"]["R-login-attempts-warning"] == {
+        "capacidad": "login", "estado": "changed", "texto": WARNING, "nota": WARNING_EXAMPLE, "cambio": "001-sin-aviso", "retirada": True}
+    approved.run("approve", "acceso", "--seen")
+    assert "### R-login-attempts-warning\n- Text: (retired)\n- Spec: specs/001-sin-aviso\n" in approved.read("seen.md")
+    assert changes_to_see(approved)[2] == []
+
+
+def test_a_rule_a_spec_retired_is_said_where_the_design_still_cites_it(approved):
+    retired_by(approved, "login", "R-login-attempts-warning", "specs/002-sin-aviso")
+    cites = "specs/_product: ST-1, SCR-login cites R-login-attempts-warning, which "
+    assert approved.hard(cites + "specs/002-sin-aviso retired; take it out with speckit.studio.iterate")
+    changed = approved.run("approve", "acceso", "--dry-run")[1]["changed"]
+    assert [(change["kind"], change["now"], change["spec"], change["folded"]) for change in changed] == [("retired", None, "specs/002-sin-aviso", True)]
+    assert approved.run("approve", "acceso", "--seen")[1]["seen_now"] == ["R-login-attempts-warning"], "seeing it does not wait for the design to be fixed"
+    assert approved.hard(cites + "is not in capability-drafts.md nor in the catalog"), "once seen, it is a citation of nothing"
+    uncite_warning(approved)
+    assert approved.check()[0] == 0 and approved.area("acceso")["steps"]["approve"] == "done"
+
+
+def test_a_record_that_was_never_published_approves_nothing(approved, studio):
+    folder = approved.path / "specs" / "_capabilities" / "_changes" / "20991231-design-acceso"
+    folder.mkdir()
+    (folder / "capability-delta.md").write_text("# Design: Acceso\n\nApproved by: Nadie on 2099-12-31\n\n## Capability Delta\n\n### DESIGNED R-login-lockout\n"
+                                                "- Capability: login\n- From: %s\n- To: %s\n- Links: none\n" % (LOCKOUT, STRICTER), encoding="utf-8")
+    assert studio.approvals(approved.path)["R-login-lockout"]["text"] == LOCKOUT and changes_to_see(approved)[2] == []
+    (folder / "capability-delta.lock.json").write_text("{}", encoding="utf-8")
+    was = studio.approvals(approved.path)["R-login-lockout"]
+    assert (was["text"], was["by"], was["on"], was["record"]) == (STRICTER, "Nadie", "2099-12-31", "specs/_capabilities/_changes/20991231-design-acceso")
+
+
+def test_the_last_record_says_what_is_approved(approved, studio):
+    approved.write("capability-drafts.md", CHANGE)
+    approved.run("approve", "acceso")
+    assert studio.approvals(approved.path)["R-login-lockout"]["text"] == STRICTER
+    assert studio.approvals(approved.path)["R-login-oauth"]["record"].endswith("-design-acceso"), "a rule the second record does not name keeps the first"
+    assert studio.approvals(approved.path / "nowhere") == {}
+
+
+def test_a_record_is_of_the_area_its_folder_names(approved, studio):
+    product = studio.Product(approved.path)
+    assert [studio.record_area(product, "specs/_capabilities/_changes/" + name) for name in (
+        "20261116-design-acceso", "20261116-design-acceso-2", "20261116-design-inicio-12", "20261116-design-otra", "20261116-design-acceso-b")] == [
+        "acceso", "acceso", "inicio", None, None]
+
+
+def test_seen_md_is_checked_like_the_rest_of_the_design(approved):
+    approved.write("seen.md", "# Changes seen\n\n### R-login-lockout\n- Text: Algo.\n- Seen-By: Ana Pérez\n\n### lockout\n- Text: Algo.\n\n"
+                              "### R-login-oauth\n- Seen-By: Ana Pérez on 2026-11-16\n- Who: Ana\n")
+    assert approved.hard("seen.md:3", "Seen-By is `<who> on <YYYY-MM-DD>`")
+    assert approved.hard("seen.md:7", "a rule seen is `### R-<name>`")
+    assert approved.hard("seen.md:10", "Text is missing") and approved.hard("seen.md:10", "Who is not a field here")
+
+
+def test_a_rule_marked_to_retire_waits_for_approval(approved):
+    uncite_warning(approved)
+    to_retire(approved)
+    assert approved.check()[0] == 0
+    area = approved.area("acceso")
+    assert (area["state"], area["rules"], area["approved"], area["to_retire"]) == ("drawn", {"designed": 5, "retiring": 1}, 6, ["R-login-attempts-warning"])
+    assert area["steps"]["approve"] == "attention" and area["retire_with_spec"] == [] and area["to_see"] == []
+    out = approved.status()
+    assert [entry for entry in out["attention"] if entry["kind"] == "approve"] == [
+        {"kind": "approve", "area": "acceso", "text": "1 rule of Acceso is marked to retire: it waits for approval."}]
+    assert out["next"] == {"command": "speckit.studio.approve", "args": "acceso", "why": "A rule of Acceso is marked to retire, and waits for approval."}
+    approved.run("build")
+    assert approved.built("product.js")["reglas"]["R-login-attempts-warning"] == {
+        "capacidad": "login", "estado": "retiring", "texto": WARNING, "nota": WARNING_EXAMPLE, "motivo": "Ya no se avisa: la cuenta se bloquea sin más."}
+
+
+def test_approve_retires_a_rule_nobody_built_with_a_record(approved):
+    uncite_warning(approved)
+    to_retire(approved)
+    rc, out = approved.run("approve", "acceso", "--dry-run")
+    assert rc == 0 and out["status"] == "ready" and out["rules"] == 0 and out["retire"] == [{
+        "id": "R-login-attempts-warning", "capability": "login", "text": WARNING, "reason": "Ya no se avisa: la cuenta se bloquea sin más.",
+        "kind": "designed", "spec": ""}]
+    assert approved.records() == ["%s-design-acceso" % today().strftime("%Y%m%d")], "a dry run writes nothing"
+    rc, out = approved.run("approve", "acceso")
+    name = "%s-design-acceso-2" % today().strftime("%Y%m%d")
+    assert rc == 0 and (out["status"], out["retired_now"], out["approved_now"], out["published"]) == ("approved", ["R-login-attempts-warning"], [], "published"), out
+    assert record_of(approved, name) == (
+        "# Design: Acceso\n\nApproved by: Ana Pérez on %s\n\n## Retired\n\n- R-login-attempts-warning: Ya no se avisa: la cuenta se bloquea sin más.\n"
+        "\n## Capability Delta\n<!-- capability-delta:v1 -->\n\n### REMOVED R-login-attempts-warning\n- Capability: login\n- From: %s\n- To: (none)\n"
+        "- Replaced-By: none\n- Links: none\n" % (today().isoformat(), WARNING))
+    assert "R-login-attempts-warning" not in approved.catalog("login") and "R-login-lockout" in approved.catalog("login")
+    history = (approved.path / "specs/_capabilities/login/history.md").read_text(encoding="utf-8")
+    assert "| R-login-attempts-warning | %s | specs/_capabilities/_changes/%s | none |" % (WARNING, name) in history
+    assert approved.read("capability-drafts.md") == "# Capability drafts\n"
+    area = approved.area("acceso")
+    assert (area["state"], area["rules"], area["to_retire"]) == ("approved", {"designed": 5}, []) and approved.check()[0] == 0
+    assert changes_to_see(approved) == (3, "nothing", []), "retired with the yes of the person: no spec did it behind them"
+    approved.run("build")
+    assert "R-login-attempts-warning" not in approved.built("product.js")["reglas"]
+
+
+def test_a_change_and_a_retirement_go_in_one_record(approved):
+    uncite_warning(approved)
+    approved.write("capability-drafts.md", CHANGE + "\n### R-login-attempts-warning\n- Retire: Ya no se avisa.\n")
+    rc, out = approved.run("approve", "acceso")
+    assert rc == 0 and (out["approved_now"], out["retired_now"]) == (["R-login-lockout"], ["R-login-attempts-warning"])
+    record = record_of(approved, out["record"].split("/")[-1])
+    assert "## Examples\n\n- R-login-lockout: " in record and "\n## Retired\n\n- R-login-attempts-warning: Ya no se avisa.\n" in record
+    assert record.index("### DESIGNED R-login-lockout") < record.index("### REMOVED R-login-attempts-warning")
+    assert approved.read("capability-drafts.md") == "# Capability drafts\n"
+
+
+def test_a_rule_the_design_still_shows_is_not_retired(approved):
+    to_retire(approved)
+    assert approved.hard("capability-drafts.md:7", "R-login-attempts-warning is marked to retire, and ST-1, SCR-login still cites it; take it out of there, or delete the Retire line")
+    rc, out = approved.run("approve", "acceso")
+    assert rc == 1 and out["status"] == "blocked" and "R-login-attempts-warning" in approved.catalog("login")
+    approved.edit("story-map.md", "- Rules: R-login-lockout, R-login-attempts-warning", "- Rules: R-login-lockout")
+    approved.edit(LOGIN, "- Rules: R-login-lockout, R-login-oauth, R-login-attempts-warning", "- Rules: R-login-lockout, R-login-oauth")
+    assert approved.hard("mockup/entrar.html", "data-ref cites R-login-attempts-warning, which is marked to retire; take it out of the page")
+
+
+def test_only_an_approved_rule_is_marked_to_retire(approved):
+    to_retire(approved, rule="R-login-nunca")
+    assert approved.hard("capability-drafts.md:7", "R-login-nunca is not a rule of the catalog; only an approved rule is retired, and a draft is deleted")
+    uncite_warning(approved)
+    to_retire(approved, capability="signup", covers="- Covers: Crear una cuenta\n")
+    assert approved.hard("capability-drafts.md:7", "R-login-attempts-warning belongs to the capability login in the catalog, and to signup here")
+    approved.write("capability-drafts.md", "# Capability drafts\n\n## login\n\n%s\n### R-login-attempts-warning\n- Retire:\n" % COVERS_LOGIN)
+    assert approved.hard("capability-drafts.md:7", "Retire is missing")
+    approved.write("capability-drafts.md", "# Capability drafts\n\n## login\n\n%s\n### R-login-attempts-warning\n- Retire: Ya no.\n- Text: Otro.\n" % COVERS_LOGIN)
+    assert approved.hard("capability-drafts.md:7", "Text is not a field here; the fields are Retire")
+
+
+def test_a_rule_is_a_draft_or_is_marked_to_retire_and_not_both(approved):
+    uncite_warning(approved)
+    both = "### R-login-attempts-warning\n- Retire: Ya no.\n"
+    approved.write("capability-drafts.md", CHANGE.replace("R-login-lockout", "R-login-attempts-warning") + "\n" + both)
+    assert approved.hard("capability-drafts.md:11", "R-login-attempts-warning is a draft and is marked to retire; keep one of the two")
+    approved.write("capability-drafts.md", "# Capability drafts\n\n## login\n\n%s\n%s\n%s" % (COVERS_LOGIN, both, CHANGE.split(COVERS_LOGIN + "\n")[1].replace(
+        "R-login-lockout", "R-login-attempts-warning")))
+    assert approved.hard("capability-drafts.md:10", "R-login-attempts-warning is a draft and is marked to retire; keep one of the two")
+
+
+def test_a_built_rule_marked_to_retire_waits_for_a_spec_and_not_for_an_approval(approved):
+    uncite_warning(approved)
+    unbuilt(approved, "login", "R-login-attempts-warning")
+    to_retire(approved)
+    assert approved.check()[0] == 0
+    assert approved.notes("capability-drafts.md:7", "R-login-attempts-warning is built; a spec retires it, and this line waits for that spec")
+    area = approved.area("acceso")
+    assert (area["state"], area["steps"]["approve"], area["to_retire"], area["retire_with_spec"]) == ("approved", "done", [], ["R-login-attempts-warning"])
+    assert area["rules"] == {"designed": 5, "retiring": 1}
+    out = approved.status()
+    assert {"kind": "retire", "area": "acceso",
+            "text": "R-login-attempts-warning is built and marked to retire: a spec retires it. Ask for that spec with speckit.specify."} in out["attention"]
+    assert out["next"]["command"] != "speckit.studio.approve", "nothing to approve: the next step of the design is its own"
+    rc, out = approved.run("approve", "acceso", "--dry-run")
+    assert rc == 3 and out["status"] == "nothing" and out["retire"] == [] and [(entry["id"], entry["kind"]) for entry in out["retire_with_spec"]] == [
+        ("R-login-attempts-warning", "built")]
+    rc, out = approved.run("approve", "acceso")
+    assert rc == 3 and "- Retire: " in approved.read("capability-drafts.md"), "the line waits for the spec"
+
+
+def test_once_a_spec_retired_the_rule_the_approval_only_takes_the_line_away(approved):
+    uncite_warning(approved)
+    unbuilt(approved, "login", "R-login-attempts-warning")
+    to_retire(approved)
+    retired_by(approved, "login", "R-login-attempts-warning", "specs/009-sin-aviso")
+    assert approved.check()[0] == 0 and approved.notes("capability-drafts.md:7", "R-login-attempts-warning is retired already; speckit.studio.approve takes this line away")
+    assert changes_to_see(approved)[2] == [], "the person asked for it: it is not news"
+    records = approved.records()
+    rc, out = approved.run("approve", "acceso")
+    assert rc == 0 and (out["status"], out["retired_already"], out["retired_now"]) == ("approved", ["R-login-attempts-warning"], []) and approved.records() == records
+    assert approved.read("capability-drafts.md") == "# Capability drafts\n"
+    assert approved.read("seen.md") == SEEN_HEAD + "### R-login-attempts-warning\n- Text: (retired)\n- Spec: specs/009-sin-aviso\n- Seen-By: Ana Pérez on %s\n" % today().isoformat()
+    assert changes_to_see(approved) == (3, "nothing", []) and approved.area("acceso")["retire_with_spec"] == []
+
+
+def test_a_rule_a_spec_is_building_is_not_retired_under_it(cut):
+    uncite_warning(cut)
+    to_retire(cut)
+    spec_of(cut, "001-clave", CLAVE)
+    rc, out = cut.run("approve", "acceso", "--dry-run")
+    assert rc == 1 and out["status"] == "blocked" and out["retire"] == [] and out["blockers"] == [
+        "R-login-attempts-warning is marked to retire, and specs/001-clave is building it: leave it out of that spec first with capabilities.py defer, "
+        "or let the spec finish"]
+    assert cut.area("acceso")["to_retire"] == ["R-login-attempts-warning"], "it waits, and the approval says what is in the way"
+    assert cut.run("approve", "acceso")[0] == 1 and "R-login-attempts-warning" in cut.catalog("login")
+
+
+def test_a_rule_marked_to_retire_that_no_record_approved_goes_to_the_area_of_its_capability(oficio, studio):
+    approved_by_hand(oficio)
+    uncite_warning(oficio)
+    to_retire(oficio)
+    area = oficio.area("acceso")
+    assert area["to_retire"] == ["R-login-attempts-warning"] and oficio.area("inicio")["to_retire"] == []
+
+
+def test_the_last_spec_that_changed_a_rule_is_the_one_named(approved):
+    again = "Tras 4 intentos fallidos seguidos, la cuenta se bloquea 1 hora."
+    folded(approved, "login", "R-login-lockout", LOCKOUT, STRICTER, "specs/007-otro")
+    folded(approved, "login", "R-login-lockout", STRICTER, again, "specs/008-mas")
+    history_row(approved, "login", "Changes", "| specs/009-largo | MODIFIED R-login-lockout-largo; ADDED R-login-otra |")
+    assert [(change["now"], change["spec"]) for change in changes_to_see(approved)[2]] == [(again, "specs/008-mas")]
+
+
+def test_what_was_seen_of_one_rule_stays_when_another_is_seen(approved):
+    spec_with(approved, "001-clave", modified("R-login-lockout", "login", LOCKOUT, STRICTER))
+    approved.run("approve", "acceso", "--seen")
+    oauth = "Se puede entrar con una cuenta de Google, Facebook o GitHub."
+    spec_with(approved, "002-social", modified("R-login-oauth", "login", oauth, "Se puede entrar con una cuenta de Google."))
+    assert approved.run("approve", "acceso", "--seen")[1]["seen_now"] == ["R-login-oauth"]
+    seen = approved.read("seen.md")
+    assert seen.index("### R-login-lockout\n- Text: %s\n" % STRICTER) < seen.index("### R-login-oauth\n- Text: Se puede entrar con una cuenta de Google.\n")
+    assert changes_to_see(approved)[2] == []
+
+
+def test_a_rule_to_retire_is_of_the_area_that_approved_it(approved, studio):
+    uncite_warning(approved)
+    to_retire(approved)
+    product = studio.Product(approved.path)
+    catalog = studio.catalog_rules(approved.path)
+    rule = "R-login-attempts-warning"
+    assert studio.retire_area(product, catalog, rule, {rule: {"record": "specs/_capabilities/_changes/20261116-design-inicio"}}) == "inicio"
+    assert studio.retire_area(product, catalog, rule, {}) == "acceso", "no record: the area that shows other rules of its capability"
+    assert studio.retire_area(product, catalog, rule, {rule: {"record": "specs/_capabilities/_changes/20261116-design-otra"}}) == "acceso"
+
+
+def test_a_slice_still_to_build_that_names_a_retired_rule_is_said(cut):
+    uncite_warning(cut)
+    to_retire(cut)
+    assert cut.run("approve", "acceso")[1]["retired_now"] == ["R-login-attempts-warning"]
+    said = "specs/_slices/acceso.md: D-acceso-clave names R-login-attempts-warning, which was retired; take it out of the slice with speckit.studio.slice"
+    assert cut.check() == (0, {"status": "ok", "hard": [], "notes": [PENDING, said]})
+    assert said in cut.run("slice", "acceso")[1]["problems"]["notes"]
+    spec_of(cut, "001-clave", CLAVE, "- [x] T001 Hecho\n")
+    unbuilt(cut, "login", "R-login-lockout")
+    assert cut.notes("which was retired") == [], "a slice that is delivered built what there was to build"
