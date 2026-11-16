@@ -38,6 +38,16 @@ You use Spec Kit as usual. The extension adds hooks to the flow:
 
 4. **CI** runs `check` on the pull request. A folded change is `prepared` on the branch and `ready` only once `check` has run against this revision and its test report.
 
+Three things come up when a change retires a feature, or only moves code:
+
+| What happens | What you do |
+|---|---|
+| A task can only be done after the fold: opening the pull request, a deploy, production data | Write `[post-merge]` after its id. It stays open and holds nothing back |
+| The change moves the code of a rule it does not change, and `check` notes `anchored code changed without a delta` | Add `### REOBSERVED <rule>` to the delta, with `- Capability:` and `- Reason:`. The fold looks at that rule again and changes nothing else |
+| A capability lost rules, and its line in the index still names them | The fold lists it under `review_covers`. `index --capability <name> --covers "<one line>"` sets the new line, and `--entry <path::symbol>` where its code starts |
+
+The [README of the extension](https://github.com/lema017/speckit-vs/blob/main/extensions/capabilities/README.md#when-a-change-retires-rules-or-only-moves-code) has the detail.
+
 The catalog lives in the repository:
 
 ```text
