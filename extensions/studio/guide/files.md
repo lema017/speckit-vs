@@ -12,8 +12,9 @@ A field is one line: `- Key: value`. Ids are written exactly as shown: `ACT-veci
 | `navigation.md` | The areas of the product and its flows | You |
 | `story-map.md` | What each person does, and why | You |
 | `screens/SCR-<name>.md` | One screen: what it shows, its elements, its states | You |
-| `capability-drafts.md` | The business rules, in draft | You |
+| `capability-drafts.md` | The business rules in draft, and the approved ones marked to retire | You |
 | `decisions.md` | Every question asked, with its answer | You |
+| `seen.md` | What a spec changed in an approved rule, once the person has seen it | `approve --seen`. Never by hand |
 | `comments.md` | What the person said on the mockup, and what became of each comment | The script. Never by hand |
 | `directions.md` | The looks the person chooses from | You |
 | `look-and-feel.md` | The look that was chosen | `pick`. Never by hand |
@@ -163,6 +164,25 @@ A rule that is in `specs/_capabilities/` is approved: cite it by its id, and wri
 
 - To change a rule that is approved and not built yet (`[designed]` in its capability's `spec.md`), write its new text as a draft under the same capability, with the same id, and only with the person's exact words. The approved text stays the one that counts until they approve the new one. `check` notes the change, and the mockup shows both texts.
 - A rule that is already built has no draft: it changes with a spec.
+- To retire an approved rule, only with the person's words: take it out of `- Rules:` in every story and screen, and out of each page, and write it under its capability with one line that says why it goes. It has no text and no example.
+
+  ```markdown
+  ### R-login-attempts-warning
+  - Retire: Ya no se avisa: la cuenta se bloquea sin más.
+  ```
+
+  The rule stays approved until the person approves that it goes. Then `speckit.studio.approve` retires it when nothing built it; a rule that is built is retired by a spec, and its line waits here until that spec is done. Never delete a rule from `specs/_capabilities/` by hand.
+
+## seen.md
+
+```markdown
+### R-login-lockout
+- Text: Tras 3 intentos fallidos seguidos, la cuenta se bloquea 30 minutos.
+- Spec: specs/003-bloqueo
+- Seen-By: Ana Pérez on 2026-11-16
+```
+
+A spec can change the text of a rule the person approved, or retire it. The design says so until the person has seen it. This file keeps what they saw: the text the spec gave the rule, or `(retired)`, the spec, who saw it and when. `speckit.studio.approve` writes it with `approve <area> --seen`. One entry per rule: the last thing seen.
 
 ## comments.md
 

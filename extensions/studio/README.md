@@ -54,6 +54,8 @@ The rules the agent follows are in [guide/conversation.md](guide/conversation.md
 
 - To change an approved rule, `/speckit-studio-iterate` writes the new text as a draft with the same id. The approved text stays until the person approves the new one.
 - A rule that is already built changes with a spec.
+- To retire an approved rule, `/speckit-studio-iterate` takes it out of the stories, the screens and the pages, and writes it in `capability-drafts.md` with a `- Retire:` line that says why. With the person's yes, the approval publishes a record that retires it. A rule that is built is retired by a spec, and its line waits in the drafts until then.
+- When a spec changes or retires a rule the person approved, `status` says so and the mockup marks the rule, from the moment the spec declares it. `approve <area> --seen` records that the person has seen it, in `specs/_product/seen.md`.
 - Approving needs the `capabilities` extension, which every project of this fork has.
 
 ## From the design to the specs
@@ -78,8 +80,9 @@ Everything decided is a Markdown file under `specs/_product/`. The format of eac
 | `navigation.md` | The areas and the flows |
 | `story-map.md` | What each person does, and why |
 | `screens/SCR-<name>.md` | One screen: its elements and its states |
-| `capability-drafts.md` | The business rules, in draft. An approved rule lives in `specs/_capabilities/` |
+| `capability-drafts.md` | The business rules in draft, and the approved ones marked to retire. An approved rule lives in `specs/_capabilities/` |
 | `decisions.md` | Every question, with its answer |
+| `seen.md` | What a spec changed in an approved rule, once the person has seen it |
 | `comments.md` | What the person said on the mockup, and what became of each comment |
 | `directions.md`, `look-and-feel.md` | The three looks, and the one chosen |
 | `mockup/` | One page per screen. `_studio/`, `index.html` and `_shots/` are generated and not versioned |
@@ -101,7 +104,8 @@ The commands run `scripts/python/studio.py`. It uses the standard library only, 
 | `comments [--all]` | The comments that wait, or all of them | 0 |
 | `comments add` | Keeps the comments the mockup copied, read from standard input | 0 |
 | `comments resolve C-1 [C-2 ...] --as applied\|declined\|open [--note WHY]` | Says what became of some comments | 0 |
-| `approve AREA [--by WHO] [--dry-run]` | Publishes the draft rules of an area as approved. `--dry-run` says what it would publish | 1 when something stands in the way, 3 when there is nothing to approve |
+| `approve AREA [--by WHO] [--dry-run]` | Publishes the draft rules of an area as approved, and retires the ones marked to retire. `--dry-run` says what it would do, and what specs changed in the approved rules | 1 when something stands in the way, 3 when there is nothing to approve and nothing to see |
+| `approve AREA --seen [--by WHO]` | Records that the person has seen what specs changed in the approved rules of an area. Publishes nothing | 3 when there is nothing to see |
 | `slice AREA` | What cutting an area into slices starts from, how the cut stands and what is wrong in it. Writes nothing | 1 when something stands in the way or the map is wrong |
 | `brief D-SLICE` | The design of one slice, for the spec that builds it: its stories, its screens, the rules they cite and what was decided | 3 when the slice names no story and no screen |
 | `serve [--port N] [--idle SECONDS]` | Serves the mockup to this computer until it is stopped. `open` starts it on its own | 3 when no screen has a page |
@@ -115,6 +119,7 @@ Exit 2 means the call or a file cannot be used.
 - A story without a screen, a screen without elements or without its states described.
 - A button that leads to a screen that does not exist, or to a state the screen does not have.
 - A rule nobody cites, a draft that gives another text to a rule that is already built, or one that moves a rule to another capability.
+- A rule marked to retire that a story, a screen or a page still shows, or that the catalog never had.
 - A page that is not the one of its screen, that loads something from another site, that uses a state its screen does not have, or that does not cite a rule its screen applies.
 - A page nobody can reach from a screen where a person starts, and a page that leads nowhere.
 
@@ -124,7 +129,7 @@ It notes, without stopping anything: colors that cannot be read, a field without
 
 ## What comes later
 
-Not in this version: retiring a rule that was approved, several people commenting at the same time, and telling the person when a spec changed the text of a rule they approved.
+Not in this version: several people commenting at the same time.
 
 ## Development
 

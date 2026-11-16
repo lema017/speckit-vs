@@ -26,6 +26,21 @@ The input can be empty, a change in words such as "the button should say Apuntar
   - A rule in draft: change it in `capability-drafts.md`.
   - A rule that is approved and not built yet: write the new text as a draft of that rule, under its capability, with the same id. The approved text stays until the person approves the new one with `speckit.studio.approve`. Say so.
   - A rule that is already built changes with a spec, not here. Say so, and change nothing of that rule.
+- An approved rule goes away only with the person's words, too: "quita la regla", "ya no hay lista de espera". Show which rule it is, with its text, and wait for their yes. Then:
+  - take the rule out of `- Rules:` in every story and every screen that names it, and take what showed it out of each page: the element, its text, and its `data-ref`;
+  - write the rule under its capability in `capability-drafts.md`, with the same id and one line that says why it goes. No text and no example: the catalog keeps the text.
+
+    ```markdown
+    ## login
+
+    - Covers: Entrar a la cuenta con correo o con Google, Facebook o GitHub
+
+    ### R-login-attempts-warning
+    - Retire: Ya no se avisa: la cuenta se bloquea sin más.
+    ```
+
+  - never delete a rule from `specs/_capabilities/` yourself. The rule stays approved until the person approves that it goes, with `speckit.studio.approve`. Say so. When the rule is already built, say also that a spec retires it, and that the approval tells them how to ask for it.
+  - A rule in draft that nobody approved needs none of this: delete it from `capability-drafts.md`.
 - Speak and write in the language the person writes in. When they wrote only the command, use the language of the product: `- Language:` in `product.md`. That goes for what you say while you work, too.
 - You write only under `specs/_product/`. Never write `comments.md` by hand: the script does. Do not create a branch, a spec or code. Do not commit and do not install anything.
 - The person never edits a file and never runs a script: you do both.
@@ -76,7 +91,7 @@ The input can be empty, a change in words such as "the button should say Apuntar
 9. **Report.** Tell the person:
    - each change that was applied, by the screen's title;
    - each comment that was not applied, and why;
-   - what still waits for them: comments they did not decide on, and rules whose new text waits for `speckit.studio.approve`;
+   - what still waits for them: comments they did not decide on, and rules whose new text, or whose retirement, waits for `speckit.studio.approve`;
    - what the check still notes about a page, and what fixing it would change: they say whether to change it;
    - that they can look at the mockup again and run this command again, as many times as it takes.
 10. **Record the step.** Run this once, and end your report with its output:

@@ -184,6 +184,46 @@ def test_approve_shows_the_exact_text_and_waits_for_a_yes_of_the_owner():
     assert "questions about the area that nobody decided yet" in body
 
 
+def test_iterate_marks_an_approved_rule_to_retire_and_never_deletes_it():
+    _, body = command("iterate")
+    assert "An approved rule goes away only with the person's words, too" in body and "Show which rule it is, with its text, and wait for their yes." in body
+    assert "take the rule out of `- Rules:` in every story and every screen that names it" in body and "its `data-ref`" in body
+    assert "### R-login-attempts-warning\n    - Retire: " in body and "No text and no example" in body
+    assert "never delete a rule from `specs/_capabilities/` yourself" in body
+    assert "The rule stays approved until the person approves that it goes, with `speckit.studio.approve`." in body
+    assert "When the rule is already built, say also that a spec retires it" in body
+
+
+def test_approve_retires_with_the_same_yes_and_leaves_a_built_rule_to_a_spec():
+    _, body = command("approve")
+    assert "**The rules that go,** from `retire`." in body and "why it goes, from `reason`" in body
+    assert "whether they approve these rules as they are written, and the ones that go" in body
+    assert "`retire_with_spec` lists rules that are marked to retire and are built. This command does not retire them: a spec does" in body
+    assert "`speckit.specify`" in body and "`retired_already`" in body and "`retired_now` the ones retired" in body
+    assert "A rule marked to retire that a spec is building waits for that spec: say which one." in body
+
+
+def test_approve_shows_what_a_spec_changed_and_seeing_it_approves_nothing():
+    _, body = command("approve")
+    assert "Seeing what a spec changed is not approving it. `--seen` records that the person knows, and changes no rule." in body
+    assert "`status` is `nothing` and `changed` lists rules" in body
+    shown = body[body.index("**Show what specs changed.**"):body.index("**Report.**")]
+    for said in ("the text they approved, from `approved`, exactly as it is written", "from `now`", "When `kind` is `retired`", "from `spec`", "when `folded` is false the spec is not built yet"):
+        assert said in shown, said
+    assert shown.index("whether they have seen it") < shown.index("{SCRIPT} approve <area> --seen"), "it asks before it records"
+    assert "They do not agree with a change: record nothing as seen." in shown and "Do not change the rule or the spec here." in shown
+    assert body.index("Run `{SCRIPT} approve <area>`, with") < body.index("{SCRIPT} approve <area> --seen"), "what is approved first, what was changed after"
+
+
+def test_the_guides_say_how_a_rule_is_retired_and_where_what_was_seen_is_kept():
+    guide = read(EXT_DIR / "guide" / "files.md")
+    assert "- Retire: " in guide and "Never delete a rule from `specs/_capabilities/` by hand." in guide
+    assert "## seen.md" in guide and "- Seen-By: Ana Pérez on 2026-11-16" in guide and "`(retired)`" in guide
+    readme = read(EXT_DIR / "README.md")
+    assert "`approve AREA --seen [--by WHO]`" in readme and "| `seen.md` |" in readme and "`- Retire:`" in readme
+    assert "retiring a rule that was approved" not in readme and "telling the person when a spec changed" not in readme, "they are in this version"
+
+
 def test_slice_proposes_the_cut_and_writes_the_map_only_with_a_yes():
     _, body = command("slice")
     assert "You propose the cut, and the product owner decides it. Write the map only with their yes." in body
