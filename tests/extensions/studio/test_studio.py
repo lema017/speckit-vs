@@ -1925,8 +1925,10 @@ def test_serve_says_where_it_is_and_stops_when_nobody_asks(oficio, studio):
     try:
         assert first == {"status": "serving", "port": first["port"], "link": "http://127.0.0.1:%d/index.html" % first["port"]}, first
         state = studio.server_state(root)
-        assert state and (state["port"], state["pid"]) == (first["port"], process.pid)
+        assert state and state["port"] == first["port"] and isinstance(state["pid"], int)
         if os.name != "nt":
+            # On Windows the python of a virtual environment starts the real one, so the server is not the process started here.
+            assert state["pid"] == process.pid
             assert stat.S_IMODE(studio.server_file(root).stat().st_mode) == 0o600, "only this user reads the session"
         status, _, body = call(first["port"], "GET", "/index.html")
         assert status == 200 and state["session"].encode("ascii") in body, "it builds the mockup before it serves it"
@@ -2002,6 +2004,35 @@ def test_a_state_file_of_another_project_or_of_nobody_is_no_server(oficio, studi
             other.unlink()
     finally:
         place.unlink()
+
+
+def test_what_answers_without_speaking_http_is_no_server(oficio, studio):
+    """Anything can hold a port, and on Windows a call to a free port can reach itself: the answer is then what was asked."""
+    import socket
+    import threading
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(2)
+    port = listener.getsockname()[1]
+
+    def echo():
+        for _ in range(2):
+            connection, _ = listener.accept()
+            with connection:
+                connection.sendall(connection.recv(65536))
+
+    thread = threading.Thread(target=echo, daemon=True)
+    thread.start()
+    place = studio.server_file(oficio.path)
+    try:
+        assert studio.ask(port, "GET", "/_api/ping") is None, "it says back what it was told, and that is not an answer"
+        place.write_text(json.dumps({"port": port, "session": "s" * 32}), encoding="utf-8")
+        assert studio.server_state(oficio.path) is None
+    finally:
+        thread.join(10)
+        listener.close()
+        if place.exists():
+            place.unlink()
 
 
 def test_open_starts_a_server_that_outlives_the_command(oficio, studio):
