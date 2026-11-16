@@ -8,6 +8,7 @@ command leaves on disk, so the map moves on as it would with a model.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -80,6 +81,8 @@ if named:
         directory.mkdir(parents=True)
         stories = "### User Story 1 - One thing\n\n### User Story 2 - Another thing\n\n" if asked_for("big-spec", slice_id) else ""
         spec = "# Feature Specification: %s\n\n## Slice *(mandatory)*\n\n- Slice: %s\n- Out: none\n\n%s## Requirements\n\n- **FR-001**: The system MUST do it.\n"
+        if asked_for("open-points", slice_id):
+            spec += "- **FR-002**: The link [NEEDS CLARIFICATION: does it work once?]\n- **FR-003**: The mail [NEEDS CLARIFICATION: how often?]\n"
         (directory / "spec.md").write_text(spec % (slice_id, slice_id, stories), encoding="utf-8")
         feature.write_text(json.dumps({"feature_directory": directory.relative_to(root).as_posix()}), encoding="utf-8")
 elif re.search(r"speckit[.-]tasks", prompt):
@@ -211,7 +214,7 @@ def test_the_workflow_is_valid_and_is_the_one_the_package_ships():
     assert directory is not None
     definition = WorkflowDefinition.from_string((directory / "workflow.yml").read_text(encoding="utf-8"))
     assert validate_workflow(definition) == []
-    assert (definition.id, str(definition.version)) == ("sliced", "1.0.0")
+    assert (definition.id, str(definition.version)) == ("sliced", "1.1.0")
 
 
 def test_each_round_asks_the_project_which_slice_comes_now():
@@ -234,8 +237,9 @@ def test_a_slice_is_built_only_after_a_person_approves_it():
     build = steps["build-slice"]
     assert build["type"] == "if" and build["condition"] == "{{ steps.next-slice.output.data.reason == 'ready' }}"
     assert [step["id"] for step in build["then"]] == [
-        "approve-slice", "specify", "measure-spec", "oversized-spec", "plan", "tasks", "measure-tasks", "oversized-tasks", "implement"]
-    for gate in ("approve-slice", "review-spec", "review-oversized-spec", "approve-oversized-tasks", "wait-for-delivery"):
+        "approve-slice", "specify", "count-open-points", "open-points", "measure-spec", "oversized-spec", "plan", "tasks", "measure-tasks", "oversized-tasks",
+        "implement"]
+    for gate in ("approve-slice", "answer-open-points", "review-spec", "review-oversized-spec", "approve-oversized-tasks", "wait-for-delivery"):
         assert steps[gate]["type"] == "gate"
         assert steps[gate]["options"] == ["approve", "reject"] and steps[gate]["on_reject"] == "abort"
         assert "verdict_input" not in steps[gate], "one answer would approve every later slice too"
@@ -290,6 +294,18 @@ def test_a_slice_over_its_budget_goes_on_only_after_a_person_accepts_its_size():
     assert [step["id"] for step in steps["oversized-spec"]["else"]] == ["review-spec"]
     assert steps["review-spec"]["message"].endswith(" {{ steps.measure-spec.output.data.summary }}")
     assert "else" not in steps["oversized-tasks"], "tasks within the budget are built without asking"
+
+
+def test_a_spec_that_leaves_points_open_goes_on_only_after_a_person_answers_them():
+    """A spec written from a design marks what the design left out, and plan does not start on it. Nobody answers inside a command step."""
+    steps = steps_by_id(shipped()["steps"])
+    count, branch, gate = steps["count-open-points"], steps["open-points"], steps["answer-open-points"]
+    assert count["type"] == "shell" and count["run"] == "python3 %s slices measure" % SCRIPT
+    assert count["strict"] is True and count["output_format"] == "json" and count["env"] == {"SPECKIT_SLICE": "{{ steps.next-slice.output.data.next }}"}
+    assert branch["type"] == "if" and branch["condition"] == "{{ steps.count-open-points.output.data.unclear > 0 }}"
+    assert [step["id"] for step in branch["then"]] == ["answer-open-points"] and "else" not in branch
+    assert gate["message"] == ("The spec of {{ steps.next-slice.output.data.next }} has {{ steps.count-open-points.output.data.unclear }} marked [NEEDS CLARIFICATION], "
+                               "and no step of this walk answers them. Answer them now with speckit.clarify, in your agent, then approve to go on. Reject to stop here.")
 
 
 # -- The walk, with an agent that is a script ----------------------------------------------------
@@ -498,3 +514,65 @@ def test_the_walk_stops_when_specify_leaves_no_spec_for_the_slice(walk, missing,
     state = walk.run(map="shop")
     assert state.status.value == "failed"
     assert walk.calls() == expected, "nothing is planned on the spec of another slice"
+
+
+OPEN = "The spec of %s has 2 marked [NEEDS CLARIFICATION], and no step of this walk answers them."
+
+
+def answered(walk, directory):
+    """What the person does at the gate: they answer the open points with speckit.clarify, and the spec keeps no mark."""
+    def clarify(message):
+        if "[NEEDS CLARIFICATION]" in message and message.startswith("The spec of"):
+            path = walk.root / "specs" / directory / "spec.md"
+            path.write_text(re.sub(r" \[NEEDS CLARIFICATION:[^\]]*\]", " once", path.read_text(encoding="utf-8")), encoding="utf-8")
+    return clarify
+
+
+@needs_python3
+def test_a_spec_with_open_points_is_planned_once_the_person_answered_them(walk):
+    walk.put_map()
+    walk.variant("open-points", CART)
+    walk.answer("approve", "approve", "approve", "approve", "approve", on_message=answered(walk, "001-shop-cart"))
+    state = walk.run(map="shop")
+    assert state.status.value == "completed", state.step_results
+    assert walk.calls() == built(CART, PAY)
+    assert len(walk.asked) == 5, "one more gate for the slice whose spec left points open, and none for the other"
+    assert walk.asked[1].startswith(OPEN % CART) and walk.asked[1].endswith("then approve to go on. Reject to stop here.")
+    assert "Review the spec of %s before it is planned and built." % CART in walk.asked[2]
+    assert "NEEDS CLARIFICATION" not in walk.asked[2], "the spec is measured again after the gate: nothing is left open"
+    assert "NEEDS CLARIFICATION" not in walk.asked[3] and "NEEDS CLARIFICATION" not in walk.asked[4]
+
+
+@needs_python3
+def test_a_spec_approved_with_its_points_open_says_so_at_the_review_gate(walk):
+    walk.put_map()
+    walk.variant("open-points", CART)
+    walk.answer("approve", "approve", "reject")
+    state = walk.run(map="shop")
+    assert state.status.value == "aborted" and walk.calls() == ["/speckit.specify " + CART]
+    assert walk.asked[1].startswith(OPEN % CART)
+    assert walk.asked[2].endswith("Within the slice budget. 2 points are still marked [NEEDS CLARIFICATION]: speckit.clarify decides them before the plan.")
+
+
+@needs_python3
+def test_rejecting_at_the_open_points_stops_the_walk_before_the_plan(walk):
+    walk.put_map()
+    walk.variant("open-points", CART)
+    walk.answer("approve", "reject")
+    state = walk.run(map="shop")
+    assert state.status.value == "aborted" and walk.calls() == ["/speckit.specify " + CART] and len(walk.asked) == 2
+
+
+@needs_python3
+def test_the_open_points_gate_without_a_terminal_pauses_the_run_and_resume_goes_on(walk):
+    walk.put_map()
+    walk.variant("open-points", CART)
+    walk.answer("approve")
+    walk.terminal(False)
+    state = walk.run(map="shop")
+    assert state.status.value == "paused" and walk.calls() == []
+    walk.terminal(True)
+    walk.answer("approve", "reject")
+    state = walk.resume(state.run_id)
+    assert state.status.value == "aborted" and walk.calls() == ["/speckit.specify " + CART]
+    assert walk.asked[-1].startswith(OPEN % CART), "the gate for the open points asked after the resume"

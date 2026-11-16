@@ -77,6 +77,9 @@ SUITE_STEPS = ("initializationError", "classMethod", "executionError")
 # A task with this mark can only be done after the merge, so it holds neither the fold nor the check.
 POST_MERGE = "[post-merge]"
 OPEN_TASK = re.compile(r"^\s*- \[ \](.*)$", re.M)
+# A task that says to run the fold cannot be closed before the fold: it does not hold it back, and the fold closes it.
+FOLD_TASK = re.compile(r"speckit[.\-]capabilities[.\-]fold", re.I)
+TASK_ID = re.compile(r"\bT\d{3,}\b")
 TITLE_SLOT = re.compile(r"%[a-zA-Z#]|\$\{[^{}]*\}|\$[A-Za-z_][\w.]*|\{[^{}]*\}")
 DEFAULTS = {"feature_roots": "specs", "allow_manual_evidence": "false", "allow_partial_features": "false", "base_branch": ""}
 GITIGNORE_LINE = ".specify/capabilities/"
@@ -712,9 +715,16 @@ def open_boxes(change):
 
 
 def open_tasks(change):
-    """The open tasks that hold a change back. One marked [post-merge] does not: it can only be done once the change is merged."""
+    """The open tasks that hold a change back. One marked [post-merge] does not: it can only be done once the change is merged.
+    Nor does the task of running the fold: nothing can close it before the fold runs."""
     boxes = open_boxes(change)
-    return None if boxes is None else sum(1 for rest in boxes if POST_MERGE not in rest.lower())
+    return None if boxes is None else sum(1 for rest in boxes if POST_MERGE not in rest.lower() and not FOLD_TASK.search(rest))
+
+
+def fold_tasks(change):
+    """The open tasks that say to run the fold, by their id: the fold closes them once the catalog is published."""
+    return [TASK_ID.search(rest).group(0) if TASK_ID.search(rest) else rest.strip()[:60]
+            for rest in open_boxes(change) or [] if FOLD_TASK.search(rest) and POST_MERGE not in rest.lower()]
 
 
 def waiting_tasks(change):
@@ -973,6 +983,9 @@ def prepare_state(root, change, no_tasks=False):
     waiting = waiting_tasks(change)
     if waiting:
         state["post_merge"] = waiting
+    own = fold_tasks(change)
+    if own:
+        state["fold_tasks"] = own
     finished = all(action[1] == "done" for action in actions)
     state["status"] = "unchanged" if finished and (lock.get("fold") or {}).get("input_digest") == digest else "ready"
     return state, (delta, text, actions), OK

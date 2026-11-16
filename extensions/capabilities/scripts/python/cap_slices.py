@@ -420,6 +420,11 @@ def counts(cap, change, source):
     }
 
 
+def unclear(cap, change):
+    """How many points the spec still marks [NEEDS CLARIFICATION]: what nobody decided yet."""
+    return strip_comments(cap.read(change / cap.DOCS[0]) or "").count("[NEEDS CLARIFICATION")
+
+
 def accepted_of(cap, change, source):
     """What the user accepted for a spec over the budget, or None. ``accept`` writes it; nobody edits it by hand."""
     text = cap.read(change / BUDGET_NAME)
@@ -450,8 +455,13 @@ def measure(cap, root, change, limits):
             over.append(item)
     settled = all("accepted" in item and item["count"] <= item["accepted"] for item in over)
     status = "within" if not over else "accepted" if settled else "over"
-    return {"status": status, "spec": source, "counts": held, "budget": limits, "over": over, "accepted": accepted,
-            "summary": summary(held, limits, over, status, accepted)}
+    # A spec written with nobody to ask, as a workflow writes it, can leave points open: who reads its size reads that too.
+    left = unclear(cap, change)
+    said = summary(held, limits, over, status, accepted)
+    if left:
+        said += " %s still marked [NEEDS CLARIFICATION]: speckit.clarify decides %s before the plan." % (
+            "1 point is" if left == 1 else "%d points are" % left, "it" if left == 1 else "them")
+    return {"status": status, "spec": source, "counts": held, "budget": limits, "over": over, "accepted": accepted, "unclear": left, "summary": said}
 
 
 def listing(words):

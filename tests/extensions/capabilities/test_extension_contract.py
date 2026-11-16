@@ -645,6 +645,10 @@ def test_fold_command_marks_what_comes_after_the_fold_only_with_a_yes():
     assert "name them and ask the person. With their yes, write the mark on each one in `tasks.md` and run `prepare` again." in text
     assert "Never mark a task of code or of tests, and never take the box away." in text
     assert "touch `specs/NNN-*` beyond the `[post-merge]` mark of step 1" in text
+    # The task of running the fold cannot be closed before the fold: it does not hold it, and the fold closes it.
+    assert "`fold_tasks`, when it is there, lists the open tasks that say to run this fold: they do not hold it, and step 7 closes them." in text
+    assert "First close each task that `fold_tasks` listed in step 1: write `- [x]` in its box in `tasks.md`." in text
+    assert "and the box of step 7" in text
     assert "`[post-merge]` after its id in `tasks.md`" in (EXT_DIR / "templates" / "capability-agent-rule.md").read_text(encoding="utf-8")
 
 
@@ -696,3 +700,10 @@ def test_readme_states_the_limit_of_the_block_and_of_inferred_rules():
 
 def test_helper_spec_text_is_a_valid_delta_document():
     assert MARK in spec_text(modified())
+
+
+def test_size_does_not_repeat_a_story_of_a_design_in_the_slice_it_splits_off():
+    """A design lets one slice build a story: a split that copies `Stories` into the new slice breaks its check."""
+    text = command_text("size")
+    assert "A slice that names `Stories` or `Screens` was cut from a design, and there one slice builds a story." in text
+    assert "A new slice does not repeat a story of the slice that stays" in text and "it has `Stories` only for a story that leaves with it" in text

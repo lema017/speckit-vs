@@ -38,7 +38,7 @@
       "name": "Slice by Slice",
       "description": "Builds the pending slices of a slice map in order: an approval gate per slice, then specify → spec review gate → plan → tasks → implement",
       "author": "lema017",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "url": "https://raw.githubusercontent.com/lema017/speckit-vs/main/workflows/sliced/workflow.yml",
       "tags": ["sdd", "slices", "capabilities"],
       "bundled": true

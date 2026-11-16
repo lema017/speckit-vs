@@ -21,7 +21,7 @@ $ARGUMENTS
    | Status | Exit | What to do |
    |---|---|---|
    | `unchanged`, `no-rule-change` | 0 | Report it and finish. Read no code |
-   | `ready` | 0 | Report any `setup` entry that starts with `skipped`: that file for agents was left alone. `post_merge`, when it is there, is how many open tasks wait for the merge: say so. Continue with step 2 |
+   | `ready` | 0 | Report any `setup` entry that starts with `skipped`: that file for agents was left alone. `post_merge`, when it is there, is how many open tasks wait for the merge: say so. `fold_tasks`, when it is there, lists the open tasks that say to run this fold: they do not hold it, and step 7 closes them. Continue with step 2 |
    | `blocked` | 3 | Open tasks, or no `tasks.md`. Report it and finish: this hook also fires on partial implementations. If the open tasks can only be done after the merge, see the note under this table. Pass `--no-tasks` only for a change outside `specify` when the user asked for it |
    | `needs-review`, `conflict` | 3 | Report it and finish. Run `speckit.capabilities.review` |
    | `merge-conflict` | 3 | A merge left conflict markers in `files`. Report `reason` and finish. Never resolve the catalog by hand: `{SCRIPT} rebase` rebuilds it |
@@ -78,7 +78,7 @@ $ARGUMENTS
 
 7. Run `{SCRIPT} apply --staged <staging>`. Act on `status`:
 
-   - `published`: continue. Two keys ask for a look at the index, and each is there only when it applies:
+   - `published`: continue. First close each task that `fold_tasks` listed in step 1: write `- [x]` in its box in `tasks.md`. That task was this fold, and it is done now. Then, two keys ask for a look at the index, and each is there only when it applies:
      - `entry_points`: the entry point of a capability named code that is gone, and the fold replaced it with the first code anchor of its rules. Report `was` and `now`. `{SCRIPT} index --capability <name> --entry <path::symbol>` sets another one.
      - `review_covers`: the fold took rules from a capability. Read its `covers` line against the rules that are left, with `{SCRIPT} status --capability <name>`. If it still names what was retired, propose a new line to the person. With their yes, run `{SCRIPT} index --capability <name> --covers "<the line>"`: it rewrites the row of the index and the Overview of the capability.
    - `base-changed`, exit 3: another process changed the catalog or the inputs. Start again from step 1; your draft was written against an old version.
@@ -99,4 +99,4 @@ $ARGUMENTS
 
 ## Do not
 
-Edit `spec.md`, `history.md` or `index.md` under the catalog by hand, touch `specs/NNN-*` beyond the `[post-merge]` mark of step 1, touch `README.md` or agent instruction files, or commit.
+Edit `spec.md`, `history.md` or `index.md` under the catalog by hand, touch `specs/NNN-*` beyond the `[post-merge]` mark of step 1 and the box of step 7, touch `README.md` or agent instruction files, or commit.

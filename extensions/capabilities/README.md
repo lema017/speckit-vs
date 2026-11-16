@@ -139,7 +139,7 @@ The template also asks for one user story instead of three. A spec written befor
 - a spec names a slice no map defines or one that was dropped, or two specs name the same slice;
 - a spec builds, with `IMPLEMENTED`, a rule that belongs to another slice.
 
-The `sliced` workflow builds the slices of a map one after another. It asks `slices next` once per round, waits at a gate before each slice, and ends when every slice is delivered. It measures each slice after `specify` and after `tasks`: over the budget, a gate asks whether to go on, and an approval is recorded with `slices accept`. Install it with `specify bundle add sliced`, after the project knows the bundle catalog of this fork (`specify bundle catalog add https://raw.githubusercontent.com/lema017/speckit-vs/main/bundles/catalog.json --id fork`), and run it with `specify workflow run sliced --input map=<name>`.
+The `sliced` workflow builds the slices of a map one after another. It asks `slices next` once per round, waits at a gate before each slice, and ends when every slice is delivered. When the spec of a slice leaves points marked `[NEEDS CLARIFICATION]`, it waits at a gate while you answer them with `/speckit-clarify`: `slices measure` counts them in `unclear`, and says so in its line. It measures each slice after `specify` and after `tasks`: over the budget, a gate asks whether to go on, and an approval is recorded with `slices accept`. Install it with `specify bundle add sliced`, after the project knows the bundle catalog of this fork (`specify bundle catalog add https://raw.githubusercontent.com/lema017/speckit-vs/main/bundles/catalog.json --id fork`), and run it with `specify workflow run sliced --input map=<name>`.
 
 It leaves a note for an `enabler` slice, for a `[designed]` rule of a capability the maps touch that is in no slice and not in `## Later`, and for a rule of a slice that its spec does not build.
 
@@ -227,6 +227,8 @@ The script has subcommands for them: `scaffold --capability <name> --covers "<on
 ```
 
 It stays open. It holds neither the fold nor the check, a slice is `delivered` without it, and the progress page says how many wait. `prepare` reports them in `post_merge`, and `check` in a note. A task of code never carries the mark.
+
+**The task of running the fold.** `tasks` often writes "run `speckit.capabilities.fold`" as a task of its own, and nothing can close it before the fold runs. A task that names the fold command does not hold the fold: `prepare` lists it in `fold_tasks`, and the fold command closes its box once the catalog is published.
 
 ## Two branches on one capability
 
