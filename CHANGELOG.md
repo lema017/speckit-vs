@@ -2,6 +2,13 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.6.6] - 2026-11-20
+
+### Changed
+
+- docs: show in the lifecycle picture how to design, how to build and what is new
+- chore: begin 1.6.6.dev0 development
+
 ## [1.6.5] - 2026-11-19
 
 ### Changed
