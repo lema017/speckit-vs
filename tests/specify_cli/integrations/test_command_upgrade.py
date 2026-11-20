@@ -1948,3 +1948,92 @@ class TestIntegrationUpgradeBasic:
             os.chdir(old)
         assert result.exit_code == 0
         assert "Nothing to upgrade" in result.output
+
+
+class TestUpgradeSaysOnlyWhatItLeft:
+    """The upgrade installs the shared files in two passes: the first adds the missing ones and
+    the second refreshes the ones the project never edited. The first pass used to report every
+    file that was there as "not updated", right before the second pass updated it."""
+
+    NOT_UPDATED = "already exist and were not updated"
+    COMMON = ".specify/scripts/bash/common.sh"
+    OLD = "# what an older specify installed\n"
+
+    @staticmethod
+    def _manifest(project):
+        return project / ".specify" / "integrations" / "speckit.manifest.json"
+
+    def _as_an_older_specify_left_it(self, project, rel=COMMON, text=OLD):
+        """The file and its hash in the manifest agree, so the file is still the one specify installed.
+
+        Written as bytes: in text mode Windows writes ``\\r\\n``, and the hash would be of another file."""
+        (project / rel).write_bytes(text.encode("utf-8"))
+        manifest = json.loads(self._manifest(project).read_text(encoding="utf-8"))
+        manifest["files"][rel] = hashlib.sha256((project / rel).read_bytes()).hexdigest()
+        self._manifest(project).write_text(json.dumps(manifest), encoding="utf-8")
+
+    @staticmethod
+    def _said(result):
+        return " ".join(strip_ansi(result.output).split())
+
+    def test_a_file_the_upgrade_refreshes_is_not_reported_as_left(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+        self._as_an_older_specify_left_it(project)
+
+        result = _run_in_project(project, ["integration", "upgrade", "claude"])
+
+        assert result.exit_code == 0, result.output
+        assert (project / self.COMMON).read_text(encoding="utf-8") != self.OLD
+        assert self.NOT_UPDATED not in self._said(result)
+        assert "common.sh" not in self._said(result)
+
+    def test_an_upgrade_with_nothing_to_refresh_reports_nothing(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, ["integration", "upgrade", "claude"])
+
+        assert result.exit_code == 0, result.output
+        assert self.NOT_UPDATED not in self._said(result)
+        assert "Preserved" not in self._said(result)
+
+    def test_a_file_the_project_edited_is_still_kept_and_reported(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+        (project / self.COMMON).write_text("# mine\n", encoding="utf-8")
+
+        result = _run_in_project(project, ["integration", "upgrade", "claude"])
+
+        assert result.exit_code == 0, result.output
+        assert (project / self.COMMON).read_text(encoding="utf-8") == "# mine\n"
+        said = self._said(result)
+        assert "Preserved 1 customized shared infrastructure file(s)" in said
+        assert self.COMMON in said
+        assert self.NOT_UPDATED not in said
+
+    def test_a_file_the_manifest_does_not_know_is_still_kept_and_reported(self, tmp_path):
+        project = _init_project(tmp_path, "claude")
+        (project / self.COMMON).write_text("# from before the manifest\n", encoding="utf-8")
+        manifest = json.loads(self._manifest(project).read_text(encoding="utf-8"))
+        del manifest["files"][self.COMMON]
+        self._manifest(project).write_text(json.dumps(manifest), encoding="utf-8")
+
+        result = _run_in_project(project, ["integration", "upgrade", "claude"])
+
+        assert result.exit_code == 0, result.output
+        assert (project / self.COMMON).read_text(encoding="utf-8") == "# from before the manifest\n"
+        said = self._said(result)
+        assert said.count(self.COMMON) == 1, said
+        assert "Preserved 1 customized" in said or "1 shared infrastructure path(s) " + self.NOT_UPDATED in said
+
+    def test_upgrading_an_integration_that_is_not_the_default_reports_what_it_left(self, tmp_path):
+        """No second pass runs for it, so the shared files really stay as they were."""
+        project = _init_project(tmp_path, "gemini")
+        install = _run_in_project(project, ["integration", "install", "claude", "--script", "sh"])
+        assert install.exit_code == 0, install.output
+        self._as_an_older_specify_left_it(project)
+
+        result = _run_in_project(project, ["integration", "upgrade", "claude", "--script", "sh"])
+
+        assert result.exit_code == 0, result.output
+        assert (project / self.COMMON).read_text(encoding="utf-8") == self.OLD
+        assert self.NOT_UPDATED in self._said(result)
+        assert self.COMMON in self._said(result)

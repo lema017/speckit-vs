@@ -339,6 +339,80 @@ def test_the_block_does_not_get_in_the_way_of_the_ci_check(repo):
     assert out["states"][change] == "ready"
 
 
+# ---------------------------------------------------------------- after the extension was updated
+
+OLD = START + "\nwhat an older version of the extension wrote\n" + END
+
+
+def test_refresh_brings_an_old_block_up_to_date_and_keeps_what_is_around_it(repo):
+    head, tail = "# Mine\n\n", "\n\nMy closing notes without a final newline"
+    repo.write("AGENTS.md", head + OLD + tail)
+    assert repo.cap("refresh") == (0, {"setup": ["AGENTS.md"], "status": "ok"})
+    assert repo.read("AGENTS.md") == head + BLOCK + tail
+
+
+def test_refresh_changes_nothing_when_the_block_is_current(repo):
+    seal(repo)
+    before = repo.tree()
+    assert repo.cap("refresh") == (0, {"setup": [], "status": "ok"})
+    assert repo.tree() == before
+
+
+@pytest.mark.parametrize("agent_file", [None, "# Mine\n", b"\xff\xfe not utf-8 " + START.encode("ascii")])
+def test_refresh_leaves_alone_a_project_that_never_had_the_block(bare, agent_file):
+    """An update does not set a project up: the first review that seals a spec does."""
+    if agent_file is not None:
+        (bare.path / "AGENTS.md").write_bytes(agent_file if isinstance(agent_file, bytes) else agent_file.encode("utf-8"))
+    before = bare.tree()
+    assert bare.cap("refresh") == (0, {"setup": [], "status": "none"})
+    assert bare.tree() == before
+    assert not (bare.path / ".gitattributes").exists()
+    assert ".specify/capabilities/" not in bare.read(".gitignore")
+
+
+def test_refresh_also_adds_the_lines_a_set_up_project_is_missing(bare):
+    """Once the block is there the project was set up, and refresh does what a review would."""
+    bare.write("AGENTS.md", OLD + "\n")
+    assert bare.cap("refresh") == (0, {"setup": [".gitignore", ".gitattributes", "AGENTS.md"], "status": "ok"})
+    assert bare.read("AGENTS.md") == BLOCK + "\n"
+    assert ".specify/capabilities/" in bare.read(".gitignore").splitlines()
+    assert "specs/_capabilities/index.md merge=union" in bare.read(".gitattributes").splitlines()
+
+
+@pytest.mark.parametrize("content", ["x\n" + START + "\nno end\n", "x\n" + END + "\nno start\n"])
+def test_refresh_reports_a_block_it_cannot_refresh(repo, content):
+    repo.write("AGENTS.md", content)
+    assert repo.cap("refresh") == (0, {"setup": ["skipped AGENTS.md: unbalanced markers"], "status": "ok"})
+    assert repo.read("AGENTS.md") == content
+
+
+def test_refresh_looks_at_the_file_of_the_integration(repo):
+    options(repo, integration="claude")
+    repo.write("CLAUDE.md", OLD + "\n")
+    assert repo.cap("refresh") == (0, {"setup": ["CLAUDE.md"], "status": "ok"})
+    assert repo.read("CLAUDE.md") == BLOCK + "\n"
+
+
+def test_a_block_in_a_file_the_project_does_not_use_is_not_its_setup(bare):
+    options(bare, integration="claude")
+    bare.write("AGENTS.md", OLD + "\n")
+    before = bare.tree()
+    assert bare.cap("refresh") == (0, {"setup": [], "status": "none"})
+    assert bare.tree() == before
+
+
+def test_refresh_does_not_read_a_block_out_of_the_repository(bare, tmp_path):
+    outside = tmp_path / "outside.md"
+    outside.write_text(OLD + "\n", encoding="utf-8")
+    try:
+        os.symlink(outside, bare.path / "AGENTS.md")
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are not available here")
+    assert bare.cap("refresh") == (0, {"setup": [], "status": "none"})
+    assert outside.read_text(encoding="utf-8") == OLD + "\n"
+    assert not (bare.path / ".gitattributes").exists()
+
+
 # ---------------------------------------------------------------- scaffold
 
 

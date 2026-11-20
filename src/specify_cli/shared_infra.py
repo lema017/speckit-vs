@@ -500,8 +500,15 @@ def install_shared_infra(
     invoke_prefix: str = "/",
     refresh_managed: bool = False,
     refresh_hint: str | None = None,
+    report_skipped: bool = True,
 ) -> bool:
     """Install shared scripts and templates into *project_path*.
+
+    ``report_skipped=False`` leaves out the warning that lists the files that
+    were already there and were left as they were. It is for a caller that
+    runs a second pass over the same files right after, with
+    ``refresh_managed=True``: that pass updates most of them, and it is the
+    one that knows which ones stayed.
 
     When ``refresh_managed`` is True, files whose on-disk hash still matches
     the previously recorded manifest hash are overwritten with the bundled
@@ -768,7 +775,7 @@ def install_shared_infra(
         _write_shared_text(project_path, dst, content)
         manifest.record_existing(rel)
 
-    if skipped_files:
+    if skipped_files and report_skipped:
         console.print(
             f"[yellow]⚠[/yellow]  {len(skipped_files)} shared infrastructure path(s) already exist and were not updated:"
         )

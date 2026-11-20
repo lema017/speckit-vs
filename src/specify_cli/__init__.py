@@ -140,6 +140,7 @@ def _install_shared_infra(
     invoke_prefix: str = "/",
     refresh_managed: bool = False,
     refresh_hint: str | None = None,
+    report_skipped: bool = True,
 ) -> bool:
     """Install shared infrastructure files into *project_path*.
 
@@ -170,6 +171,9 @@ def _install_shared_infra(
     ``--force`` for ``init``/``integration upgrade``). When ``None``, no
     remediation hint is printed for customizations.
 
+    *report_skipped* — pass ``False`` when a second pass with
+    ``refresh_managed=True`` follows: that pass reports what stayed.
+
     Returns ``True`` on success.
     """
     return _install_shared_infra_impl(
@@ -184,6 +188,7 @@ def _install_shared_infra(
         invoke_prefix=invoke_prefix,
         refresh_managed=refresh_managed,
         refresh_hint=refresh_hint,
+        report_skipped=report_skipped,
     )
 
 
@@ -196,6 +201,7 @@ def _install_shared_infra_or_exit(
     invoke_prefix: str = "/",
     refresh_managed: bool = False,
     refresh_hint: str | None = None,
+    report_skipped: bool = True,
 ) -> bool:
     try:
         return _install_shared_infra(
@@ -207,6 +213,7 @@ def _install_shared_infra_or_exit(
             invoke_prefix=invoke_prefix,
             refresh_managed=refresh_managed,
             refresh_hint=refresh_hint,
+            report_skipped=report_skipped,
         )
     except (ValueError, OSError) as exc:
         console.print(f"[red]Error:[/red] Failed to install shared infrastructure: {exc}")

@@ -121,6 +121,10 @@ def extension_add(
 
     # With ``--from`` and no name, describe the install by its source URL.
     safe_extension = _escape_markup(extension if extension is not None else str(from_url))
+    # Only an extension added from the copy that ships with specify is asked to
+    # refresh what it keeps in the project: a directory, a URL or a catalog is
+    # someone else's code.
+    shipped_extension: Path | None = None
 
     try:
         with console.status(f"[cyan]Installing extension: {safe_extension}[/cyan]"):
@@ -172,6 +176,7 @@ def extension_add(
                     manifest = manager.install_from_directory(
                         bundled_path, speckit_version, priority=priority, force=force
                     )
+                    shipped_extension = bundled_path
                 else:
                     # Install from catalog (also resolves display names to IDs)
                     catalog = ExtensionCatalog(project_root)
@@ -314,6 +319,14 @@ def extension_add(
         # #1: regenerate native event config for installed event-capable
         # integrations so the new extension's events take effect immediately.
         _commands._refresh_events_and_warn(project_root)
+
+        # What the extension keeps in the project, such as its block in the
+        # agent file, is brought up to date by the script that ships with specify.
+        if shipped_extension is not None:
+            from ._command_add_refresh import refresh_lines
+
+            for line in refresh_lines(project_root, str(manifest.id), shipped_extension):
+                console.print(line, soft_wrap=True)
 
         for warning in manifest.warnings:
             console.print(f"\n[yellow]⚠  Compatibility warning:[/yellow] {_escape_markup(str(warning))}")

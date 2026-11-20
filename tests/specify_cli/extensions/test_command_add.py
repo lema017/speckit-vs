@@ -1387,3 +1387,98 @@ def test_extension_install_listing_matches_registered_command_names(
     assert result.exit_code == 0, output
     assert f"• {listed} - " in output, output
     assert f"• {not_listed} - " not in output, output
+
+
+# -- what an extension that ships with specify keeps in the project ------------------------------
+
+AGENT_START = "<!-- SPECKIT CAPABILITIES START -->"
+AGENT_END = "<!-- SPECKIT CAPABILITIES END -->"
+OLD_AGENT_BLOCK = AGENT_START + "\nwhat an older version of the extension wrote\n" + AGENT_END
+INSTALLED_CAPABILITIES = Path(".specify") / "extensions" / "capabilities"
+
+
+def _add(project_dir, *args):
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project_dir)
+        return CliRunner().invoke(app, ["extension", "add", *args])
+    finally:
+        os.chdir(old_cwd)
+
+
+def _bundled_capabilities() -> Path:
+    from specify_cli._assets import _locate_bundled_extension
+
+    bundled = _locate_bundled_extension("capabilities")
+    assert bundled is not None
+    return bundled
+
+
+def _said(result) -> str:
+    return " ".join(strip_ansi(result.output).split())
+
+
+def test_adding_capabilities_again_brings_its_block_for_agents_up_to_date(project_dir):
+    """`specify upgrade` updates an extension by adding it again. The block the extension keeps in
+    the agent file used to stay as the old version wrote it, until a review sealed a spec."""
+    first = _add(project_dir, "capabilities")
+    assert first.exit_code == 0, first.output
+    agents = project_dir / "AGENTS.md"
+    agents.write_text("# Mine\n\n" + OLD_AGENT_BLOCK + "\n\nMine too.\n", encoding="utf-8")
+    current = (_bundled_capabilities() / "templates" / "capability-agent-rule.md").read_text(encoding="utf-8").strip("\n")
+
+    result = _add(project_dir, "capabilities", "--force")
+
+    assert result.exit_code == 0, result.output
+    assert agents.read_text(encoding="utf-8") == "# Mine\n\n" + current + "\n\nMine too.\n"
+    assert "Brought up to date: " in _said(result) and "AGENTS.md" in _said(result)
+
+
+def test_adding_capabilities_to_a_project_without_its_block_sets_nothing_up(project_dir):
+    """Adding the extension is not what sets a project up: the first review that seals a spec is."""
+    (project_dir / "AGENTS.md").write_text("# Mine\n", encoding="utf-8")
+
+    result = _add(project_dir, "capabilities")
+
+    assert result.exit_code == 0, result.output
+    assert "Brought up to date" not in _said(result)
+    assert (project_dir / "AGENTS.md").read_text(encoding="utf-8") == "# Mine\n"
+    for name in ("CLAUDE.md", ".gitattributes", ".gitignore"):
+        assert not (project_dir / name).exists(), name
+
+
+def test_a_capabilities_that_does_not_ship_with_specify_is_not_run(project_dir, tmp_path):
+    """Only the copy specify ships is run. A directory someone points at with --dev is not."""
+    import shutil
+
+    source = tmp_path / "capabilities-dev"
+    shutil.copytree(_bundled_capabilities(), source, ignore=shutil.ignore_patterns("__pycache__"))
+    (source / "scripts" / "python" / "capabilities.py").write_text(
+        "import pathlib\n"
+        "pathlib.Path(__file__).with_name('ran').write_text('x')\n"
+        "print('{\"setup\": [\"AGENTS.md\"], \"status\": \"ok\"}')\n",
+        encoding="utf-8",
+    )
+    (project_dir / "AGENTS.md").write_text(OLD_AGENT_BLOCK + "\n", encoding="utf-8")
+
+    result = _add(project_dir, str(source), "--dev")
+
+    assert result.exit_code == 0, result.output
+    assert not (project_dir / INSTALLED_CAPABILITIES / "scripts" / "python" / "ran").exists()
+    assert "Brought up to date" not in _said(result)
+    assert (project_dir / "AGENTS.md").read_text(encoding="utf-8") == OLD_AGENT_BLOCK + "\n"
+
+
+def test_a_refresh_that_fails_is_said_and_the_extension_stays_added(project_dir, monkeypatch):
+    from specify_cli.extensions import _command_add_refresh
+
+    monkeypatch.setitem(
+        _command_add_refresh._REFRESH, "capabilities", ("scripts/python/capabilities.py", ("no-such-command",))
+    )
+
+    result = _add(project_dir, "capabilities")
+
+    assert result.exit_code == 0, result.output
+    assert "Could not bring up to date what capabilities keeps in this project" in _said(result)
+    assert "Extension installed successfully" in _said(result)
+    assert (project_dir / INSTALLED_CAPABILITIES / "extension.yml").is_file()

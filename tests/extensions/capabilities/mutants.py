@@ -162,6 +162,20 @@ MUTANTS += [
 ]
 
 MUTANTS += [
+    # refresh: what an update of the extension brings up to date, and where it writes nothing.
+    ("refresh-sets-up-a-project-that-never-was", "    if not is_set_up(root):\n        return emit", "    if False:\n        return emit"),
+    ("refresh-refreshes-nothing", 'return emit({"setup": ensure_setup(root), "status": "ok"})', 'return emit({"setup": [], "status": "ok"})'),
+    ("refresh-says-none-for-a-set-up-project", 'return emit({"setup": ensure_setup(root), "status": "ok"})', 'return emit({"setup": ensure_setup(root), "status": "none"})'),
+    ("refresh-says-ok-where-it-did-nothing", 'return emit({"setup": [], "status": "none"})', 'return emit({"setup": [], "status": "ok"})'),
+    ("refresh-misses-a-block-without-its-start", "if AGENT_START in text or AGENT_END in text:", "if AGENT_START in text:"),
+    ("refresh-misses-a-block-without-its-end", "if AGENT_START in text or AGENT_END in text:", "if AGENT_END in text:"),
+    ("refresh-reads-out-of-the-repository", "inside = root in path.resolve().parents", "inside = True"),
+    ("refresh-looks-only-at-agents-md", "    for rel in agent_files(root):\n        path = root / rel\n        inside", "    for rel in [DEFAULT_AGENT_FILE]:\n        path = root / rel\n        inside"),
+    ("refresh-stops-at-a-file-that-is-not-text", '        except (OSError, UnicodeDecodeError):\n            text = ""', "        except OSError:\n            text = \"\""),
+    ("refresh-not-a-command", '    if args.command == "refresh":\n        return cmd_refresh(root)\n', ""),
+]
+
+MUTANTS += [
     # bootstrap and validate: a claim of conformity needs evidence.
     ("inferred-skips-evidence", 'if row is not None and row["state"] != "unverified":', 'if row is not None and row["state"] != "unverified" and entry["op"] == "VALIDATED":'),
     ("validated-skips-evidence", 'if row is not None and row["state"] != "unverified":', 'if row is not None and row["state"] != "unverified" and entry["op"] == "INFERRED":'),
@@ -352,7 +366,7 @@ CLARIFY_MUTANTS = [
     ("clarify-context-stops-without-a-feature", "    except (CapError, ValueError, AttributeError):\n        change = None\n", "    except ZeroDivisionError:\n        change = None\n"),
     ("clarify-context-feature-from-outside", "        feature = source_of(root, change)\n    except (CapError", "        feature = str(change)\n    except (CapError"),
     ("clarify-context-leaks-the-raw-delta", 'if key != "raw"}', 'if True}'),
-    ("clarify-context-hides-delta-errors", "delta=delta, delta_errors=errors))", "delta=delta, delta_errors=[]))"),
+    ("clarify-context-hides-delta-errors", "delta=delta, delta_errors=errors, slice=slice_of))", "delta=delta, delta_errors=[], slice=slice_of))"),
     ("clarify-context-spec-without-the-file", "    if text is not None:\n        spec = ", "    if True:\n        spec = "),
     ("clarify-context-without-the-catalog", "return emit(dict(catalog_summary(root), feature=feature", "return emit(dict({}, feature=feature"),
 ]
