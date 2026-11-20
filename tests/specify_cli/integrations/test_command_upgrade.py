@@ -1964,10 +1964,12 @@ class TestUpgradeSaysOnlyWhatItLeft:
         return project / ".specify" / "integrations" / "speckit.manifest.json"
 
     def _as_an_older_specify_left_it(self, project, rel=COMMON, text=OLD):
-        """The file and its hash in the manifest agree, so the file is still the one specify installed."""
-        (project / rel).write_text(text, encoding="utf-8")
+        """The file and its hash in the manifest agree, so the file is still the one specify installed.
+
+        Written as bytes: in text mode Windows writes ``\\r\\n``, and the hash would be of another file."""
+        (project / rel).write_bytes(text.encode("utf-8"))
         manifest = json.loads(self._manifest(project).read_text(encoding="utf-8"))
-        manifest["files"][rel] = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        manifest["files"][rel] = hashlib.sha256((project / rel).read_bytes()).hexdigest()
         self._manifest(project).write_text(json.dumps(manifest), encoding="utf-8")
 
     @staticmethod
