@@ -338,6 +338,29 @@ def ensure_setup(root):
     return touched
 
 
+def is_set_up(root):
+    """True when an agent file of the project carries the block, whole or broken. A file out of the repository is not read."""
+    for rel in agent_files(root):
+        path = root / rel
+        inside = root in path.resolve().parents
+        try:
+            text = path.read_bytes().decode("utf-8") if inside and path.is_file() else ""
+        except (OSError, UnicodeDecodeError):
+            text = ""
+        if AGENT_START in text or AGENT_END in text:
+            return True
+    return False
+
+
+def cmd_refresh(root):
+    """After the extension was updated: the setup of a project that has one, brought up to date.
+
+    A review that seals a spec is what sets a project up. Until one did, an update writes nothing."""
+    if not is_set_up(root):
+        return emit({"setup": [], "status": "none"})
+    return emit({"setup": ensure_setup(root), "status": "ok"})
+
+
 @contextlib.contextmanager
 def publish_lock(root):
     """Kernel lock, so it dies with its process. Non-blocking: a second writer gets Busy."""
@@ -2958,7 +2981,7 @@ class Check:
 
 def build_parser():
     parser = argparse.ArgumentParser(description="Capability catalog mechanics")
-    parser.add_argument("command", choices=["status", "locate", "clarify-context", "scaffold", "ensure", "review", "prepare", "apply", "recover", "check", "publish-design", "delta-block", "rebase", "defer", "index"])
+    parser.add_argument("command", choices=["status", "locate", "clarify-context", "scaffold", "ensure", "review", "prepare", "apply", "recover", "check", "publish-design", "delta-block", "rebase", "defer", "index", "refresh"])
     parser.add_argument("ids", nargs="*", help="defer: the rules to leave out of the delta")
     parser.add_argument("--root", default=".")
     parser.add_argument("--change", action="append", default=[])
@@ -2988,6 +3011,8 @@ def dispatch(args, root):
         raise CapError(problem)
     if args.ids and args.command != "defer":
         raise CapError("%s takes no rule ids; only defer does" % args.command)
+    if args.command == "refresh":
+        return cmd_refresh(root)
     if args.command == "status":
         return cmd_status(root, args.capability)
     if args.command == "locate":

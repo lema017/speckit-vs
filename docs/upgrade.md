@@ -15,7 +15,7 @@
 | **CLI Tool — manual fallback (pipx)** | `pipx install --force git+https://github.com/lema017/speckit-vs.git@vX.Y.Z` | Same as above, for pipx installs. |
 | **Project Files** | Run `specify integration upgrade <key>`, then `specify extension update` | Refresh installed integration files and extensions in your project |
 | **Both** | Run CLI upgrade, then project update | Recommended for major version updates |
-| **The `capabilities` extension** | `specify extension add capabilities --force` | After upgrading the CLI by hand. Registers new hooks and keeps your configuration. `specify upgrade` does this for you |
+| **The `capabilities` extension** | `specify extension add capabilities --force` | After upgrading the CLI by hand. Registers new hooks, keeps your configuration and brings its block in the agent file up to date. `specify upgrade` does this for you |
 | **The `studio` extension** | `specify extension add studio` | Once, in a project created before the [design stage](how-to/studio.md) existed. `specify upgrade` updates the extensions a project has, and adds none |
 
 ---
@@ -39,6 +39,8 @@ The third step adds extensions again instead of running `specify extension updat
 `specify upgrade` stops at the first step that does not finish, and says which. If the CLI upgrade does not finish, the project is not changed. If you edited an integration file, the integration upgrade stops and lists it: look at the change, or rerun with `--force` to replace it with the new one. `--force` only reaches the integration upgrades.
 
 Extensions installed from a catalog are not updated. For each one, `specify upgrade` prints the `specify extension update <id>` command to run.
+
+Adding `capabilities` again also brings up to date the block it keeps in the agent file, such as `CLAUDE.md`, and says which files it changed. A project that never had the block gets nothing: the first review that seals a spec writes it.
 
 To see what it would do, without changing anything:
 

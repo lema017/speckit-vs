@@ -266,6 +266,8 @@ When `review` seals a delta, or `prepare` is `ready`, or `scaffold` lists a capa
 - Everything outside the markers stays byte for byte, except the frontmatter a `.mdc` file needs (`alwaysApply`) when it has none. If the markers are unbalanced, or the file points outside the repository, the file is left alone and `setup` says so.
 - Outside the Spec Kit flow this is an instruction an agent can ignore. It is not an enforcement mechanism; CI is.
 
+`refresh` brings the block up to date after the extension was updated, with the lines of `.gitignore` and `.gitattributes` a review would add. `specify extension add capabilities --force` runs it, with the script inside `specify`, and so does `specify upgrade`. In a project that never had the block it writes nothing and answers `none`.
+
 ## Script exit codes
 
 `scripts/python/capabilities.py` uses the standard library only and needs Python 3.9+.
