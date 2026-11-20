@@ -2,6 +2,17 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.6.5] - 2026-11-19
+
+### Changed
+
+- docs: explain changed and retired rules, and the gate for open points
+- fix(capabilities): close three gaps a real run of a designed slice found
+- feat(studio): say when a spec changes an approved rule, and retire one
+- docs: explain what to do when a change retires rules or only moves code
+- fix(capabilities): close the gaps found when a change retires rules
+- chore: begin 1.6.5.dev0 development
+
 ## [1.6.4] - 2026-11-15
 
 ### Changed
