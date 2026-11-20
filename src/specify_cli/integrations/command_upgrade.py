@@ -218,6 +218,10 @@ def integration_upgrade(
         invoke_prefix=_invoke_prefix_for_integration(
             infra_integration, infra_key, infra_parsed, project_root
         ),
+        # For the default integration a second pass below refreshes the files
+        # the project never edited, and reports the ones it leaves. Reporting
+        # here too would list as "not updated" files that pass then updates.
+        report_skipped=installed_key != key,
     )
     if os.name != "nt":
         from .. import ensure_executable_scripts

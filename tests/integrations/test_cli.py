@@ -1117,6 +1117,27 @@ class TestInitIntegrationFlag:
         written = project / ".specify" / "templates" / "plan-template.md"
         assert written.stat().st_mode & 0o777 == 0o644
 
+    def test_shared_infra_skip_report_can_be_left_to_a_later_pass(self, tmp_path, capsys):
+        """A caller that refreshes the same files right after asks this pass not to report them.
+        The pass still leaves them as they are."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "quiet-test"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+        (scripts_dir / "common.sh").write_text("# custom\n", encoding="utf-8")
+
+        _install_shared_infra(project, "sh", force=False, report_skipped=False)
+
+        captured = capsys.readouterr()
+        assert "already exist and were not updated" not in captured.out
+        assert "common.sh" not in captured.out
+        assert (scripts_dir / "common.sh").read_text(encoding="utf-8") == "# custom\n"
+        assert (scripts_dir / "setup-plan.sh").exists(), "the missing files are still installed"
+
     def test_shared_infra_no_warning_when_forced(self, tmp_path, capsys):
         """No skip warning when force=True (all files overwritten)."""
         from specify_cli import _install_shared_infra
