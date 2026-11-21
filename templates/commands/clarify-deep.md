@@ -1,5 +1,5 @@
 ---
-description: Interview the user in rounds along a decision tree built from the current feature spec, opening the decisions each answer creates until the spec passes a definition of clear, and encode the answers back into the spec.
+description: Interview the user in rounds along a decision tree built from the current feature spec, opening the decisions each answer creates until the spec passes a definition of clear, and encode the answers back into the spec. Part of speckit-vs, a fork of Spec Kit, where a change ends only after converge and, when the capabilities extension is installed, the catalog fold.
 handoffs:
   - label: Build Technical Plan
     agent: speckit.plan

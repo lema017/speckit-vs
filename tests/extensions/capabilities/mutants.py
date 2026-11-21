@@ -532,6 +532,58 @@ SLICE_DOOR_MUTANTS = [
 ]
 
 
+COVERAGE_MODULES = ["test_coverage.py"]
+COVERAGE_MUTANTS = [
+    ("coverage-counts-the-forks-own-files", "        if name.startswith(NOT_PRODUCT) or posixpath", "        if posixpath"),
+    ("coverage-counts-git-settings", " or posixpath.basename(name) in NOT_PRODUCT_NAMES or", " or"),
+    ("coverage-counts-markdown", ' or name.lower().endswith(".md"):\n            continue\n        if any', ':\n            continue\n        if any'),
+    ("coverage-ignores-coverage-ignore", "        if any(fnmatch.fnmatchcase(name, pattern) for pattern in ignore):", "        if False:"),
+    ("coverage-maps-code-but-not-tests", 'for ref in row["code"] + row["tests"]:\n                owners', 'for ref in row["code"]:\n                owners'),
+    ("coverage-takes-a-review-for-a-fold", 'RECORDED = ("prepared", "ready", "delivered", "no-rule-change")', 'RECORDED = ("prepared", "ready", "delivered", "no-rule-change", "reviewed")'),
+    ("coverage-misses-no-rule-change", 'RECORDED = ("prepared", "ready", "delivered", "no-rule-change")', 'RECORDED = ("prepared", "ready", "delivered")'),
+    ("coverage-never-says-missing", '    else:\n        status = "missing"', '    else:\n        status = "recorded"'),
+    ("coverage-hides-pending-changes", '    if pending:\n        status = "unrecorded"', '    if False:\n        status = "unrecorded"'),
+    ("coverage-history-never-records", "if any(cells and cells[0] == source for cells in table_rows(", "if any(cells and cells[0] == source + '!' for cells in table_rows("),
+    ("coverage-lists-specs-without-rules", 'if errors or delta is None or delta["none"] or is_design(delta):', 'if errors or delta is None or is_design(delta):'),
+    ("coverage-reads-the-catalog-as-a-spec", 'for name in sorted(os.listdir(root / feature_root)) if not name.startswith(("_", "."))]', 'for name in sorted(os.listdir(root / feature_root))]'),
+    ("coverage-skips-record-folders", "    if (root / CHANGES).is_dir():\n        folders +=", "    if False:\n        folders +="),
+    ("coverage-hides-open-tasks", '"open_tasks": open_tasks(change) if (change / "spec.md").is_file() else 0', '"open_tasks": 0'),
+    ("coverage-names-a-record-after-main", ' and name not in {base.split("/")[-1] for base in bases} else "change"', ' else "change"'),
+    ("coverage-drops-the-base-flag", "return cmd_coverage(root, args.base)", "return cmd_coverage(root, None)"),
+    ("coverage-hides-problems", '"problems": check.hard,', '"problems": [],'),
+]
+
+# Part C: what check notes when work skipped its fold, the requirements review finds unlinked, and the Stop hook of the agent.
+DEFENSE_MODULES = ["test_defenses.py"]
+DEFENSE_MUTANTS = [
+    ("defense-done-means-no-task-at-all", '        if state != "prepared" and tasks == 0:', '        if state != "prepared" and tasks == 0 and not fold_tasks(change):'),
+    ("defense-done-ignores-drafts", '        if state != "prepared" and tasks == 0:', '        if state == "reviewed" and tasks == 0:'),
+    ("defense-done-counts-no-tasks-md", '        if state != "prepared" and tasks == 0:', '        if state != "prepared" and not tasks:'),
+    ("defense-code-ignores-coverage-ignore", "        code = product_files(self.names, coverage_ignore(self.config))", "        code = product_files(self.names, [])"),
+    ("defense-code-forgets-records", "        if code and not self.states:", "        if code and not [s for s in self.states.values() if s != \"no-rule-change\"]:"),
+    ("defense-code-never-noted", "        if code and not self.states:", "        if False:"),
+    ("defense-merged-repeats-the-branch", '            if item["change"] in self.states:\n                continue\n            tasks = item', '            tasks = item'),
+    ("defense-merged-never-noted", "        for item in unrecorded(self.root, self.config):", "        for item in []:"),
+    ("defense-merged-hard-in-ci", '            self.notes.append("%s: merged without its fold', '            self.soft("%s: merged without its fold'),
+    ("defense-designed-owes-code", '                if rule["designed"] or (capability, rule_id) in self.covered:', '                if (capability, rule_id) in self.covered:'),
+    ("defense-no-block-is-fine", "                if row is None or not row[\"code\"]:", "                if row is not None and not row[\"code\"]:"),
+    ("defense-empty-code-is-fine", "                if row is None or not row[\"code\"]:", "                if row is None:"),
+    ("defense-gone-code-not-checked", "                gone = [ref for ref in row[\"code\"] if not anchor_resolves(self.root, ref)]", "                gone = []"),
+    ("defense-gone-repeats-touched", "                if touched & {anchor_file(ref) for ref in row[\"code\"] + row[\"tests\"]}:\n                    continue  #", "                if False:\n                    continue  #"),
+    ("review-unlinked-counts-links", '    return sorted(key for key in spec_sections(text) if key.startswith("FR-") and key not in linked)', '    return sorted(key for key in spec_sections(text) if key.startswith("FR-"))'),
+    ("review-unlinked-counts-scenarios", '    return sorted(key for key in spec_sections(text) if key.startswith("FR-") and key not in linked)', '    return sorted(key for key in spec_sections(text) if key.startswith(("FR-", "US")) and key not in linked)'),
+    ("review-unlinked-only-when-stamped", '    return emit({"status": "unchanged", "unlinked": unlinked_requirements(text, delta)})', '    return emit({"status": "unchanged", "unlinked": []})'),
+    ("stop-ignores-the-loop-guard", '    if not isinstance(payload, dict) or payload.get("stop_hook_active"):', '    if not isinstance(payload, dict):'),
+    ("stop-ignores-off", '    if mode not in STOP_MODES or mode == "off" or', '    if mode not in STOP_MODES or'),
+    ("stop-warn-repeats", '    if mode == "warn" and memory is not None:\n        if read(memory) == said:', '    if mode == "warn" and memory is not None:\n        if False:'),
+    ("stop-block-remembers", '    if mode == "warn" and memory is not None:', '    if memory is not None:'),
+    ("stop-nags-a-spec-being-built", "        if tasks is None or tasks:\n            continue", "        if tasks is None:\n            continue"),
+    ("stop-misses-missing-code", '    if report["status"] == "missing":', '    if False:'),
+    ("stop-misses-finished-specs", "    for source in report[\"pending\"]:", "    for source in []:"),
+    ("stop-memory-in-the-project", '    return (root / rel) if rel else None', '    return (root / "speckit-capabilities-stop") if rel else None'),
+]
+
+
 def main():
     wanted = set(sys.argv[1:])
     survivors = 0
@@ -549,6 +601,8 @@ def main():
             (CLARIFY_MUTANTS, "capabilities.py", CLARIFY_MODULES),
             (SLICE_MUTANTS, "cap_slices.py", SLICE_MODULES),
             (SLICE_DOOR_MUTANTS, "capabilities.py", SLICE_MODULES),
+            (COVERAGE_MUTANTS, "capabilities.py", COVERAGE_MODULES),
+            (DEFENSE_MUTANTS, "capabilities.py", DEFENSE_MODULES),
         )
         for group, target, modules in groups:
             for name, old, new in group:

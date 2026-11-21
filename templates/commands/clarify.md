@@ -1,5 +1,5 @@
 ---
-description: Identify underspecified areas in the current feature spec by asking up to 5 highly targeted clarification questions and encoding answers back into the spec.
+description: Identify underspecified areas in the current feature spec by asking up to 5 highly targeted clarification questions and encoding answers back into the spec. Part of speckit-vs, a fork of Spec Kit, where a change ends only after converge and, when the capabilities extension is installed, the catalog fold.
 handoffs:
   - label: Build Technical Plan
     agent: speckit.plan

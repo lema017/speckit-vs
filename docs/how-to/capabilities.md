@@ -18,7 +18,7 @@ With `--script ps` the extension is not installed unless you ask for it with `--
 
 ## What a change looks like
 
-You use Spec Kit as usual. The extension adds hooks to the flow:
+You use the fork's commands as usual. The extension adds hooks to the flow:
 
 1. **`/speckit.specify`** first decides whether the request is one slice: one thing a person can do and check from end to end. If it holds several, it proposes the cut, waits for your approval and writes the spec of one slice only (see [One spec, one slice](#one-spec-one-slice)). Then it loads the rules that slice touches, and asks the spec to declare a `## Capability Delta`:
 
@@ -30,13 +30,29 @@ You use Spec Kit as usual. The extension adds hooks to the flow:
    - Links: FR-001
    ```
 
-   `From` and `To` are literal. `review` then seals the delta with a lock.
+   `From` and `To` are literal. `review` then seals the delta with a lock, and lists the requirements no rule of the delta links. For each one that sets something a person can observe, it proposes the rule and asks you.
 
 2. **`/speckit.clarify`** and **`/speckit.clarify-deep`** first run a hook that reads the catalog and the code graph. It tells the interview which rules are settled, so it does not ask them, and what to ask: a spec that contradicts an approved rule, a rule nobody approved or that the code does not follow, and code the change reaches beyond its delta. The interview can change the spec. **`/speckit.plan`** compares the spec with the lock and shows you any change of meaning. You decide.
 
-3. **`/speckit.implement`** ends with `fold`, which copies `To` to the catalog by script and writes what the code was observed to do. If the requirement says 15 and the code still says 30, the requirement stays at 15 and the rule is `discrepant`.
+3. **`/speckit.tasks`** ends with the `analyze` hook, which checks that the spec, the plan and the tasks agree. The last task of `tasks.md` runs converge and then the fold.
 
-4. **CI** runs `check` on the pull request. A folded change is `prepared` on the branch and `ready` only once `check` has run against this revision and its test report.
+4. **`/speckit.implement`** ends with `fold`, which copies `To` to the catalog by script and writes what the code was observed to do. If the requirement says 15 and the code still says 30, the requirement stays at 15 and the rule is `discrepant`.
+
+   Then `/speckit.converge` compares the code with the spec until it reports converged, and the fold runs again.
+
+5. **CI** runs `check` on the pull request. A folded change is `prepared` on the branch and `ready` only once `check` has run against this revision and its test report.
+
+A change made without the fork's commands, such as a plan of your own carried straight into code, still ends in the catalog. It needs no spec:
+
+1. Run `/speckit.capabilities.record`. It finds what the branch changed, and which capabilities already have rules in that code, and proposes the delta: every rule a person can observe that the change adds, changes or removes. You approve, change or drop each one.
+2. It writes the delta in `specs/_capabilities/_changes/<YYYYMMDD>-<name>/capability-delta.md`, then runs `review` and the fold with that folder. The fold maps each rule to its code in the [code graph](#the-code-graph), as it does for a spec.
+
+To compare with the commit before the work, when it was already merged, pass `--base <commit>`. `record` also lists every spec whose delta never reached the catalog, merged or not.
+
+The block the extension writes in the agent file, such as `CLAUDE.md`, names the fork and asks the agent to take one of these two paths for every change. Two things notice when it did not:
+
+- **The agent's `Stop` hook**, in Claude Code and Codex. When the agent is about to end its turn with a spec done and not folded, or with product code that nothing records, it sends the agent back once with what is missing. `stop_check: block` in `capabilities-config.yml` sends it back at every stop, and `off` turns it off.
+- **`check`** notes the same, plus the specs merged without their fold and the rules whose code a later change cannot find.
 
 Three things come up when a change retires a feature, or only moves code:
 

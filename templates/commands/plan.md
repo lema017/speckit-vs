@@ -1,5 +1,5 @@
 ---
-description: Execute the implementation planning workflow using the plan template to generate design artifacts.
+description: Execute the implementation planning workflow using the plan template to generate design artifacts. Part of speckit-vs, a fork of Spec Kit, where a change ends only after converge and, when the capabilities extension is installed, the catalog fold.
 handoffs:
   - label: Create Tasks
     agent: speckit.tasks

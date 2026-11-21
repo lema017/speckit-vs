@@ -157,6 +157,9 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] TXXX [P] Additional unit tests (if requested) in tests/unit/
 - [ ] TXXX Security hardening
 - [ ] TXXX Run quickstart.md validation
+- [ ] TXXX Run speckit.converge until it reports converged, then speckit.capabilities.fold when `.specify/extensions/capabilities/` exists (the fold checks this box; without the extension, check it yourself)
+
+Tasks for after the merge, such as a deploy, go after this one and carry `[post-merge]` after their id.
 
 ---
 
@@ -169,7 +172,7 @@ Examples of foundational tasks (adjust based on your project):
 - **User Stories (Phase 3+)**: All depend on Foundational phase completion
   - User stories can then proceed in parallel (if staffed)
   - Or sequentially in priority order (P1 → P2 → P3)
-- **Polish (Final Phase)**: Depends on all desired user stories being complete
+- **Polish (Final Phase)**: Depends on all desired user stories being complete. Its last task runs converge and then the catalog fold: in speckit-vs, this fork of Spec Kit, the feature is not done before them
 
 ### User Story Dependencies
 

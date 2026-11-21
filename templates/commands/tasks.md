@@ -1,5 +1,5 @@
 ---
-description: Generate an actionable, dependency-ordered tasks.md for the feature based on available design artifacts.
+description: Generate an actionable, dependency-ordered tasks.md for the feature based on available design artifacts. Part of speckit-vs, a fork of Spec Kit, where a change ends only after converge and, when the capabilities extension is installed, the catalog fold.
 handoffs:
   - label: Analyze For Consistency
     agent: speckit.analyze
@@ -213,7 +213,13 @@ Every task MUST strictly follow this format:
 - **Phase 3+**: User Stories in priority order (P1, P2, P3...)
   - Within each story: Tests (if requested) → Models → Services → Endpoints → Integration
   - Each phase should be a complete, independently testable increment
-- **Final Phase**: Polish & Cross-Cutting Concerns
+- **Final Phase**: Polish & Cross-Cutting Concerns. It always ends with this task, before any task marked `[post-merge]`:
+
+  ```text
+  - [ ] TXXX Run __SPECKIT_COMMAND_CONVERGE__ until it reports converged, then __SPECKIT_COMMAND_CAPABILITIES_FOLD__ when `.specify/extensions/capabilities/` exists (the fold checks this box; without the extension, check it yourself)
+  ```
+
+  speckit-vs, this fork of Spec Kit, does not count the feature done before converge and the fold. A subagent that only follows `tasks.md` finds them there.
 
 ## Done When
 

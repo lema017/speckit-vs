@@ -1,5 +1,5 @@
 ---
-description: Execute the implementation plan by processing and executing all tasks defined in tasks.md
+description: Execute the implementation plan by processing and executing all tasks defined in tasks.md. Part of speckit-vs, a fork of Spec Kit, where a change ends only after converge and, when the capabilities extension is installed, the catalog fold.
 scripts:
   sh: scripts/bash/run-step.sh implement __AGENT__ scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
   ps: scripts/powershell/run-step.ps1 implement __AGENT__ scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
