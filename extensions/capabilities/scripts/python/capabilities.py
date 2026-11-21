@@ -81,7 +81,7 @@ OPEN_TASK = re.compile(r"^\s*- \[ \](.*)$", re.M)
 FOLD_TASK = re.compile(r"speckit[.\-]capabilities[.\-]fold", re.I)
 TASK_ID = re.compile(r"\bT\d{3,}\b")
 TITLE_SLOT = re.compile(r"%[a-zA-Z#]|\$\{[^{}]*\}|\$[A-Za-z_][\w.]*|\{[^{}]*\}")
-DEFAULTS = {"feature_roots": "specs", "allow_manual_evidence": "false", "allow_partial_features": "false", "base_branch": ""}
+DEFAULTS = {"feature_roots": "specs", "allow_manual_evidence": "false", "allow_partial_features": "false", "base_branch": "", "coverage_ignore": "", "stop_check": "warn"}
 GITIGNORE_LINE = ".specify/capabilities/"
 GITATTRIBUTES_LINES = (
     "specs/_capabilities/index.md merge=union",
@@ -359,6 +359,177 @@ def cmd_refresh(root):
     if not is_set_up(root):
         return emit({"setup": [], "status": "none"})
     return emit({"setup": ensure_setup(root), "status": "ok"})
+
+
+# What a change of the product is not: the fork's own files, the catalog and specs, the graph, docs and CI.
+NOT_PRODUCT = ("specs/", ".specify/", ".claude/", ".github/", "graphify-out/")
+NOT_PRODUCT_NAMES = (".graphifyignore", ".gitignore", ".gitattributes")
+# A change counts as recorded once its delta is in the catalog, or says it changes no rule.
+RECORDED = ("prepared", "ready", "delivered", "no-rule-change")
+
+
+def coverage_ignore(config):
+    return [pattern.strip() for pattern in config.get("coverage_ignore", "").split(",") if pattern.strip()]
+
+
+def product_files(names, ignore):
+    """The changed files that can change what the product does. ``ignore`` holds the globs of coverage_ignore."""
+    kept = []
+    for name in names:
+        if name.startswith(NOT_PRODUCT) or posixpath.basename(name) in NOT_PRODUCT_NAMES or name.lower().endswith(".md"):
+            continue
+        if any(fnmatch.fnmatchcase(name, pattern) for pattern in ignore):
+            continue
+        kept.append(name)
+    return kept
+
+
+def recorded_in_history(root, source, delta):
+    """The fold writes a row with the change's source in the history of each capability it touched."""
+    for capability in capabilities_of(delta):
+        if any(cells and cells[0] == source for cells in table_rows(read(root / cap_rel(capability, "history.md")), "Changes")):
+            return True
+    return False
+
+
+def unrecorded(root, config):
+    """Specs and change records anywhere in the project that change rules and never reached the catalog, merged or not, with their open tasks."""
+    found = []
+    folders = []
+    for feature_root in config["feature_roots"]:
+        if (root / feature_root).is_dir():
+            # The catalog, the slice maps and the product live beside the specs, under names that start with _.
+            folders += [root / feature_root / name for name in sorted(os.listdir(root / feature_root)) if not name.startswith(("_", "."))]
+    if (root / CHANGES).is_dir():
+        folders += [root / CHANGES / name for name in sorted(os.listdir(root / CHANGES)) if not name.startswith(".")]
+    for change in folders:
+        if not change.is_dir():
+            continue
+        text = read(change_doc(change))
+        if not text or MARK not in text:
+            continue
+        delta, errors = parse_delta(text)
+        if errors or delta is None or delta["none"] or is_design(delta):
+            continue
+        source = source_of(root, change)
+        if not recorded_in_history(root, source, delta):
+            found.append({"change": source, "open_tasks": open_tasks(change) if (change / "spec.md").is_file() else 0})
+    return found
+
+
+def branch_slug(root, bases):
+    """The branch names the record. On a base branch, or detached, the record is just a change."""
+    name = (git(root, "rev-parse", "--abbrev-ref", "HEAD") or "").strip()
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower().rsplit("/", 1)[-1]).strip("-")
+    return slug if slug and name != "HEAD" and name not in {base.split("/")[-1] for base in bases} else "change"
+
+
+def cmd_coverage(root, base):
+    """What the branch changed in the product, which changes of the catalog record it, and what work is done without its fold."""
+    return emit(coverage_report(root, base))
+
+
+def coverage_report(root, base, merged=True):
+    """``merged``: also list the specs and records merged without their fold, which reads every spec of the project."""
+    config = load_config(root)
+    check = Check(root, "dev", base or config["base_branch"] or "main", [], False)
+    check.resolve_base()
+    check.load_catalog()
+    for change in check.discover():
+        check.eval_change(change)
+    code = product_files(check.names, coverage_ignore(config))
+    owners = {}
+    for capability in check.capabilities:
+        for row in check.head_status[capability].values():
+            for ref in row["code"] + row["tests"]:
+                owners.setdefault(anchor_file(ref), set()).add(capability)
+    capabilities, unmapped = {}, []
+    for name in code:
+        held = owners.get(posixpath.normpath(name))
+        if not held:
+            unmapped.append(name)
+        for capability in sorted(held or ()):
+            capabilities.setdefault(capability, []).append(name)
+    pending = sorted(source for source, state in check.states.items() if state not in RECORDED)
+    if pending:
+        status = "unrecorded"
+    elif not code:
+        status = "none"
+    elif check.states:
+        status = "recorded"
+    else:
+        status = "missing"
+    return {
+        "status": status,
+        "base": check.base,
+        "code": code,
+        "changes": dict(sorted(check.states.items())),
+        "pending": pending,
+        "capabilities": capabilities,
+        "unmapped": unmapped,
+        "unrecorded": unrecorded(root, config) if merged else [],
+        "record": "%s/%s-%s" % (CHANGES, datetime.now().strftime("%Y%m%d"), branch_slug(root, (check.base, config["base_branch"] or "main"))),
+        "problems": check.hard,
+    }
+
+
+STOP_MODES = ("warn", "block", "off")
+
+
+def stop_reasons(root, report):
+    """What a session should not end without, in the words the agent reads. Work still in progress is not on the list."""
+    reasons = []
+    for source in report["pending"]:
+        change = root / source
+        tasks = open_tasks(change) if (change / "spec.md").is_file() else 0
+        if tasks is None or tasks:
+            continue  # A spec still being built: its flow ends in the fold.
+        if (change / "spec.md").is_file():
+            reasons.append("%s has no open task and its delta never reached the catalog: run speckit.converge until it reports converged, "
+                           "then speckit.capabilities.fold." % source)
+        else:
+            reasons.append("%s is a record of the catalog that was not folded: run speckit.capabilities.review and speckit.capabilities.fold with it." % source)
+    if report["status"] == "missing":
+        reasons.append("This branch changes %s and no change of the catalog records it: before you call the work done, run "
+                       "speckit.capabilities.record, or finish the flow of the fork's commands up to speckit.capabilities.fold." % plural(len(report["code"]), "product file"))
+    return reasons
+
+
+def stop_memory(root):
+    """Where the warning remembers what it already said: inside .git, so it is never committed and each worktree has its own."""
+    rel = (git(root, "rev-parse", "--git-path", "speckit-capabilities-stop") or "").strip()
+    return (root / rel) if rel else None
+
+
+def cmd_stop_check(root, raw):
+    """The Stop hook of the agent. It sends the agent back, once, when work is about to end outside the catalog. It never fails the session."""
+    try:
+        payload = json.loads(raw or "{}")
+    except ValueError:
+        payload = {}
+    if not isinstance(payload, dict) or payload.get("stop_hook_active"):
+        return OK  # The agent already came back once for a Stop hook: never hold it in a loop.
+    config = load_config(root)
+    mode = (config.get("stop_check") or "warn").strip().lower()
+    if mode not in STOP_MODES or mode == "off" or not ((root / CATALOG).is_dir() or (root / EXTENSION_DIR).is_dir()):
+        return OK
+    report = coverage_report(root, None, merged=False)
+    reasons = stop_reasons(root, report)
+    memory = stop_memory(root)
+    said = sha(json.dumps([report["status"], report["base"], reasons]))
+    if mode == "warn" and memory is not None:
+        if read(memory) == said:
+            return OK
+        try:
+            memory.write_text(said if reasons else "", encoding="utf-8")
+        except OSError:
+            pass
+    if not reasons:
+        return OK
+    tail = ("If the work is not done yet, say so in one line and stop: this reminder comes once."
+            if mode == "warn" else "This comes back at every stop until the change is recorded.")
+    sys.stdout.write(json.dumps({"decision": "block", "reason": "speckit-vs: " + " ".join(reasons) + " " + tail}) + "\n")
+    return OK
 
 
 @contextlib.contextmanager
@@ -1097,6 +1268,12 @@ def normalize_implemented(root, text, source):
     return text, changes
 
 
+def unlinked_requirements(text, delta):
+    """The requirements of the spec that no rule of the delta links. A spec of twelve requirements that records one rule usually left rules out."""
+    linked = {link for entry in delta["entries"] for link in split_links(entry.get("links"))}
+    return sorted(key for key in spec_sections(text) if key.startswith("FR-") and key not in linked)
+
+
 def cmd_review(root, change, accept):
     if (root / JOURNAL).exists():
         return emit({"status": "recover-needed"}, RECOVER)
@@ -1130,7 +1307,7 @@ def cmd_review(root, change, accept):
             if normalized:
                 write_file(doc, text)
             write_file(lock_path(change), dumps(data))
-        out = {"status": "stamped", "setup": setup}
+        out = {"status": "stamped", "setup": setup, "unlinked": unlinked_requirements(text, delta)}
         if normalized:
             out["normalized"] = normalized
         return emit(out)
@@ -1147,7 +1324,7 @@ def cmd_review(root, change, accept):
             "delta_changed": delta_changed,
             "other_text": not changed and not delta_changed,
         }, DECISION)
-    return emit({"status": "unchanged"})
+    return emit({"status": "unchanged", "unlinked": unlinked_requirements(text, delta)})
 
 
 def cmd_ensure(root, change):
@@ -2692,6 +2869,8 @@ class Check:
         state = "reviewed" if reviewed else "drafted"
         if reviewed and all(done for _, done in applied):
             state = "prepared"
+        if state != "prepared" and tasks == 0:
+            self.notes.append("%s: the work is done, no task is open, and its delta never reached the catalog: run speckit.capabilities.fold" % source)
         problems = []
         for entry in delta["entries"]:
             if entry["op"] == "DESIGNED" or (entry["op"] == "REMOVED" and self.was_designed(entry)):
@@ -2944,6 +3123,44 @@ class Check:
         if changed:
             self.notes.append("this change edits the extension that evaluates it, and CI runs this copy; review it: %s" % ", ".join(changed))
 
+    def check_unrecorded_code(self):
+        """The branch changed the product and no change of the catalog records it: the path without the fork's commands skipped its record."""
+        code = product_files(self.names, coverage_ignore(self.config))
+        if code and not self.states:
+            self.notes.append("the branch changes %s and no change of the catalog records it: run speckit.capabilities.record, "
+                              "or record a change that says Capabilities: none" % plural(len(code), "product file"))
+
+    def check_unrecorded_changes(self):
+        """Specs and records merged without their fold. The branch did not make them, so they are notes, also in CI."""
+        for item in unrecorded(self.root, self.config):
+            if item["change"] in self.states:
+                continue
+            tasks = item["open_tasks"]
+            left = "no tasks.md" if tasks is None else plural(tasks, "open task")
+            self.notes.append("%s: merged without its fold (%s); its rules never reached the catalog: run speckit.capabilities.fold with this folder" % (item["change"], left))
+
+    def check_rule_code(self):
+        """Every built rule names its code, so a later change finds it. A rule this branch did not touch is a note when its code is gone."""
+        touched = {posixpath.normpath(name) for name in self.names}
+        for capability in self.capabilities:
+            status = self.head_status[capability]
+            missing = []
+            for rule_id, rule in sorted(self.head_rules[capability].items()):
+                if rule["designed"] or (capability, rule_id) in self.covered:
+                    continue
+                row = status.get(rule_id)
+                if row is None or not row["code"]:
+                    missing.append(rule_id)
+                    continue
+                if touched & {anchor_file(ref) for ref in row["code"] + row["tests"]}:
+                    continue  # check_anchored_code reports it, with the weight of a change.
+                gone = [ref for ref in row["code"] if not anchor_resolves(self.root, ref)]
+                if gone:
+                    self.notes.append("%s (%s): its Code no longer exists: %s; the fold of the change that moved it records it again" % (rule_id, capability, ", ".join(gone)))
+            if missing:
+                self.notes.append("%s: %s without Code in Rule Status, so a later change cannot find their code: %s" % (
+                    capability, plural(len(missing), "rule"), ", ".join(missing)))
+
     def check_slices(self):
         """The slice maps and the specs that name a slice must agree. What they hold is a person's call, so the rest is a note."""
         hard, notes = load_slices().report(sys.modules[__name__], self.root)
@@ -2969,19 +3186,22 @@ class Check:
         self.check_catalog_shape()
         self.check_provenance()
         self.check_slices()
+        self.check_unrecorded_changes()
+        self.check_rule_code()
         if self.merge_base:
             self.check_reverse()
             self.check_history()
             self.check_rule_status_changes()
             self.check_anchored_code()
             self.check_own_files()
+            self.check_unrecorded_code()
         result = {"mode": self.mode, "hard": self.hard, "notes": self.notes, "states": self.states, "revalidated": self.revalidated}
         return emit(result, HARD if self.hard else OK)
 
 
 def build_parser():
     parser = argparse.ArgumentParser(description="Capability catalog mechanics")
-    parser.add_argument("command", choices=["status", "locate", "clarify-context", "scaffold", "ensure", "review", "prepare", "apply", "recover", "check", "publish-design", "delta-block", "rebase", "defer", "index", "refresh"])
+    parser.add_argument("command", choices=["status", "locate", "clarify-context", "scaffold", "ensure", "review", "prepare", "apply", "recover", "check", "publish-design", "delta-block", "rebase", "defer", "index", "refresh", "coverage", "stop-check"])
     parser.add_argument("ids", nargs="*", help="defer: the rules to leave out of the delta")
     parser.add_argument("--root", default=".")
     parser.add_argument("--change", action="append", default=[])
@@ -3006,6 +3226,12 @@ def build_parser():
 
 
 def dispatch(args, root):
+    if args.command == "stop-check":
+        # A hook: whatever goes wrong, the session ends as it would without it.
+        try:
+            return cmd_stop_check(root, sys.stdin.read() if not sys.stdin.isatty() else "")
+        except Exception:
+            return OK
     problem = format_error(read(root / INDEX))
     if problem:
         raise CapError(problem)
@@ -3013,6 +3239,8 @@ def dispatch(args, root):
         raise CapError("%s takes no rule ids; only defer does" % args.command)
     if args.command == "refresh":
         return cmd_refresh(root)
+    if args.command == "coverage":
+        return cmd_coverage(root, args.base)
     if args.command == "status":
         return cmd_status(root, args.capability)
     if args.command == "locate":

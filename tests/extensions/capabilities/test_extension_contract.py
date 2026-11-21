@@ -19,7 +19,7 @@ from tests.conftest import requires_bash
 
 from .conftest import EXT_DIR, MARK, ROOT, SCRIPT, modified, spec_text
 
-COMMANDS = {"slice", "size", "context", "clarify-context", "review", "fold", "check", "bootstrap", "locate"}
+COMMANDS = {"slice", "size", "context", "clarify-context", "review", "fold", "record", "check", "bootstrap", "locate"}
 OLD_SENTENCE = "If a `before_specify` hook ran successfully in the Pre-Execution Checks above, it will have created/switched to a git branch"
 NEW_SENTENCE = "If a `before_specify` hook's output contains `BRANCH_NAME` and `FEATURE_NUM`, that hook created or switched to a git branch."
 NO_INVENT = "A hook that does not output them created no branch: do not infer or invent these values."
@@ -48,7 +48,8 @@ def test_hooks_are_mandatory_and_unconditional():
         # The size comes before the seal: a split changes the delta that review then seals.
         "after_specify": ["size", "review"],
         "before_plan": ["size", "review"],
-        "after_tasks": ["size"],
+        # analyze is the core command: the extension makes it part of the flow, after the tasks are measured.
+        "after_tasks": ["size", "speckit.analyze"],
         "after_implement": ["fold"],
         "after_converge": ["fold"],
     }
@@ -338,9 +339,9 @@ def installed_project(tmp_path_factory) -> Path:
 @requires_bash
 def test_install_registers_hooks_commands_and_config(installed_project: Path):
     hooks = yaml.safe_load((installed_project / ".specify" / "extensions.yml").read_text(encoding="utf-8"))["hooks"]
-    for event, commands in (("before_specify", ["slice", "context"]), ("before_clarify", ["clarify-context"]), ("after_specify", ["size", "review"]), ("before_plan", ["size", "review"]), ("after_tasks", ["size"]), ("after_implement", ["fold"]), ("after_converge", ["fold"])):
+    for event, commands in (("before_specify", ["slice", "context"]), ("before_clarify", ["clarify-context"]), ("after_specify", ["size", "review"]), ("before_plan", ["size", "review"]), ("after_tasks", ["size", "speckit.analyze"]), ("after_implement", ["fold"]), ("after_converge", ["fold"])):
         registered = [hook for hook in hooks[event] if hook["extension"] == "capabilities"]
-        assert [hook["command"] for hook in registered] == ["speckit.capabilities.%s" % command for command in commands]
+        assert [hook["command"] for hook in registered] == [command if command.startswith("speckit.") else "speckit.capabilities.%s" % command for command in commands]
         assert all(hook["optional"] is False for hook in registered)
     assert (installed_project / ".specify/extensions/capabilities/capabilities-config.yml").is_file()
     skill = installed_project / ".claude/skills/speckit-capabilities-review/SKILL.md"
@@ -402,6 +403,7 @@ def test_a_project_from_before_gets_the_hook_and_keeps_its_config(tmp_path):
     data["hooks"]["before_specify"] = [hook for hook in data["hooks"]["before_specify"] if hook["command"] != "speckit.capabilities.slice"]
     for event in ("after_specify", "before_plan", "after_tasks"):
         data["hooks"][event] = [hook for hook in data["hooks"].get(event, []) if hook["command"] != "speckit.capabilities.size"]
+    data["hooks"]["after_tasks"] = [hook for hook in data["hooks"].get("after_tasks", []) if hook["extension"] != "capabilities"]
     data["hooks"] = {event: hooks for event, hooks in data["hooks"].items() if hooks}
     assert "after_tasks" not in data["hooks"]
     registry.write_text(yaml.safe_dump(data), encoding="utf-8")
@@ -414,7 +416,7 @@ def test_a_project_from_before_gets_the_hook_and_keeps_its_config(tmp_path):
     assert [hook["command"] for hook in hooks["before_specify"] if hook["extension"] == "capabilities"] == ["speckit.capabilities.slice", "speckit.capabilities.context"]
     for event in ("after_specify", "before_plan"):
         assert [hook["command"] for hook in hooks[event] if hook["extension"] == "capabilities"] == ["speckit.capabilities.size", "speckit.capabilities.review"]
-    assert [hook["command"] for hook in hooks["after_tasks"] if hook["extension"] == "capabilities"] == ["speckit.capabilities.size"]
+    assert [hook["command"] for hook in hooks["after_tasks"] if hook["extension"] == "capabilities"] == ["speckit.capabilities.size", "speckit.analyze"]
     # The config of the project is kept as it was, and the script has the budget it does not name.
     (project / "specs/001-x").mkdir(parents=True)
     (project / "specs/001-x/spec.md").write_text(spec_text("Capabilities: none — nada\n"), encoding="utf-8")
@@ -634,6 +636,94 @@ def test_agent_rule_template_has_one_pair_of_markers_and_points_to_the_catalog()
     assert "Speak and write to the person in that language in every command, whatever language the command is written in." in text
 
 
+def test_agent_rule_names_the_fork_and_not_only_spec_kit():
+    """An agent that knows the original Spec Kit took its flow for the whole process and never folded."""
+    text = (EXT_DIR / "templates" / "capability-agent-rule.md").read_text(encoding="utf-8")
+    assert "This project uses speckit-vs (https://github.com/lema017/speckit-vs), a fork of Spec Kit." in text
+    assert "It is not the original Spec Kit" in text
+    assert "Every `/speckit-*` command of this project belongs to the fork, also those named like the original's." in text
+    assert "Spec Kit feature" not in text
+    # The fork comes first: it is what the agent reads before the catalog.
+    assert text.index("## speckit-vs") < text.index("## Capability catalog")
+
+
+def test_agent_rule_ends_every_change_in_the_catalog_on_one_of_two_paths():
+    text = (EXT_DIR / "templates" / "capability-agent-rule.md").read_text(encoding="utf-8")
+    assert "Every change to what the product does ends in the catalog, on one of two paths:" in text
+    # With the fork's commands: converge, then the fold, before done or merged.
+    assert "then `speckit.converge` until it reports the spec converged, then `speckit.capabilities.fold`." in text
+    assert "A spec is not done, and is not merged, before its fold." in text
+    # Without them: no spec, but a delta outside a spec and the fold.
+    assert "No spec is needed. Before you call the work done, run `speckit.capabilities.record`: it finds what the branch changed, proposes the delta, and folds it." in text
+    assert "Its delta lives in `specs/_capabilities/_changes/<YYYYMMDD>-<name>/`." in text
+    # On both: every observable rule, mapped to its code in Graphify, and hooks a subagent skipped.
+    assert "The delta names every rule a person can observe that the change adds, changes or removes, not only the main one." in text
+    assert "checks that code against the Graphify graph" in text
+    assert "Report a rule the graph cannot place; never leave it out." in text
+    assert "If you hand a command to a subagent, its hooks still run: run them yourself when it is done." in text
+
+
+@pytest.mark.parametrize("name", ["review", "fold"])
+def test_review_and_fold_take_a_change_made_without_a_spec(name):
+    text = command_text(name)
+    assert "**A change without a spec.** When the user input names a folder under `specs/_capabilities/_changes/`" in text
+    assert "Spec Kit feature" not in text
+
+
+def test_fold_without_a_spec_passes_its_flags_only_to_the_calls_that_take_them():
+    text = command_text("fold")
+    assert "Add `--change <that folder>` to `prepare`, `apply` and `check`, and `--no-tasks` to `prepare`." in text
+    assert "Pass `--no-tasks` only for a change without a spec: see the note before step 1" in text
+    assert "when the user asked for it" not in text
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("capabilities_parser", EXT_DIR / "scripts" / "python" / "capabilities.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    parser = module.build_parser()
+    for command in ("prepare", "apply", "check", "review"):
+        args = parser.parse_args([command, "--change", "specs/_capabilities/_changes/20261121-x", "--no-tasks"])
+        assert args.change == ["specs/_capabilities/_changes/20261121-x"] and args.no_tasks
+    # The graph has its own parser, which takes no --change: the note must not send it one.
+    graph = (EXT_DIR / "scripts" / "python" / "cap_graph.py").read_text(encoding="utf-8")
+    assert '"--change"' not in graph
+
+
+def test_record_command_starts_from_coverage_and_waits_for_a_yes():
+    text = command_text("record")
+    assert "Run `{SCRIPT} coverage`, with `--base <ref>` when the input names one." in text
+    for status in ("`none`", "`recorded`", "`unrecorded`", "`missing`"):
+        assert "| %s |" % status in text
+    assert "**Write nothing before the user approves the delta.** If you cannot ask the user, show the proposal and stop" in text
+    assert "**Stop and ask the user to approve, change or drop each row.** Continue only with their answer." in text
+    assert "Name every rule the change adds, changes or removes, not only the main one." in text
+    # The code map: the graph first, the fold writes Code and Tests and checks them against it.
+    assert "Run `{SCRIPT} graph touched`, with `--onto <ref>` when the input named a base." in text
+    assert "Run `speckit.capabilities.review` with the folder, then `speckit.capabilities.fold` with the folder." in text
+    assert "Run `{SCRIPT} coverage` again, with the same base. Report its `status`, which should be `recorded`" in text
+    # Specs whose rules never reached the catalog are owed their fold.
+    assert "For each one the user wants recorded, run `speckit.capabilities.fold` with its folder." in text
+    assert "Do not change code, tests or `specs/NNN-*`, and do not commit." in text
+
+
+def test_record_writes_a_delta_the_script_accepts():
+    """The operations the command teaches are the ones parse_delta accepts, with the fields it asks for."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("capabilities_record", EXT_DIR / "scripts" / "python" / "capabilities.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    text = command_text("record")
+    block = text.split("```markdown\n", 1)[1].split("```", 1)[0]
+    filled = block.replace("<what the change did, in one line>", "Expiry").replace("R-<name>", "R-expiry").replace("<capability>", "login").replace("<the rule>", "La sesión expira a los 15 minutos.")
+    delta, errors = module.parse_delta("\n".join(line[3:] if line.startswith("   ") else line for line in filled.splitlines()))
+    assert errors == [] and delta["entries"][0]["op"] == "ADDED"
+    assert "`REMOVED` for a rule the change took away, with `- To: (none)` and `- Replaced-By:`, a rule id or `none`." in text
+    assert "`REOBSERVED` for a rule whose code moved and which still holds: only `- Capability:` and `- Reason:`, no `From` or `To`." in text
+
+
+def test_fold_takes_a_spec_folder_that_record_found():
+    assert "When it names a spec folder, such as one that `speckit.capabilities.record` found merged without its fold, add only `--change <that folder>`." in command_text("fold")
+
+
 def command_text(name):
     return (EXT_DIR / "commands" / ("speckit.capabilities.%s.md" % name)).read_text(encoding="utf-8")
 
@@ -683,6 +773,11 @@ def test_check_command_says_what_to_do_with_each_line_the_script_writes():
         ("commits behind <remote>: compared with <remote>", "behind %s: compared with %s"),
         ("did not run, its suite did not load", "did not run, its suite did not load"),
         ("open tasks for after the merge, marked [post-merge]", "for after the merge, marked %s"),
+        ("the work is done, no task is open, and its delta never reached the catalog", "the work is done, no task is open, and its delta never reached the catalog"),
+        ("no change of the catalog records it", "no change of the catalog records it"),
+        ("merged without its fold", "merged without its fold"),
+        ("rules without Code in Rule Status", "without Code in Rule Status"),
+        ("its Code no longer exists", "its Code no longer exists"),
     ):
         assert said in text and written in script, said
     assert "add `### REOBSERVED <rule>` to the delta of the change that moved the code" in text
@@ -707,3 +802,72 @@ def test_size_does_not_repeat_a_story_of_a_design_in_the_slice_it_splits_off():
     text = command_text("size")
     assert "A slice that names `Stories` or `Screens` was cut from a design, and there one slice builds a story." in text
     assert "A new slice does not repeat a story of the slice that stays" in text and "it has `Stories` only for a story that leaves with it" in text
+
+
+# ---------------------------------------------------------------- the defenses of part C
+
+
+def test_the_stop_hook_runs_the_script_and_is_no_command_for_the_agent():
+    events = manifest_data()["events"]
+    assert events == {"stop": {"command": "speckit.capabilities.stop", "timeout": 30}}
+    path = EXT_DIR / "commands" / "speckit.capabilities.stop.md"
+    front = yaml.safe_load(path.read_text(encoding="utf-8").split("---")[1])
+    # The dispatcher runs this line as it is, with the script of the extension and its arguments.
+    assert front["scripts"] == {"py": "scripts/python/capabilities.py stop-check"}
+    provided = {command["name"] for command in manifest_data()["provides"]["commands"]}
+    assert "speckit.capabilities.stop" not in provided, "a skill would offer the agent a command that is not for it"
+
+
+@requires_bash
+def test_install_puts_the_stop_hook_in_the_settings_of_claude_code(installed_project: Path):
+    settings = json.loads((installed_project / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    commands = [hook["command"] for entry in settings["hooks"]["Stop"] for hook in entry["hooks"]]
+    assert any("speckit.capabilities.stop stop 30" in command for command in commands), commands
+    assert not (installed_project / ".claude/skills/speckit-capabilities-stop").exists()
+
+
+@requires_bash
+def test_the_installed_stop_hook_runs_through_the_dispatcher(installed_project: Path):
+    """As Claude Code runs it: the dispatcher of the project, the message on stdin. Nothing changed, so nothing to say."""
+    done = subprocess.run([sys.executable, ".specify/events.py", "speckit.capabilities.stop", "stop", "30"], cwd=installed_project,
+                          input='{"hook_event_name": "Stop", "stop_hook_active": false}', capture_output=True, encoding="utf-8")
+    assert done.returncode == 0 and done.stdout == "" and done.stderr == "", done
+
+
+def test_config_template_offers_the_three_stop_modes_with_warn_by_default():
+    text = (EXT_DIR / "config-template.yml").read_text(encoding="utf-8")
+    assert re.search(r"^stop_check: warn$", text, re.M)
+    for mode in ("warn", "block", "off"):
+        assert re.search(r"^#\s+%s\s" % mode, text, re.M), mode
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert '"stop_check": "warn"' in source and 'STOP_MODES = ("warn", "block", "off")' in source
+
+
+def test_agent_rule_names_clarify_and_analyze_in_the_flow():
+    text = (EXT_DIR / "templates" / "capability-agent-rule.md").read_text(encoding="utf-8")
+    flow = next(line for line in text.splitlines() if line.startswith("- **With the fork's commands.**"))
+    order = [flow.index(word) for word in ("`specify`", "`clarify`", "`plan`", "`tasks`", "`analyze`", "`implement`", "speckit.converge", "speckit.capabilities.fold")]
+    assert order == sorted(order)
+    assert "[NEEDS CLARIFICATION]" in flow
+
+
+def load_script():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("capabilities_under_test", str(SCRIPT))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize("rel", ["templates/tasks-template.md", "templates/commands/tasks.md"])
+def test_the_tasks_end_with_converge_and_the_fold_and_the_fold_can_close_it(rel, tmp_path):
+    text = (ROOT / rel).read_text(encoding="utf-8")
+    task = next(line.strip() for line in text.splitlines() if "until it reports converged" in line and line.strip().startswith("- [ ]"))
+    task = task.replace("__SPECKIT_COMMAND_CONVERGE__", "/speckit-converge").replace("__SPECKIT_COMMAND_CAPABILITIES_FOLD__", "/speckit-capabilities-fold")
+    assert task.index("converge") < task.index("capabilities")
+    module = load_script()
+    change = tmp_path / "001-x"
+    change.mkdir()
+    (change / "tasks.md").write_text("- [x] T001 Code\n%s\n- [ ] T003 [post-merge] Deploy\n" % task.replace("TXXX", "T002"), encoding="utf-8")
+    # The fold closes it, so it does not hold the fold back, as a task still to build would.
+    assert module.open_tasks(change) == 0 and module.fold_tasks(change) == ["T002"]

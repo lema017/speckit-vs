@@ -1,5 +1,5 @@
 ---
-description: Assess the current codebase against the feature's spec, plan, and tasks, then append any remaining unbuilt work as new tasks to tasks.md so implement can complete it.
+description: Assess the current codebase against the feature's spec, plan, and tasks, then append any remaining unbuilt work as new tasks to tasks.md so implement can complete it. Part of speckit-vs, a fork of Spec Kit. Once it reports converged and the capabilities extension is installed, run the catalog fold.
 scripts:
   sh: scripts/bash/run-step.sh converge __AGENT__ scripts/bash/check-prerequisites.sh --json --require-spec --require-tasks --include-tasks
   ps: scripts/powershell/run-step.ps1 converge __AGENT__ scripts/powershell/check-prerequisites.ps1 -Json -RequireSpec -RequireTasks -IncludeTasks
@@ -236,8 +236,10 @@ Append to the **end** of `tasks.md`, per the append contract:
 - On `tasks_appended`: state how many tasks were appended under which phase, and recommend
   running `__SPECKIT_COMMAND_IMPLEMENT__` to complete them; note that a follow-up converge
   run will find fewer or no remaining items.
-- On `converged`: recommend proceeding to review / opening a PR. No further implement pass
-  is needed for this feature's specified scope.
+- On `converged`: no further implement pass is needed for this feature's specified scope.
+  If `.specify/extensions/capabilities/` exists, the next step is
+  `__SPECKIT_COMMAND_CAPABILITIES_FOLD__`: this fork of Spec Kit does not count the feature as
+  done, nor open its PR, before the fold. Otherwise recommend proceeding to review / opening a PR.
 
 ### 9. Check for extension hooks
 

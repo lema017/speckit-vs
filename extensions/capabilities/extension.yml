@@ -3,7 +3,7 @@ schema_version: "1.0"
 extension:
   id: capabilities
   name: "Capability Catalog"
-  version: "0.9.2"
+  version: "0.10.0"
   description: "Keeps the approved behaviour of each capability, its origin, its code and its tests discoverable across sessions."
   author: lema017
   repository: https://github.com/lema017/speckit-vs
@@ -33,6 +33,9 @@ provides:
     - name: speckit.capabilities.fold
       file: commands/speckit.capabilities.fold.md
       description: "Publish an approved delta to the catalog and record what the code does"
+    - name: speckit.capabilities.record
+      file: commands/speckit.capabilities.record.md
+      description: "Record in the catalog a change made without the fork's commands, with its code mapped in Graphify"
     - name: speckit.capabilities.check
       file: commands/speckit.capabilities.check.md
       description: "Report the state of the changes on this branch and the integrity of the catalog"
@@ -78,9 +81,12 @@ hooks:
       optional: false
       description: "Surface spec changes made after the delta was sealed"
   after_tasks:
-    command: speckit.capabilities.size
-    optional: false
-    description: "Measure the tasks against the slice budget"
+    - command: speckit.capabilities.size
+      optional: false
+      description: "Measure the tasks against the slice budget"
+    - command: speckit.analyze
+      optional: false
+      description: "Check that the spec, the plan and the tasks agree before implementing"
   after_implement:
     command: speckit.capabilities.fold
     optional: false
@@ -89,6 +95,11 @@ hooks:
     command: speckit.capabilities.fold
     optional: false
     description: "Refresh the catalog after convergence"
+
+events:
+  stop:
+    command: speckit.capabilities.stop
+    timeout: 30
 
 tags:
   - "catalog"

@@ -14,15 +14,17 @@ Runs after the spec is written and again before planning. It checks that the del
 $ARGUMENTS
 ```
 
+**A change without a spec.** When the user input names a folder under `specs/_capabilities/_changes/`, skip step 1 and add `--change <that folder>` to every `{SCRIPT}` call.
+
 ## Steps
 
-1. Run `{SCRIPT} ensure`. It finds the feature through Spec Kit and inserts the section only if it is missing.
+1. Run `{SCRIPT} ensure`. It finds the spec through the fork's scripts and inserts the section only if it is missing.
 2. Run `{SCRIPT} review` and act on `status`:
 
    | Status | Exit | What to do |
    |---|---|---|
-   | `stamped` | 0 | Report that the delta is sealed. If there is `normalized`, report each `rule` with the text it had and the catalog's text, which review wrote into its `From` and `To`: an `IMPLEMENTED` never changes a rule. Report any `setup` entry that starts with `skipped`: that file for agents was left alone. Finish |
-   | `unchanged` | 0 | Report that the spec matches what was sealed. Finish |
+   | `stamped` | 0 | Report that the delta is sealed. If there is `normalized`, report each `rule` with the text it had and the catalog's text, which review wrote into its `From` and `To`: an `IMPLEMENTED` never changes a rule. Report any `setup` entry that starts with `skipped`: that file for agents was left alone. Then step 5 |
+   | `unchanged` | 0 | Report that the spec matches what was sealed. Then step 5 |
    | `invalid` | 2 | See step 3 |
    | `conflict` | 3 | The catalog does not hold the `From` the delta expects. Show `conflicts` and stop. Copy the text from the catalog only if the user confirms this change really starts from it. If the base branch changed the rule, the way out is `{SCRIPT} rebase`, never an edit by hand |
    | `merge-conflict` | 3 | A merge left conflict markers in `files`. Show `reason` and stop: the catalog is never resolved by hand, `{SCRIPT} rebase` rebuilds it |
@@ -56,3 +58,9 @@ $ARGUMENTS
      3. Stop.
 
    If you cannot ask the user, stop on any change of meaning. `fold` refuses to publish until this is decided.
+
+5. **`unlinked`** lists the requirements (`FR-###`) that no rule of the delta links. A spec whose requirements reach the catalog as one or two rules usually left rules out, and a rule left out of the delta never reaches the catalog. For each one, read it and decide:
+   - **It sets something a person can observe** (a value, a limit, a message, who may do what): it belongs in the delta. Propose the entry with that requirement in its `Links`, as in step 3, and ask the user. With their yes, add it and run `{SCRIPT} review --accept`.
+   - **It does not** (a log, a technical constraint, a step of the build), or a rule of the delta already holds it: say so in one line.
+
+   Report every unlinked requirement with what you decided. If you cannot ask the user, report them and the entries you would add, and go on: the fold publishes only what the delta names. Finish.

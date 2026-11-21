@@ -14,6 +14,8 @@ Publishes the rule text of an approved delta to the catalog and records what the
 $ARGUMENTS
 ```
 
+**A change without a spec.** When the user input names a folder under `specs/_capabilities/_changes/`, the change was made without the fork's commands. Add `--change <that folder>` to `prepare`, `apply` and `check`, and `--no-tasks` to `prepare`. When it names a spec folder, such as one that `speckit.capabilities.record` found merged without its fold, add only `--change <that folder>`. Everything else is the same, including the code map of steps 2 and 8: `graph touched` lists what the branch changed, spec or not.
+
 ## Steps
 
 1. Run `{SCRIPT} prepare` and act on `status`:
@@ -22,7 +24,7 @@ $ARGUMENTS
    |---|---|---|
    | `unchanged`, `no-rule-change` | 0 | Report it and finish. Read no code |
    | `ready` | 0 | Report any `setup` entry that starts with `skipped`: that file for agents was left alone. `post_merge`, when it is there, is how many open tasks wait for the merge: say so. `fold_tasks`, when it is there, lists the open tasks that say to run this fold: they do not hold it, and step 7 closes them. Continue with step 2 |
-   | `blocked` | 3 | Open tasks, or no `tasks.md`. Report it and finish: this hook also fires on partial implementations. If the open tasks can only be done after the merge, see the note under this table. Pass `--no-tasks` only for a change outside `specify` when the user asked for it |
+   | `blocked` | 3 | Open tasks, or no `tasks.md`. Report it and finish: this hook also fires on partial implementations. If the open tasks can only be done after the merge, see the note under this table. Pass `--no-tasks` only for a change without a spec: see the note before step 1 |
    | `needs-review`, `conflict` | 3 | Report it and finish. Run `speckit.capabilities.review` |
    | `merge-conflict` | 3 | A merge left conflict markers in `files`. Report `reason` and finish. Never resolve the catalog by hand: `{SCRIPT} rebase` rebuilds it |
    | `invalid` | 2 | Report the errors and finish |

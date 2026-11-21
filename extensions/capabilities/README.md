@@ -177,11 +177,30 @@ A spec is never split without your yes. `check` leaves a note for a spec over th
 | `after_specify` | `size`, then `review` | `size` writes only after you decide: a split, or `slice-budget.json`. `review` writes the delta section if missing, and its lock |
 | `before_clarify` | `clarify-context` | Nothing. It tells both `clarify` and `clarify-deep` what is settled, what to ask, and what the change reaches |
 | `before_plan` | `size`, then `review` | As after `specify`. `review` writes the lock, only after you decide |
-| `after_tasks` | `size` | As after `specify`, with the tasks counted |
+| `after_tasks` | `size`, then `analyze` | `size` as after `specify`, with the tasks counted. `analyze` is the core command: it checks that the spec, the plan and the tasks agree, and writes nothing |
 | `after_implement` | `fold` | Catalog and lock |
 | `after_converge` | `fold` | Catalog and lock |
 
 Prompts run hooks in install order, so install `capabilities` before `git` if you want `fold` to run before the commit offer.
+
+The last task `tasks` writes runs `speckit.converge` until it reports converged, and then the fold. A subagent that only follows `tasks.md` finds both there, and the fold closes that box.
+
+### The Stop hook of the agent
+
+The extension also adds a `Stop` hook to the coding agent, beside the one of the progress page. It runs the script, with no model, each time the agent is about to end its turn, and sends the agent back with one paragraph when the branch holds work outside the catalog:
+
+- a spec with no open task, or a record, whose delta was not folded: run `speckit.converge`, then the fold;
+- product code that no change of the catalog records: run `speckit.capabilities.record`.
+
+A spec still being built is left alone, since its flow ends in the fold. It never holds an agent that came back for a Stop hook already, and whatever goes wrong, the session ends as it would without it. `stop_check` in `capabilities-config.yml` chooses:
+
+| Value | What happens |
+|---|---|
+| `warn` (default) | The agent is sent back once, to finish the work or say in one line that it is not done. It is not sent back again while the same thing is missing. What it said last lives in `.git/`, so it is never committed |
+| `block` | The agent is sent back at every stop until the change is recorded |
+| `off` | Nothing |
+
+It speaks the protocol of Claude Code and Codex. Other agents leave the output of a `Stop` hook out, or have no such hook. It takes about a second and a half in a project of 200 MB.
 
 ## Commands you run yourself
 
@@ -190,9 +209,23 @@ Prompts run hooks in install order, so install `capabilities` before `git` if yo
 | `speckit.capabilities.bootstrap` | Proposes a capability map for a project that already has code and waits for your approval. Then lists the chosen capabilities as `planned` and consolidates them through a record | The catalog, only after you approve. Rules stay `[inferred]` until you validate them with `--validate` |
 | `speckit.capabilities.slice` | Cuts a request, or the `[designed]` rules of a capability, into slices of one spec each, and waits for your approval. With a slice id or `next`, it says what that slice builds and what other slices own | A slice map under `specs/_slices/`, only after you approve |
 | `speckit.capabilities.size` | Measures the spec of the current feature against the slice budget. Over the budget, it proposes a split and waits for you | Nothing until you decide. Then the split, or `slice-budget.json` |
+| `speckit.capabilities.record` | Records a change made without the fork's commands. Finds what the branch changed in the product, proposes the delta of every rule a person can observe, and waits for your approval. Then reviews and folds it, which maps each rule to its code in the graph. It also lists specs whose delta never reached the catalog | A record under `specs/_capabilities/_changes/`, and the catalog, only after you approve |
 | `speckit.capabilities.locate` | Answers where a behaviour lives, which change set it and which tests cover it, from the catalog first. Says when part of the answer comes from the code | Nothing of yours. The graph leaves its own untracked files (see below) |
 
 The script has subcommands for them: `scaffold --capability <name> --covers "<one line>"` and `locate [--capability <name>]`. `clarify-context [--change <dir>]` gives the hook the feature, its parsed delta, every capability, and in `slice` what other slices own and the size of the spec. It ends with exit code 0 when there is no feature, because `clarify` reports that itself.
+
+`coverage [--base <ref>]` is what `record` starts from. It compares the branch, committed or not, with `base_branch` (or `main`, or `--base`) and answers with exit code 0:
+
+| Field | What it holds |
+|---|---|
+| `status` | `none`: the product did not change. `recorded`: every change on the branch is in the catalog, or says it changes no rule. `unrecorded`: a change on the branch was not folded. `missing`: the product changed and nothing records it |
+| `code` | The changed files that can change the product. Not `specs/`, `.specify/`, `.claude/`, `.github/`, the graph, Markdown, `.gitignore` and `.gitattributes`, nor the globs of `coverage_ignore` |
+| `changes`, `pending` | The state of each change on the branch, and those not folded |
+| `capabilities`, `unmapped` | The changed files that a rule names in `Code` or `Tests`, by capability, and those no rule names |
+| `unrecorded` | Every spec or record of the project, merged or not, that changes rules and has no row in the history of its capabilities, with its `open_tasks`: `null` when it has no `tasks.md` |
+| `record` | The folder a record of this branch would use |
+
+`review` answers `unlinked` with `stamped` and `unchanged`: the requirements (`FR-###`) of the spec that no rule of the delta links. A spec of twelve requirements that brings one rule to the catalog usually left rules out. The command asks, for each one, whether it sets something a person can observe, and proposes the entry if it does.
 
 ## When a change retires rules, or only moves code
 
@@ -262,9 +295,16 @@ python3 .specify/extensions/capabilities/scripts/python/capabilities.py rebase -
 
 When `review` seals a delta, or `prepare` is `ready`, or `scaffold` lists a capability, a block between `<!-- SPECKIT CAPABILITIES START -->` and `<!-- SPECKIT CAPABILITIES END -->` is added or refreshed. It tells a session to read the catalog before answering where a behaviour lives or changing it.
 
+The block opens by naming the fork, speckit-vs, so an agent that knows the original Spec Kit does not take its `/speckit-*` commands for the original's process. It then says that every change to what the product does ends in the catalog, on one of two paths:
+
+- With the fork's commands, the flow ends with `speckit.converge` and then the fold.
+- Without them, the change needs no spec: `speckit.capabilities.record` writes its delta in `specs/_capabilities/_changes/<YYYYMMDD>-<name>/capability-delta.md`, and `review` and the fold take that folder.
+
+On both paths the delta names every rule a person can observe, and the fold maps each rule to its code in the Graphify graph. `speckit.capabilities.record` is how the second path starts.
+
 - The file is the first of these: `context_files` or `context_file` in the `agent-context` configuration, the file of the integration in `.specify/init-options.json`, `AGENTS.md`.
 - Everything outside the markers stays byte for byte, except the frontmatter a `.mdc` file needs (`alwaysApply`) when it has none. If the markers are unbalanced, or the file points outside the repository, the file is left alone and `setup` says so.
-- Outside the Spec Kit flow this is an instruction an agent can ignore. It is not an enforcement mechanism; CI is.
+- Outside the fork's commands this is an instruction an agent can ignore. The Stop hook and `check` notice when it was ignored; CI enforces only what `check --mode ci` fails on.
 
 `refresh` brings the block up to date after the extension was updated, with the lines of `.gitignore` and `.gitattributes` a review would add. `specify extension add capabilities --force` runs it, with the script inside `specify`, and so does `specify upgrade`. In a project that never had the block it writes nothing and answers `none`.
 
@@ -352,6 +392,13 @@ In a merge queue, add `--combined`: a changed anchored file is then revalidated 
 | Design | A `[designed]` mark no `DESIGNED` entry set, a `DESIGNED` outside a design record, a spec that retires a `[designed]` rule or leaves it `[designed]` after `IMPLEMENTED`, or `[designed]` rules without the format seal |
 | Merge markers | git's conflict markers are still in the change's document or in the catalog |
 | Entry point | A row of `index.md` points to a file or a symbol that is not in the code |
+
+`check` also leaves notes, in `dev` and in `ci`, that block nothing:
+
+- a spec on the branch with no open task whose delta was not folded;
+- a branch that changes product files with no change of the catalog;
+- a spec or record on the base that was merged without its fold;
+- a built rule with no `Code` in `Rule Status`, or whose `Code` is gone from a file this branch did not touch. It reads the files, not the Graphify graph, which CI may not have: placing a rule in the graph is the fold's step.
 
 **Retiring a rule.** With `Replaced-By: R-x`, `R-x` must exist, be `conforming` and pass its tests. With `Replaced-By: none`, `implementation.md` needs a `## Retirement Evidence` block with at least one passing test that proves the behaviour is gone. `discrepant` there means it is still present, and blocks.
 
