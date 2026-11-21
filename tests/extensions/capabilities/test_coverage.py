@@ -5,6 +5,7 @@ It is what speckit.capabilities.record starts from, for a change made without th
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
 from .conftest import CAT, EXPIRY_30, MARK, added, change_expiry, impl, modified
@@ -198,3 +199,35 @@ def test_folders_that_start_with_an_underscore_are_not_specs(repo):
     repo.write("specs/_drafts/spec.md", "# Draft\n\n" + record_delta(added("R-remember-me", "Recuerda la sesión.", links="none")))
     repo.commit("a draft beside the specs")
     assert coverage(repo)["unrecorded"] == []
+
+
+def test_a_record_is_folded_without_the_no_tasks_flag(repo):
+    """A record under _changes/ never has a tasks.md: prepare and apply do not wait for one (social-network, 2026-11-21)."""
+    repo.checkout("-b", "feat/expiry-by-hand")
+    repo.set_code(expiry=15)
+    repo.write(RECORD_DIR + "/capability-delta.md", record_delta(modified(frm=EXPIRY_30, links="none")))
+    repo.review(RECORD_DIR)
+    out = repo.folded(RECORD_DIR, impl(expiry="Expira a los 15 minutos."))
+    assert out["status"] == "published"
+    assert coverage(repo)["changes"] == {RECORD_DIR: "prepared"}
+
+
+def test_a_spec_without_tasks_still_waits_in_prepare_and_in_apply(repo):
+    """Only a record skips the tasks: a spec folder without tasks.md is a partial implementation."""
+    repo.checkout("-b", "feat")
+    repo.feature("002-x", modified(frm=EXPIRY_30))
+    repo.review("specs/002-x")
+    (repo.path / "specs/002-x/tasks.md").unlink()
+    rc, out = repo.cap("prepare", "--change", "specs/002-x")
+    assert rc == 3 and out["status"] == "blocked" and "no tasks.md" in out["reason"]
+    prepared = repo.prepare("specs/002-x", "--no-tasks")
+    repo.draft(prepared, impl(expiry="Expira a los 15 minutos."))
+    rc, out = repo.cap("apply", "--change", "specs/002-x", "--staged", prepared["staging"])
+    assert rc == 3 and out["status"] == "blocked" and "no tasks.md" in out["reason"]
+
+
+def test_without_a_change_and_without_a_feature_the_error_names_change(repo):
+    (repo.path / ".specify/feature.json").unlink(missing_ok=True)
+    rc, out = repo.cap("prepare")
+    assert rc != 0
+    assert "--change <folder>" in json.dumps(out)

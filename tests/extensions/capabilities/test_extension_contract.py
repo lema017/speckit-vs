@@ -672,8 +672,9 @@ def test_review_and_fold_take_a_change_made_without_a_spec(name):
 
 def test_fold_without_a_spec_passes_its_flags_only_to_the_calls_that_take_them():
     text = command_text("fold")
-    assert "Add `--change <that folder>` to `prepare`, `apply` and `check`, and `--no-tasks` to `prepare`." in text
-    assert "Pass `--no-tasks` only for a change without a spec: see the note before step 1" in text
+    assert "Add `--change <that folder>` to `prepare`, `apply` and `check`: a record has no `tasks.md`, and it is not waited for." in text
+    assert "A spec waits for its `tasks.md`; a record, a `capability-delta.md` with no `spec.md`, does not" in text
+    assert "--no-tasks" not in text
     assert "when the user asked for it" not in text
     import importlib.util
     spec = importlib.util.spec_from_file_location("capabilities_parser", EXT_DIR / "scripts" / "python" / "capabilities.py")

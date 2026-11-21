@@ -551,6 +551,9 @@ COVERAGE_MUTANTS = [
     ("coverage-names-a-record-after-main", ' and name not in {base.split("/")[-1] for base in bases} else "change"', ' else "change"'),
     ("coverage-drops-the-base-flag", "return cmd_coverage(root, args.base)", "return cmd_coverage(root, None)"),
     ("coverage-hides-problems", '"problems": check.hard,', '"problems": [],'),
+    ("record-waits-for-tasks", 'if tasks is None and not no_tasks and (change / "spec.md").is_file():', "if tasks is None and not no_tasks:"),
+    ("spec-skips-its-tasks", 'if tasks is None and not no_tasks and (change / "spec.md").is_file():', "if tasks is None and not no_tasks and False:"),
+    ("feature-error-names-no-change", "\\nName the change with --change <folder>, such as a spec merged without its fold or a record under %s/.\" % (done.stderr.strip() or done.stdout.strip(), CHANGES))", "\" % (done.stderr.strip() or done.stdout.strip()))"),
 ]
 
 # Part C: what check notes when work skipped its fold, the requirements review finds unlinked, and the Stop hook of the agent.
