@@ -452,6 +452,13 @@ def test_on_every_integration_the_default_adds_only_its_own(tmp_path: Path, monk
     core = _init_for(tmp_path / "core", key, "--no-default-extensions")
     with_default = _init_for(tmp_path / "default", key)
     changed = {path for path in core if core[path] != with_default.get(path) and not path.endswith(_TIMESTAMPED)}
+    # The one file of the core the default may change: the native events config, where capabilities adds its Stop hook.
+    integration = get_integration(key)
+    events_file = getattr(integration, "events_config_file", None)
+    if integration.supports_events() and "stop" in integration.CANONICAL_TO_NATIVE and events_file in changed:
+        assert b"speckit.capabilities.stop" in with_default[events_file]
+        assert b"speckit.capabilities.stop" not in core[events_file]
+        changed.discard(events_file)
     assert changed == set()
     added = set(with_default) - set(core)
     if not get_integration(key).list_command_templates():
@@ -546,9 +553,9 @@ def test_a_new_project_gets_the_default_extensions(tmp_path: Path):
     # Two hooks of its own before specify: the cut into slices, then the rules of the slice.
     assert _hook_order(project, "before_specify") == ["capabilities", "capabilities"]
     assert (project / ".claude/skills/speckit-capabilities-slice/SKILL.md").is_file()
-    # The size of the spec is measured before its delta is sealed, and again once the tasks exist.
+    # The size of the spec is measured before its delta is sealed, and again once the tasks exist, before analyze.
     assert _hook_order(project, "after_specify") == ["capabilities", "capabilities"]
-    assert _hook_order(project, "after_tasks") == ["capabilities"]
+    assert _hook_order(project, "after_tasks") == ["capabilities", "capabilities"]
     assert (project / ".claude/skills/speckit-capabilities-size/SKILL.md").is_file()
     template = (project / ".specify/extensions/capabilities/templates/spec-template.md").read_text(encoding="utf-8")
     assert "## Slice *(mandatory)*" in template and "## Capability Delta" in template
