@@ -2,6 +2,15 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.6.7] - 2026-11-21
+
+### Changed
+
+- test(integrations): write the managed file as bytes, so its hash holds on Windows
+- fix(capabilities): refresh the block for agents when the extension is added again
+- fix(integrations): do not report shared files an upgrade is about to refresh
+- chore: begin 1.6.7.dev0 development
+
 ## [1.6.6] - 2026-11-20
 
 ### Changed
