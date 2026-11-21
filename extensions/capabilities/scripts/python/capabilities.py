@@ -595,7 +595,7 @@ def resolve_change(root, given):
     except OSError as error:
         raise CapError("cannot resolve the feature directory: %s" % error)
     if done.returncode != 0:
-        raise CapError("cannot resolve the feature directory: %s" % (done.stderr.strip() or done.stdout.strip()))
+        raise CapError("cannot resolve the feature directory: %s\nName the change with --change <folder>, such as a spec merged without its fold or a record under %s/." % (done.stderr.strip() or done.stdout.strip(), CHANGES))
     for line in reversed(done.stdout.splitlines()):
         with contextlib.suppress(ValueError):
             feature = json.loads(line).get("FEATURE_DIR")
@@ -1153,7 +1153,9 @@ def prepare_state(root, change, no_tasks=False):
     if is_design(delta) or (design_capable(delta, source) and retires_designed(root, delta)):
         return {"status": "invalid", "errors": ["%s designs or retires [designed] rules: publish it with capabilities.py publish-design --change %s" % (source, source)]}, None, INVALID
     tasks = open_tasks(change)
-    if tasks is None and not no_tasks:
+    # A record (a capability-delta.md with no spec.md, under _changes/ or a folder of bugs) is a change made
+    # outside specify: it never has a tasks.md to wait for. A spec folder without tasks.md is still partial.
+    if tasks is None and not no_tasks and (change / "spec.md").is_file():
         return {"status": "blocked", "reason": "no tasks.md; pass --no-tasks for a change outside specify"}, None, DECISION
     if tasks:
         return {"status": "blocked", "reason": "%d open tasks" % tasks}, None, DECISION

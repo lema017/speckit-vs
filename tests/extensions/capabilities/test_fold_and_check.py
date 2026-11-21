@@ -714,9 +714,10 @@ def test_a_bugfix_that_changes_a_rule_uses_a_record(repo):
     repo.write(record + "/capability-delta.md", "# Fix\n\n" + delta_block(modified(links="none")))
     repo.set_code(expiry=15)
     repo.review(record)
+    # A record has no tasks.md and is not held for it: no flag is needed.
     rc, out = repo.cap("prepare", "--change", record)
-    assert rc == 3 and "no tasks.md" in out["reason"]
-    repo.folded(record, impl(), "--no-tasks")
+    assert rc == 0 and out["status"] == "ready", out
+    repo.folded(record, impl())
     repo.commit("fold fix")
     rc, out = repo.ci()
     assert rc == 0, out
@@ -729,7 +730,7 @@ def test_a_record_under_specify_bugs_is_discovered(repo):
     repo.write(record + "/capability-delta.md", "# Fix\n\n" + delta_block(modified(links="none")))
     repo.set_code(expiry=15)
     repo.review(record)
-    repo.folded(record, impl(), "--no-tasks")
+    repo.folded(record, impl())
     repo.commit("bug change")
     rc, out = repo.ci()
     assert rc == 0, out
