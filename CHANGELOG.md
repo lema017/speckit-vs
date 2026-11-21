@@ -2,6 +2,14 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.6.8] - 2026-11-21
+
+### Changed
+
+- test(init): let the default extension add its Stop hook to the events config
+- feat(capabilities): every change ends in the catalog, on one of two paths
+- chore: begin 1.6.8.dev0 development
+
 ## [1.6.7] - 2026-11-21
 
 ### Changed
