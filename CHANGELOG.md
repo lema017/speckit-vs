@@ -2,6 +2,13 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.6.9] - 2026-11-21
+
+### Changed
+
+- fix(capabilities): fold a record without asking for --no-tasks
+- chore: begin 1.6.9.dev0 development
+
 ## [1.6.8] - 2026-11-21
 
 ### Changed
