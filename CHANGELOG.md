@@ -2,6 +2,13 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.6.11] - 2026-11-23
+
+### Changed
+
+- fix(claude): give workflow steps the least permissions the fork needs
+- chore: begin 1.6.11.dev0 development
+
 ## [1.6.10] - 2026-11-22
 
 ### Changed
