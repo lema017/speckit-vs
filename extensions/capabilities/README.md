@@ -293,7 +293,7 @@ python3 .specify/extensions/capabilities/scripts/python/capabilities.py rebase -
 
 ## The block for agents
 
-When `review` seals a delta, or `prepare` is `ready`, or `scaffold` lists a capability, a block between `<!-- SPECKIT CAPABILITIES START -->` and `<!-- SPECKIT CAPABILITIES END -->` is added or refreshed. It tells a session to read the catalog before answering where a behaviour lives or changing it.
+`specify init` writes a block between `<!-- SPECKIT CAPABILITIES START -->` and `<!-- SPECKIT CAPABILITIES END -->` into the agent file of a new project, so the agent follows the fork from its first command. `review` when it seals a delta, `prepare` when it is `ready` and `scaffold` when it lists a capability add it too, or bring it up to date. It tells a session to read the catalog before answering where a behaviour lives or changing it.
 
 The block opens by naming the fork, speckit-vs, so an agent that knows the original Spec Kit does not take its `/speckit-*` commands for the original's process. It then says that every change to what the product does ends in the catalog, on one of two paths:
 
@@ -306,7 +306,11 @@ On both paths the delta names every rule a person can observe, and the fold maps
 - Everything outside the markers stays byte for byte, except the frontmatter a `.mdc` file needs (`alwaysApply`) when it has none. If the markers are unbalanced, or the file points outside the repository, the file is left alone and `setup` says so.
 - Outside the fork's commands this is an instruction an agent can ignore. The Stop hook and `check` notice when it was ignored; CI enforces only what `check --mode ci` fails on.
 
-`refresh` brings the block up to date after the extension was updated, with the lines of `.gitignore` and `.gitattributes` a review would add. `specify extension add capabilities --force` runs it, with the script inside `specify`, and so does `specify upgrade`. In a project that never had the block it writes nothing and answers `none`.
+`refresh` brings the block up to date after the extension was updated, with the lines of `.gitignore` and `.gitattributes` a review would add. `specify extension add capabilities --force` runs it, with the script inside `specify`, and so does `specify upgrade`. In a project that never had the block it writes nothing and answers `none`. `setup` writes it there: `specify init` runs it, and in a project made before 1.6.10, which `init` left without the block, run it by hand:
+
+```bash
+python3 .specify/extensions/capabilities/scripts/python/capabilities.py setup
+```
 
 ## Script exit codes
 

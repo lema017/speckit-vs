@@ -265,6 +265,20 @@ def _install_extension_during_init(project_path: Path, ext_spec: str, speckit_ve
     return f"{manifest.name} v{manifest.version} installed"
 
 
+def _set_up_capabilities(project_path: Path) -> tuple[str, str]:
+    """Write the agent block of capabilities into a new project, with the script that ships with specify."""
+    from ._assets import _locate_bundled_extension
+    from .extensions import ExtensionManager
+    from .extensions._command_add_refresh import setup_new_project
+
+    if not ExtensionManager(project_path).registry.is_installed("capabilities"):
+        return "skip", "capabilities is not installed"
+    shipped = _locate_bundled_extension("capabilities")
+    if shipped is None:
+        return "skip", "capabilities does not ship with this specify"
+    return setup_new_project(project_path, "capabilities", shipped)
+
+
 def _shell_quote_arg(value: str) -> str:
     """Quote *value* as one argument for the shells of the host OS.
 
@@ -778,6 +792,9 @@ def register(app: typer.Typer) -> None:
                     f"extension-{i}", f"Install extension: {_escape_markup(ext_spec)}"
                 )
 
+        sets_up_capabilities = any(_installs_extension(spec, "capabilities") for spec in extensions or [])
+        if sets_up_capabilities:
+            tracker.add("agent-rules", "Write the fork's rules for agents")
         tracker.add("graph", "Build code graph")
         tracker.add("final", "Finalize")
 
@@ -1103,6 +1120,13 @@ def register(app: typer.Typer) -> None:
                 # preset-provided constitution-template (resolved via the
                 # priority stack) wins over the core template.
                 ensure_constitution_from_template(project_path, tracker=tracker)
+
+                # The block that tells the agent this project follows the fork. Without it the
+                # agent runs the original Spec Kit flow until a first review writes it.
+                if sets_up_capabilities:
+                    tracker.start("agent-rules")
+                    agent_state, agent_detail = _set_up_capabilities(project_path)
+                    getattr(tracker, agent_state)("agent-rules", _escape_markup(agent_detail))
 
                 # After the extensions: the graph is built through the gate of capabilities.
                 tracker.start("graph")
