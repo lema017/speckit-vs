@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -75,6 +77,47 @@ class ClaudeIntegration(SkillsIntegration):
     # rewrite skills without calling setup() (e.g. ``preset add``,
     # ``integration use``) get the default.
     _disable_model_invocation: bool = False
+
+    # A workflow step runs Claude with ``-p``: nobody is there to approve a
+    # tool, so without permissions the session refuses every write, exits 0
+    # and leaves no spec behind. These are the least it needs to run the
+    # commands of the fork: edit files, make folders, and run the scripts
+    # under ``.specify/``. Nothing else is allowed, so a step that has to run
+    # the project's own tests or tools still needs
+    # ``SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS``, and that variable, when set,
+    # replaces these flags instead of adding to them.
+    DISPATCH_PERMISSIONS: tuple[str, ...] = (
+        "--permission-mode", "acceptEdits",
+        "--allowedTools",
+        "Bash(python3 .specify/*)",
+        "Bash(.specify/scripts/*)",
+        "Bash(bash .specify/scripts/*)",
+        "Bash(sh .specify/scripts/*)",
+        "Bash(pwsh .specify/scripts/*)",
+        "Bash(mkdir *)",
+    )
+
+    def build_exec_args(
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        output_json: bool = True,
+        integration_args: Sequence[str] | None = None,
+        integration_options: Mapping[str, Any] | None = None,
+        project_root: Path | None = None,
+    ) -> list[str] | None:
+        args = super().build_exec_args(
+            prompt,
+            model=model,
+            output_json=output_json,
+            integration_args=integration_args,
+            integration_options=integration_options,
+            project_root=project_root,
+        )
+        if args is None or os.environ.get("SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS", "").strip():
+            return args
+        return args[:3] + list(self.DISPATCH_PERMISSIONS) + args[3:]
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:

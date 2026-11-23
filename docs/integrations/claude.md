@@ -67,5 +67,27 @@ combine it with `--no-model-invocation` if both settings are wanted.
 See [runtime events](cli.md#runtime-events).
 
 Workflow steps use `claude -p <prompt>`, with `--model` when configured and
-`--output-format json` when structured output is requested. This adapter does
-not add a permission-bypass flag itself.
+`--output-format json` when structured output is requested.
+
+Nobody is there to approve a tool in a workflow step, so without permissions
+the session refuses every write, exits 0 and leaves nothing behind. The adapter
+therefore passes the least the commands of this fork need:
+
+```text
+--permission-mode acceptEdits
+--allowedTools "Bash(python3 .specify/*)" "Bash(.specify/scripts/*)"
+  "Bash(bash .specify/scripts/*)" "Bash(sh .specify/scripts/*)"
+  "Bash(pwsh .specify/scripts/*)" "Bash(mkdir *)"
+```
+
+It can edit files, make folders and run the scripts under `.specify/`, and
+nothing else. A step that has to run the project's own tests or tools, such as
+`implement`, needs more: set `SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS`. When that
+variable is set, it replaces these flags instead of adding to them, so repeat
+the ones you want to keep. For example:
+
+```bash
+export SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS='--permission-mode acceptEdits --allowedTools "Bash(python3 .specify/*)" "Bash(.specify/scripts/*)" "Bash(mkdir *)" "Bash(npm test *)"'
+```
+
+The adapter never adds a permission-bypass flag itself.

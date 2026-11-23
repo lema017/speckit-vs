@@ -1248,3 +1248,36 @@ class TestSpeckitManifestRecordsSkippedFiles:
         assert real_template in text, (
             "directory-at-template-dst path must surface in the skipped warning"
         )
+
+
+class TestDispatchPermissions:
+    """A workflow step runs claude -p with no one to approve tools."""
+
+    def test_dispatch_lets_the_agent_edit_and_run_the_scripts_of_the_fork(self, monkeypatch):
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS", raising=False)
+        args = ClaudeIntegration().build_exec_args("/speckit-specify x", model="m")
+        assert args[:3] == ["claude", "-p", "/speckit-specify x"]
+        assert args[args.index("--permission-mode") + 1] == "acceptEdits"
+        allowed = args[args.index("--allowedTools") + 1:args.index("--model")]
+        assert "Bash(python3 .specify/*)" in allowed
+        assert "Bash(.specify/scripts/*)" in allowed
+        assert "Bash(mkdir *)" in allowed
+        assert args[-4:] == ["--model", "m", "--output-format", "json"]
+
+    def test_dispatch_never_bypasses_permissions(self, monkeypatch):
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS", raising=False)
+        args = ClaudeIntegration().build_exec_args("p")
+        assert "--dangerously-skip-permissions" not in args
+        assert "bypassPermissions" not in args
+        assert not [a for a in args if a in ("Bash", "Bash(*)")]
+
+    def test_extra_args_replace_the_default_permissions(self, monkeypatch):
+        from specify_cli.integrations.claude import ClaudeIntegration
+
+        monkeypatch.setenv("SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS", "--permission-mode plan")
+        args = ClaudeIntegration().build_exec_args("p")
+        assert args == ["claude", "-p", "p", "--permission-mode", "plan", "--output-format", "json"]

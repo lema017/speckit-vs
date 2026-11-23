@@ -118,6 +118,8 @@ specify workflow run sliced --input map=login
 
 The first command tells the project about the bundle catalog of this fork, once. The default catalog is the one of `github/spec-kit`, which does not list `sliced`.
 
+The steps of the run start Claude with no one to approve its tools, so it runs with the permissions to edit files and run the scripts of `.specify/`, and nothing more. If `implement` has to run your tests or other tools, give it more with `SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS`, as the [Claude guide](../integrations/claude.md#runtime-events-and-workflow-dispatch) explains.
+
 Each round asks the project which slice comes now, waits for your approval, and runs `specify`, a spec review gate, `plan`, `tasks` and `implement` for it. It ends when every slice is delivered. If a slice is started and not delivered, the slices that depend on it wait: the run says which, and looks again when you approve.
 
 A spec can leave points marked `[NEEDS CLARIFICATION]`, and one written from a design marks what the design left out. No step of the run answers them, and `plan` does not start on such a spec. So the run stops at a gate after `specify` and says how many there are: answer them with `/speckit-clarify` in your agent, then approve.
