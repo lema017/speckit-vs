@@ -355,9 +355,15 @@ def is_set_up(root):
 def cmd_refresh(root):
     """After the extension was updated: the setup of a project that has one, brought up to date.
 
-    A review that seals a spec is what sets a project up. Until one did, an update writes nothing."""
+    An update writes nothing into a project that was never set up: ``specify init`` sets it up with ``setup``, and a
+    review that seals a spec does it for a project that added the extension later."""
     if not is_set_up(root):
         return emit({"setup": [], "status": "none"})
+    return emit({"setup": ensure_setup(root), "status": "ok"})
+
+
+def cmd_setup(root):
+    """A new project: its agent file gets the block, so the agent follows the fork from the first command."""
     return emit({"setup": ensure_setup(root), "status": "ok"})
 
 
@@ -3203,7 +3209,7 @@ class Check:
 
 def build_parser():
     parser = argparse.ArgumentParser(description="Capability catalog mechanics")
-    parser.add_argument("command", choices=["status", "locate", "clarify-context", "scaffold", "ensure", "review", "prepare", "apply", "recover", "check", "publish-design", "delta-block", "rebase", "defer", "index", "refresh", "coverage", "stop-check"])
+    parser.add_argument("command", choices=["status", "locate", "clarify-context", "scaffold", "ensure", "review", "prepare", "apply", "recover", "check", "publish-design", "delta-block", "rebase", "defer", "index", "refresh", "setup", "coverage", "stop-check"])
     parser.add_argument("ids", nargs="*", help="defer: the rules to leave out of the delta")
     parser.add_argument("--root", default=".")
     parser.add_argument("--change", action="append", default=[])
@@ -3241,6 +3247,8 @@ def dispatch(args, root):
         raise CapError("%s takes no rule ids; only defer does" % args.command)
     if args.command == "refresh":
         return cmd_refresh(root)
+    if args.command == "setup":
+        return cmd_setup(root)
     if args.command == "coverage":
         return cmd_coverage(root, args.base)
     if args.command == "status":

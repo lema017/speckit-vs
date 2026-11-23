@@ -409,6 +409,30 @@ def _default_ext_init(tmp_path: Path, *args: str, name: str = "demo", script: st
     return project, _strip(result.output)
 
 
+def test_init_writes_the_fork_rules_into_the_agent_file(tmp_path: Path):
+    """A new project tells its agent it follows the fork from the first command, not after a first review."""
+    project, output = _default_ext_init(tmp_path)
+    claude = (project / "CLAUDE.md").read_text(encoding="utf-8")
+    assert "<!-- SPECKIT CAPABILITIES START -->" in claude and "## speckit-vs" in claude
+    assert "Write the fork's rules for agents" in output
+    assert ".specify/capabilities/" in (project / ".gitignore").read_text(encoding="utf-8").splitlines()
+
+
+def test_init_without_the_default_extensions_writes_no_agent_file(tmp_path: Path):
+    project, output = _default_ext_init(tmp_path, "--no-default-extensions")
+    assert not (project / "CLAUDE.md").exists()
+    assert "Write the fork's rules for agents" not in output
+
+
+def test_init_here_keeps_the_agent_file_of_the_project(tmp_path: Path):
+    project = tmp_path / "demo"
+    project.mkdir()
+    (project / "CLAUDE.md").write_text("# House rules\n\nAlways answer in Spanish.\n", encoding="utf-8")
+    project, _ = _default_ext_init(tmp_path)
+    claude = (project / "CLAUDE.md").read_text(encoding="utf-8")
+    assert claude.startswith("# House rules\n\nAlways answer in Spanish.\n\n<!-- SPECKIT CAPABILITIES START -->")
+
+
 def _installed(project: Path) -> list[str]:
     registry = project / ".specify" / "extensions" / ".registry"
     if not registry.is_file():
@@ -439,7 +463,9 @@ def _init_for(project: Path, key: str, *args: str) -> dict[str, bytes]:
 
 
 # The extension's files that do not carry its name, and the records init timestamps on every run.
-_DEFAULT_ALSO_WRITES = {".specify/extensions.yml", ".specify/extensions/.registry", ".graphifyignore"}
+# capabilities also sets the project up: two lines for git and its block in the agent file.
+_DEFAULT_ALSO_WRITES = {".specify/extensions.yml", ".specify/extensions/.registry", ".graphifyignore", ".gitignore", ".gitattributes"}
+_AGENT_BLOCK = b"<!-- SPECKIT CAPABILITIES START -->"
 _TIMESTAMPED = (".manifest.json", "workflow-registry.json")
 
 
@@ -465,7 +491,11 @@ def test_on_every_integration_the_default_adds_only_its_own(tmp_path: Path, monk
         assert added == set()
         return
     named = ("capabilities", "studio")
-    assert {path for path in added if not any(name in path for name in named) and not path.startswith("graphify-out/")} == _DEFAULT_ALSO_WRITES
+    others = {path for path in added if not any(name in path for name in named) and not path.startswith("graphify-out/")}
+    # One agent file carries the block that names the fork, so the agent follows it from the first command.
+    agent_files = {path for path in others - _DEFAULT_ALSO_WRITES if _AGENT_BLOCK in with_default[path]}
+    assert len(agent_files) == 1, others
+    assert others - agent_files == _DEFAULT_ALSO_WRITES
     for name in named:
         in_project = [path for path in added if name in path and not path.startswith(".specify/")]
         assert in_project or list((tmp_path / "home").rglob("*%s*" % name)), "no command of %s reached this integration" % name

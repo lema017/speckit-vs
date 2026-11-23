@@ -370,6 +370,20 @@ def test_refresh_leaves_alone_a_project_that_never_had_the_block(bare, agent_fil
     assert ".specify/capabilities/" not in bare.read(".gitignore")
 
 
+def test_setup_writes_the_block_into_a_project_that_never_had_it(bare):
+    """specify init runs setup: a new project gets the block before its first spec, unlike with refresh."""
+    assert bare.cap("setup") == (0, {"setup": [".gitignore", ".gitattributes", "AGENTS.md"], "status": "ok"})
+    assert bare.read("AGENTS.md") == BLOCK + "\n"
+    assert ".specify/capabilities/" in bare.read(".gitignore").splitlines()
+    assert bare.cap("setup") == (0, {"setup": [], "status": "ok"})
+
+
+def test_setup_keeps_an_agent_file_of_the_project_and_adds_the_block_after_it(bare):
+    bare.write("AGENTS.md", "# Mine\n\nMy rules")
+    assert bare.cap("setup")[1]["setup"][-1] == "AGENTS.md"
+    assert bare.read("AGENTS.md") == "# Mine\n\nMy rules\n\n" + BLOCK + "\n"
+
+
 def test_refresh_also_adds_the_lines_a_set_up_project_is_missing(bare):
     """Once the block is there the project was set up, and refresh does what a review would."""
     bare.write("AGENTS.md", OLD + "\n")

@@ -39,6 +39,7 @@ GATE_MODULES = ["test_graph_gate.py"]
 CLARIFY_MODULES = ["test_clarify_context.py"]
 
 MUTANTS = [
+    ("setup-writes-nothing", 'so the agent follows the fork from the first command."""\n    return emit({"setup": ensure_setup(root), "status": "ok"})', 'so the agent follows the fork from the first command."""\n    return emit({"setup": [], "status": "ok"})'),
     # Acceptance 1: the catalog, in both directions.
     ("reverse-check-off", "            self.check_reverse()\n", "            pass\n"),
     ("reverse-accepts-any-delta-on-the-rule", 'if entry["to"] != after["text"] or after["tag"] != source:', "if False:"),
