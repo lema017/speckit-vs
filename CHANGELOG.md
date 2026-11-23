@@ -2,6 +2,13 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.6.10] - 2026-11-22
+
+### Changed
+
+- fix(init): write the fork's rules into the agent file of a new project
+- chore: begin 1.6.10.dev0 development
+
 ## [1.6.9] - 2026-11-21
 
 ### Changed
