@@ -128,6 +128,13 @@ MUTANTS = [
     ("a-rule-observed-again-needs-no-fold", "DESIGNED|IMPLEMENTED|REOBSERVED) R-", "DESIGNED|IMPLEMENTED) R-"),
     ("slices-closed-tasks-always-deliver", 'return declared, "delivered" if closed and (folded or not changes_rules) else "building"', 'return declared, "delivered" if closed else "building"'),
     ("slices-a-fold-delivers-open-tasks", 'return declared, "delivered" if closed and (folded or not changes_rules) else "building"', 'return declared, "delivered" if folded or (closed and not changes_rules) else "building"'),
+    # Counting the slices of a map by state.
+    ("slices-counts-ignore-the-state", '"counts": {state: sum(1 for view in views if view["state"] == state) for state in SLICE_STATES},', '"counts": {state: len(views) for state in SLICE_STATES},'),
+    ("slices-tally-keeps-empty-states", "for state in SLICE_STATES if counts.get(state))", "for state in SLICE_STATES)"),
+    ("slices-tally-out-of-order", "for state in SLICE_STATES if counts.get(state))", "for state in sorted(SLICE_STATES) if counts.get(state))"),
+    ("slices-line-forgets-the-next", '        if group["next"]:\n            line += ". Next: %s" % group["next"]', "        pass"),
+    ("slices-line-repeats-delivered", "for state in SLICE_STATES[1:-1] if counts.get(state)]", "for state in SLICE_STATES[:-1] if counts.get(state)]"),
+    ("slices-line-without-the-command", '    if lines:\n        lines.append("Every slice: specify progress slices")', "    pass"),
     ("slices-delta-in-a-comment-counts", 'bool(_DELTA_ENTRY.search(_HTML_COMMENT.sub("", delta)))', "bool(_DELTA_ENTRY.search(delta))"),
     ("slices-two-deltas-count", 'if spec.count(_DELTA_MARK) == 1 and len(re.findall(r"^## Capability Delta", spec, re.M)) == 1 else None', "if True else None"),
     ("slices-second-spec-takes-the-slice", "claimed.setdefault(declared, (spec_id, state))", "claimed[declared] = (spec_id, state)"),
@@ -516,6 +523,10 @@ WRAPPER_MUTANTS = [
 # These two run the repository's own files, so a changed copy of the engine would not reach them.
 # What a harness runs by itself: one exact replacement in hook.py.
 HOOK_MUTANTS = [
+    ("hook-ignores-the-maps", "    return maps_changed(root)\n", "    return False\n"),
+    ("hook-any-file-is-a-map", 'entry.name.endswith(".md") and entry.stat()', "entry.stat()"),
+    ("hook-map-same-date-is-current", "entry.stat().st_mtime_ns >= drawn", "entry.stat().st_mtime_ns > drawn"),
+    ("hook-map-without-a-list-is-stale", "        return False  # The spec's page is drawn first", "        return True  # The spec's page is drawn first"),
     ("hook-old-python-runs", "if sys.version_info < (3, 9):", "if False:"),
     ("hook-reads-any-event-as-a-call", 'mentions_a_call = event == "post_tool_use" and _CALL_MARK in raw', "mentions_a_call = _CALL_MARK in raw"),
     ("hook-misses-a-call", 'mentions_a_call = event == "post_tool_use" and _CALL_MARK in raw', "mentions_a_call = False"),
@@ -544,6 +555,16 @@ HOOK_MUTANTS = [
 
 # The command line and the dispatcher, in a copy of src: one exact replacement in that file.
 SRC_MUTANTS = [
+    ("slices-next-not-marked", "src/specify_cli/progress/command_slices.py", 'state = "next" if view["id"] == group["next"] else', 'state = "next" if False else'),
+    ("slices-startable-not-said", "src/specify_cli/progress/command_slices.py", 'else "can start now"', 'else ""'),
+    ("slices-waits-not-said", "src/specify_cli/progress/command_slices.py", 'where = "waits for " + ", ".join(view["waiting_for"]) if', 'where = "" if'),
+    ("slices-map-option-ignored", "src/specify_cli/progress/command_slices.py", "        groups = [group for group in groups if group[\"name\"] == map_name]\n", ""),
+    ("slices-unknown-map-passes", "src/specify_cli/progress/command_slices.py", "        if not groups:\n            fail(", "        if False:\n            fail("),
+    ("slices-done-map-says-next", "src/specify_cli/progress/command_slices.py", '    elif total and done == total:', '    elif False:'),
+    ("status-forgets-the-slices", "src/specify_cli/progress/command_status.py", "    if slices:\n", "    if False:\n"),
+    ("status-json-gets-slice-lines", "src/specify_cli/progress/command_status.py", "engine.project_slices(root)) if not as_json else []", "engine.project_slices(root))"),
+    ("open-list-ignored", "src/specify_cli/progress/command_open.py", "if target is None and not design and not show_list:", "if target is None and not design:"),
+    ("open-list-with-another", "src/specify_cli/progress/command_open.py", "if sum((design, feature is not None, show_list)) > 1:", "if design and feature is not None:"),
     ("defaults-ignore-opt-out", "src/specify_cli/events/__init__.py", "            return {}\n\n    events: ResolvedEvents = progress_hook_defaults(integration_key)\n", "            return progress_hook_defaults(integration_key)\n\n    events: ResolvedEvents = progress_hook_defaults(integration_key)\n"),
     ("defaults-off", "src/specify_cli/events/__init__.py", "        for event in PROGRESS_HOOK_EVENTS\n        if event in natives\n", "        for event in ()\n"),
     ("defaults-on-events-it-lacks", "src/specify_cli/events/__init__.py", "        for event in PROGRESS_HOOK_EVENTS\n        if event in natives\n", "        for event in PROGRESS_HOOK_EVENTS\n"),
@@ -633,8 +654,11 @@ def run_src_mutant(name, relative, old, new, workspace):
         "%s/test_command_watch.py" % TESTS,
         "%s/test_install.py" % TESTS,
         "tests/specify_cli/events/test_events.py",
+        "%s/test_command_slices.py" % TESTS,
+        "%s/test_command_status.py" % TESTS,
+        "%s/test_command_open.py" % TESTS,
         "-k",
-        "hook or doctor or watch or event or dispatcher or quick or message or harness or line or folder",
+        "hook or doctor or watch or event or dispatcher or quick or message or harness or line or folder or slices or status or open",
         "-n",
         "6",
     ]

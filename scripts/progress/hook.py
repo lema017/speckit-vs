@@ -68,7 +68,20 @@ def is_stale(root):
                 return True
         except OSError:
             pass
-    return False
+    return maps_changed(root)
+
+
+def maps_changed(root):
+    """True when a slice map changed after the list of specs was drawn, such as a slice the agent added."""
+    try:
+        drawn = os.stat(os.path.join(root, ".specify", "progress", "index.html")).st_mtime_ns
+    except OSError:
+        return False  # The spec's page is drawn first; the list comes with it.
+    try:
+        with os.scandir(os.path.join(root, "specs", "_slices")) as entries:
+            return any(entry.name.endswith(".md") and entry.stat().st_mtime_ns >= drawn for entry in entries)
+    except OSError:
+        return False
 
 
 def load_engine():

@@ -95,6 +95,7 @@ def progress_status(
 
     Without options it shows the current spec, or every spec when none is current.
     When the project has a product design, it is shown first, unless a spec was asked for.
+    When it has slice maps, a line per map says how many slices are delivered and which comes next.
     """
     if feature is not None and all_specs:
         fail("Use either --feature or --all, not both.")
@@ -106,6 +107,7 @@ def progress_status(
     try:
         rows = engine.status_data(root, target)
         design = engine.design_status(root) if feature is None and not as_json else None
+        slices = engine.slice_lines(engine.project_slices(root)) if not as_json else []
     except (engine.ProgressError, OSError) as exc:
         fail(str(exc))
     if design is not None:
@@ -120,3 +122,7 @@ def progress_status(
         _print_one(rows[0])
     else:
         _print_many(rows)
+    if slices:
+        console.print()
+        for line in slices:
+            _line(line)

@@ -1149,9 +1149,45 @@ def slice_groups(maps, specs):
             "slices": views,
             "total": len(counted),
             "delivered": sum(1 for view in counted if view["state"] == "delivered"),
+            "counts": {state: sum(1 for view in views if view["state"] == state) for state in SLICE_STATES},
             "next": ready[0] if ready else None,
         })
     return groups
+
+
+# The states of a slice, from the furthest to the one that has not started, and how a person reads
+# them. "pending" is a slice no spec builds yet.
+SLICE_STATES = ("delivered", "building", "specified", "pending", "dropped")
+SLICE_STATE_WORDS = {
+    "delivered": "delivered",
+    "building": "being built",
+    "specified": "spec written",
+    "pending": "no spec yet",
+    "dropped": "dropped",
+}
+
+
+def slice_tally(group):
+    """How many slices of a map are in each state, in words: '3 delivered, 1 spec written, 13 no spec yet'."""
+    counts = group["counts"]
+    return ", ".join("%d %s" % (counts[state], SLICE_STATE_WORDS[state]) for state in SLICE_STATES if counts.get(state))
+
+
+def slice_lines(groups):
+    """One line per map for the end of ``specify progress status``: how far it is and what comes next."""
+    lines = []
+    for group in groups:
+        line = "Slices of %s: %d of %d delivered" % (plain_text(group["name"]), group["delivered"], group["total"])
+        counts = group["counts"]
+        rest = ["%d %s" % (counts[state], SLICE_STATE_WORDS[state]) for state in SLICE_STATES[1:-1] if counts.get(state)]
+        if rest:
+            line += " (%s)" % ", ".join(rest)
+        if group["next"]:
+            line += ". Next: %s" % group["next"]
+        lines.append(line)
+    if lines:
+        lines.append("Every slice: specify progress slices")
+    return lines
 
 
 def project_slices(root):

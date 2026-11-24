@@ -21,6 +21,7 @@ def register(app: typer.Typer) -> None:
         command_engine,
         command_open,
         command_render,
+        command_slices,
         command_status,
         command_watch,
     )

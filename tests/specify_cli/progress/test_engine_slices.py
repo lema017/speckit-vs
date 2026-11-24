@@ -7,6 +7,7 @@ section of a spec. The engine reads them itself, so a redraw starts no other pro
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -277,3 +278,46 @@ def test_hostile_text_in_a_map_stays_text(engine, project):
     assert "</script><img" in first_line and "<!--<script>" in first_line
     assert group["slices"][0]["title"] == first_line
     assert group["request"] == first_line
+
+
+# -- How many slices are in each state ---------------------------------------------------------
+
+
+def test_each_map_counts_its_slices_by_state(engine, project):
+    login(project)
+    project.feature("001-sign-up", spec=spec(SIGN_UP), tasks=CLOSED)
+    project.feature("002-sign-in", spec=spec(SIGN_IN, title="Sign in"), tasks=OPEN)
+    project.feature("003-reset", spec=spec(RESET, title="Reset"), tasks=None)
+    (group,) = engine.project_slices(project.root)
+    assert group["counts"] == {"delivered": 1, "building": 1, "specified": 1, "pending": 1, "dropped": 0}
+    assert engine.slice_tally(group) == "1 delivered, 1 being built, 1 spec written, 1 no spec yet"
+
+
+def test_a_dropped_slice_is_counted_apart_and_states_with_none_are_left_out(engine, project):
+    slice_map(project, block(SIGN_UP, "Create an account"), block(SIGN_IN, "Sign in", more="- Dropped: not now\n"))
+    (group,) = engine.project_slices(project.root)
+    assert group["counts"]["dropped"] == 1 and group["counts"]["pending"] == 1
+    assert engine.slice_tally(group) == "1 no spec yet, 1 dropped"
+
+
+def test_the_status_lines_say_how_far_each_map_is_and_what_comes_next(engine, project):
+    login(project)
+    slice_map(project, block("D-cart-add", "Add to the cart"), name="cart")
+    project.feature("001-sign-up", spec=spec(SIGN_UP), tasks=CLOSED)
+    project.feature("002-sign-in", spec=spec(SIGN_IN, title="Sign in"), tasks=None)
+    assert engine.slice_lines(engine.project_slices(project.root)) == [
+        "Slices of cart: 0 of 1 delivered (1 no spec yet). Next: D-cart-add",
+        "Slices of login: 1 of 4 delivered (1 spec written, 2 no spec yet)",
+        "Every slice: specify progress slices",
+    ]
+
+
+def test_without_maps_there_are_no_status_lines(engine, project):
+    assert engine.slice_lines(engine.project_slices(project.root)) == []
+
+
+def test_the_page_names_the_states_as_the_terminal_does(engine):
+    page = (Path(engine.__file__).parent / "index.html").read_text(encoding="utf-8")
+    words = json.loads(re.sub(r"(\w+):", r'"\1":', re.search(r"var WORDS = (\{.*?\});", page).group(1)))
+    assert words == engine.SLICE_STATE_WORDS
+    assert json.loads(re.search(r"var ORDER = (\[.*?\]);", page).group(1)) == list(engine.SLICE_STATES)
