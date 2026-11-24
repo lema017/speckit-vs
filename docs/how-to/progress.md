@@ -16,6 +16,8 @@ The first time a command draws a spec's page, it opens in your browser. It opens
 | --- | --- |
 | Open the page of the current spec | `specify progress open` |
 | See the summary in a terminal | `specify progress status` |
+| Open the list of every spec and slice | `specify progress open --list` |
+| List every slice and how far it is, in a terminal | `specify progress slices` |
 | See the summary inside your coding agent, and open the page | `/speckit.progress` |
 | Keep the page current from another terminal | `specify progress watch` |
 | Find out why something is not working | `specify progress doctor` |
@@ -27,16 +29,40 @@ The page reloads itself while it is open. `.specify/progress/index.html` lists e
 
 When the project has slice maps, the list groups the specs by map. A slice map is the cut of a larger request into slices of one spec each, written by the `capabilities` extension under `specs/_slices/`. See [One spec, one slice](capabilities.md#one-spec-one-slice).
 
-![The list of specs with one slice map, login: one slice delivered, one being built, two that wait for it, one dropped, and one spec outside the map. The data is an example.](../images/progress-slices.png)
+![The list of specs with one slice map, login: a button per state, then one slice delivered, one being built, two with no spec yet that wait for it, one dropped, and one spec outside the map. The data is an example.](../images/progress-slices.png)
 
 Each group shows the request, how many of its slices are delivered, and the slices in the order of the map:
 
 | A slice shows as | When |
 | --- | --- |
-| The card of its spec, marked `specified`, `building` or `delivered` | A spec names the slice |
-| A dashed box marked `next` | No spec builds it yet, and it waits for nothing |
-| A dashed box marked `pending`, with what it waits for | No spec builds it yet, and a slice it depends on is not delivered |
+| The card of its spec, marked `spec written`, `being built` or `delivered` | A spec names the slice. It is being built once the spec has tasks |
+| A dashed box marked `next` | No spec builds it yet, it waits for nothing, and it is the first such slice of the map |
+| A dashed box marked `no spec yet`, with "can start now" | No spec builds it yet, and it waits for nothing |
+| A dashed box marked `no spec yet`, with what it waits for | No spec builds it yet, and a slice it depends on is not delivered |
 | A dashed box with its name struck through | The map says it was dropped |
+
+Under the request, a button per state counts the slices in it, such as "3 delivered" or "13 no spec yet". A button shows only those slices, and "all" shows every one again. The choice holds while the page reloads itself.
+
+A slice that the agent adds to a map shows up in the list after the next tool call of the agent: a map newer than the list redraws it.
+
+### The slices in a terminal
+
+`specify progress slices` prints every slice of every map: its id, its state, the spec that builds it or what it waits for, and its title. It ends with how many slices are in each state and the slice that comes next. `--map <name>` shows one map, and `--json` prints the same data for a script. It reads the files each time and changes nothing.
+
+```text
+generacion  3 of 17 slices delivered  [####--------------------]
+
+Slice                    State         Spec                          Title
+D-generacion-prueba      delivered     001-generacion-prueba         Probar un cuento sin el app
+D-generacion-avance      next          can start now                 Seguir el avance del cuento
+D-generacion-pedido      no spec yet   waits for D-generacion-video  Pedir un cuento
+D-generacion-camara      spec written  004-generacion-camara         Ver el cuento en un lugar que tiene sentido
+
+3 delivered, 1 spec written, 13 no spec yet.
+Next: /speckit-specify D-generacion-avance
+```
+
+`specify progress status` ends with one line per map, with the same counts and the next slice.
 
 A slice is `delivered` when every task of its spec is closed and, if the spec changes rules, its delta is folded into the catalog. Specs that belong to no map come after the groups, under "Other specs". A project without slice maps gets the plain list.
 
@@ -162,4 +188,4 @@ Use your own integration key. The tasks already checked appear as done, with no 
 - **A hook runs after every tool call.** When nothing changed, it adds about 54 ms at the 95th percentile on macOS with Python 3.13, and 71 ms with the Python 3.9 macOS includes. Most of that is Python starting. When it has to redraw, about 103 and 140 ms.
 - **It does not include extension commands or workflow runs.** Only the core commands have a step on the page.
 - **The list reads the slice maps on its own.** It uses the same rule as `slices status`, and a test compares the two. It differs in one case: a spec whose fold is recorded only in the catalog's history, and not in the lock of the spec, does not show as `delivered` here.
-- **A change to a slice map alone does not redraw the list.** It shows the next time any command or task report redraws a page.
+- **A change to a slice map redraws the list only while a spec is current.** The hook redraws the pages of the current spec. With none, the list shows the change the next time it is drawn, such as with `specify progress open --list`. `specify progress slices` always reads the maps as they are.

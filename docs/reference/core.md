@@ -197,12 +197,13 @@ specify progress status
 | --- | --- |
 | `specify progress status` | Show how far a spec has come, in the terminal. Read-only |
 | `specify progress open` | Draw the page and open it in your browser |
+| `specify progress slices` | List every slice of the slice maps and how far each one is. Read-only |
 | `specify progress render` | Draw the pages into `.specify/progress/` |
 | `specify progress watch` | Keep a spec's page current from another terminal, whatever the agent does |
 | `specify progress doctor` | Check that the view works here: files, Python, the log, each harness |
 | `specify progress browser on\|off` | Choose whether a spec's page opens by itself the first time it is drawn |
 
-`specify progress open --design` opens the progress of the product design instead of a spec, and `specify progress status` shows it first when the project has one.
+`specify progress open --design` opens the progress of the product design instead of a spec, and `specify progress status` shows it first when the project has one. `specify progress open --list` opens the list of every spec and slice.
 
 See [See how far a spec has come](../how-to/progress.md).
 

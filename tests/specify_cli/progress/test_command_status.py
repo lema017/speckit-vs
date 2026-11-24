@@ -206,3 +206,21 @@ def test_json_stays_the_list_of_specs(in_project):
 def test_a_project_without_a_design_shows_none(in_project):
     in_project.feature("001-login")
     assert "Design" not in strip_ansi(status().output)
+
+
+def test_with_slice_maps_it_ends_with_a_line_per_map(in_project):
+    from .test_engine_slices import CLOSED, SIGN_UP, login, spec
+
+    login(in_project)
+    in_project.feature("001-sign-up", spec=spec(SIGN_UP), tasks=CLOSED)
+    output = strip_ansi(status().output)
+    assert "Slices of login: 1 of 4 delivered (3 no spec yet). Next: D-login-sign-in" in output
+    assert "Every slice: specify progress slices" in output
+
+
+def test_json_has_no_slice_lines(in_project):
+    from .test_engine_slices import login
+
+    login(in_project)
+    in_project.feature("001-login")
+    assert "Slices of" not in status("--json").output

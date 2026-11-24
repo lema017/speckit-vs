@@ -148,8 +148,10 @@ Each designed rule goes to the one slice that builds it, or is left for later wi
 To see where everything stands, with the state of each slice read from the specs:
 
 ```bash
-python3 .specify/extensions/capabilities/scripts/python/capabilities.py slices status
+specify progress slices
 ```
+
+It lists every slice of every map: delivered, being built, with its spec written, or with no spec yet, and what each one waits for. The list of the progress page shows the same, with a button per state; open it with `specify progress open --list`. See [See how far a spec has come](progress.md#the-slices-of-a-larger-request). For a script, `python3 .specify/extensions/capabilities/scripts/python/capabilities.py slices status` prints the same as JSON.
 
 ## Ask where something lives
 

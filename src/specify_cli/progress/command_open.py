@@ -20,19 +20,20 @@ def progress_open(
         help="Open this spec: its directory name, or a unique prefix such as 002.",
     ),
     design: bool = typer.Option(False, "--design", help="Open the progress of the product design instead of a spec."),
+    show_list: bool = typer.Option(False, "--list", help="Open the list of every spec and slice instead of the current spec."),
     no_browser: bool = typer.Option(False, "--no-browser", help="Draw the page and print its link, without opening it."),
 ) -> None:
     """Draw the progress page and open it in your browser.
 
-    Opens the current spec, or the list of specs when none is current. Over SSH,
+    Opens the current spec, or the list of specs and slices when none is current. Over SSH,
     in CI or without a display it only prints the link.
     """
-    if design and feature is not None:
-        fail("Use either --feature or --design, not both.")
+    if sum((design, feature is not None, show_list)) > 1:
+        fail("Use only one of --feature, --design and --list.")
     root = project_root()
     engine = load_engine()
     target = named_feature(engine, root, feature)
-    if target is None and not design:
+    if target is None and not design and not show_list:
         target = engine.current_feature_dir(root)
     try:
         result = engine.render_project(root, target)

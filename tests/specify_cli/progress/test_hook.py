@@ -572,3 +572,52 @@ def test_every_other_handler_still_goes_the_long_way(dispatcher, project, curren
 
 def test_the_dispatcher_refuses_nothing_with_too_few_arguments(dispatcher):
     assert dispatch(dispatcher, HOOK).returncode == 0
+
+
+# -- A slice map that changes redraws the list -------------------------------------------------
+
+
+def _drawn_with_a_map(hook, engine, project, current):
+    maps = project.root / "specs" / "_slices"
+    maps.mkdir(parents=True)
+    (maps / "login.md").write_text("<!-- slice-map:v1 -->\n### D-login-a A\n- Depends-On: none\n", encoding="utf-8")
+    age(maps / "login.md", 20)
+    engine.render_project(project.root, current)
+    for each in ("tasks.md", "spec.md", "plan.md"):
+        age(current / each, 10)
+    return maps
+
+
+def test_a_map_older_than_the_list_is_not_stale(hook, engine, project, current):
+    _drawn_with_a_map(hook, engine, project, current)
+    assert hook.is_stale(str(project.root)) is False
+
+
+def test_a_slice_added_to_a_map_makes_the_list_stale(hook, engine, project, current):
+    maps = _drawn_with_a_map(hook, engine, project, current)
+    with (maps / "login.md").open("a", encoding="utf-8") as stream:
+        stream.write("### D-login-b B\n- Depends-On: D-login-a\n")
+    age(project.root / ".specify" / "progress" / "index.html", 5)
+    assert hook.is_stale(str(project.root)) is True
+
+
+def test_a_new_file_that_is_not_a_map_changes_nothing(hook, engine, project, current):
+    maps = _drawn_with_a_map(hook, engine, project, current)
+    age(project.root / ".specify" / "progress" / "index.html", 5)
+    (maps / "notes.txt").write_text("x", encoding="utf-8")
+    assert hook.is_stale(str(project.root)) is False
+
+
+def test_without_a_list_drawn_a_map_alone_says_nothing(hook, project, tmp_path):
+    (project.root / "specs" / "_slices").mkdir(parents=True)
+    (project.root / "specs" / "_slices" / "login.md").write_text("x", encoding="utf-8")
+    assert hook.maps_changed(str(project.root)) is False
+
+
+def test_a_map_with_the_same_date_as_the_list_counts_as_newer(hook, engine, project, current):
+    maps = _drawn_with_a_map(hook, engine, project, current)
+    index = project.root / ".specify" / "progress" / "index.html"
+    age(index, 5)
+    drawn = index.stat().st_mtime_ns
+    os.utime(maps / "login.md", ns=(drawn, drawn))
+    assert hook.is_stale(str(project.root)) is True

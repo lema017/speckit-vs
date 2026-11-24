@@ -161,4 +161,20 @@ def test_the_design_and_a_spec_cannot_both_be_asked_for(in_project, opened):
     in_project.feature("001-login")
     result = runner.invoke(app, ["progress", "open", "--design", "--feature", "001"])
     assert result.exit_code == 1 and opened == []
-    assert "Use either --feature or --design, not both." in plain(result)
+    assert "Use only one of --feature, --design and --list." in plain(result)
+
+
+def test_list_opens_the_list_even_with_a_current_spec(in_project, opened):
+    in_project.set_current(in_project.feature("001-login"))
+    result = runner.invoke(app, ["progress", "open", "--list"])
+    assert result.exit_code == 0, result.output
+    assert opened == [(in_project.root / ".specify" / "progress" / "index.html").resolve().as_uri()]
+
+
+@pytest.mark.parametrize("args", [["--list", "--design"], ["--list", "--feature", "001"]])
+def test_list_goes_alone(in_project, opened, args):
+    in_project.feature("001-login")
+    result = runner.invoke(app, ["progress", "open", *args])
+    assert result.exit_code == 1
+    assert "Use only one of --feature, --design and --list." in plain(result)
+    assert opened == []
