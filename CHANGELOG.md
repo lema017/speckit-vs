@@ -2,6 +2,13 @@
 
 <!-- insert new changelog below this comment -->
 
+## [1.6.12] - 2026-11-23
+
+### Changed
+
+- feat(progress): list every slice and how far it is
+- chore: begin 1.6.12.dev0 development
+
 ## [1.6.11] - 2026-11-23
 
 ### Changed
